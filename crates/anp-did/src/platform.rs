@@ -20,7 +20,9 @@ impl RootKey {
     pub(crate) fn generate() -> Self {
         let mut bytes = [0_u8; ROOT_KEY_LEN];
         OsRng.fill_bytes(&mut bytes);
-        Self::from_bytes(bytes)
+        let root_key = Self::from_bytes(bytes);
+        bytes.zeroize();
+        root_key
     }
 
     pub(crate) fn from_bytes(mut bytes: [u8; ROOT_KEY_LEN]) -> Self {
@@ -47,22 +49,26 @@ pub(crate) struct InjectedRootKeyProvider {
 }
 
 impl InjectedRootKeyProvider {
-    pub(crate) fn new(key_id: impl Into<String>, bytes: [u8; ROOT_KEY_LEN]) -> Self {
-        Self {
+    pub(crate) fn new(key_id: impl Into<String>, mut bytes: [u8; ROOT_KEY_LEN]) -> Self {
+        let provider = Self {
             binding: RootKeyProviderBinding {
                 kind: RootKeyProviderKind::Injected,
                 key_id: key_id.into(),
                 account: None,
             },
             root_key: RootKey::from_bytes(bytes),
-        }
+        };
+        bytes.zeroize();
+        provider
     }
 
     pub(crate) fn from_env(key_id: impl Into<String>, name: &str) -> DidResult<Self> {
         let encoded =
             Zeroizing::new(std::env::var(name).map_err(|_| DidError::ProviderUnavailable)?);
-        let bytes = decode_root_key(encoded.as_bytes())?;
-        Ok(Self::new(key_id, bytes))
+        let mut bytes = decode_root_key(encoded.as_bytes())?;
+        let provider = Self::new(key_id, bytes);
+        bytes.zeroize();
+        Ok(provider)
     }
 }
 

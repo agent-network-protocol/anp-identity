@@ -37,3 +37,9 @@ jobs:
       - name: Public API baseline
         working-directory: anp-did
         run: ./scripts/check-public-api.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Node binding
+        working-directory: anp-did
+        run: npm --prefix bindings/node ci && npm --prefix bindings/node run build && npm --prefix bindings/node test

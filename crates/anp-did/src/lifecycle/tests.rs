@@ -130,6 +130,72 @@ fn lifecycle_uncertain_old_allows_abort_and_unknown_conflicts() {
 }
 
 #[test]
+fn lifecycle_reconcile_state_and_remote_observation_matrix_is_fail_closed() {
+    #[derive(Clone, Copy)]
+    enum RemoteObservation {
+        Old,
+        Candidate,
+        Unknown,
+    }
+
+    for state in [
+        PublicationState::Prepared,
+        PublicationState::PublicationInFlight,
+        PublicationState::PublicationUncertain,
+        PublicationState::Published,
+    ] {
+        for observation in [
+            RemoteObservation::Old,
+            RemoteObservation::Candidate,
+            RemoteObservation::Unknown,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut store =
+                DidStore::initialize_injected(root.path(), "host", [37_u8; 32]).unwrap();
+            let mut identity = store.create_identity(spec("matrix")).unwrap();
+            let old_document = identity.document().clone();
+            let prepared = identity.prepare_update(update("request-v2")).unwrap();
+            let unknown_document = valid_unknown_document(&identity);
+
+            if state != PublicationState::Prepared {
+                identity.begin_publication(&prepared.revision_id).unwrap();
+            }
+            match state {
+                PublicationState::Prepared | PublicationState::PublicationInFlight => {}
+                PublicationState::PublicationUncertain => identity
+                    .mark_publication_uncertain(&prepared.revision_id)
+                    .unwrap(),
+                PublicationState::Published => {
+                    identity.mark_published(&prepared.revision_id).unwrap()
+                }
+            }
+
+            let observed = match observation {
+                RemoteObservation::Old => &old_document,
+                RemoteObservation::Candidate => &prepared.candidate_document,
+                RemoteObservation::Unknown => &unknown_document,
+            };
+            let result = identity.reconcile_update(&prepared.revision_id, observed);
+            if state != PublicationState::PublicationUncertain {
+                assert_eq!(result, Err(DidError::InvalidPublicationState));
+                continue;
+            }
+            match observation {
+                RemoteObservation::Old => {
+                    assert_eq!(result, Ok(ReconcileOutcome::RemoteOld));
+                }
+                RemoteObservation::Candidate => {
+                    assert_eq!(result, Ok(ReconcileOutcome::Committed));
+                }
+                RemoteObservation::Unknown => {
+                    assert_eq!(result, Err(DidError::Conflict));
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     let root = tempfile::tempdir().unwrap();
     let mut store = DidStore::initialize_injected(root.path(), "host", [33_u8; 32]).unwrap();

@@ -208,6 +208,14 @@ mod tests {
 
         let alice_agreement = public_x25519(&alice, "#agreement");
         let bob_agreement = public_x25519(&bob, "#agreement");
+        assert_eq!(
+            alice.public_key_bytes("#agreement").unwrap(),
+            alice_agreement
+        );
+        assert_eq!(
+            alice.public_key_bytes("#missing"),
+            Err(DidError::KeyNotFound)
+        );
         let alice_shared = alice.ecdh("#agreement", &bob_agreement).unwrap();
         let bob_shared = bob.ecdh("#agreement", &alice_agreement).unwrap();
         assert_eq!(alice_shared.as_bytes(), bob_shared.as_bytes());

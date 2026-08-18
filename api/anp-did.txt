@@ -113,6 +113,7 @@ pub fn anp_did::DidIdentity::identity_id(&self) -> &str
 pub fn anp_did::DidIdentity::key_metadata(&self, &str) -> anp_did::DidResult<&anp_did::KeyMetadata>
 pub fn anp_did::DidIdentity::keys(&self) -> &[anp_did::KeyMetadata]
 pub fn anp_did::DidIdentity::managed_key_metadata(&self, &str) -> anp_did::DidResult<&anp_did::KeyMetadata>
+pub fn anp_did::DidIdentity::public_key_bytes(&self, &str) -> anp_did::DidResult<alloc::vec::Vec<u8>>
 pub fn anp_did::DidIdentity::revision(&self) -> u64
 pub fn anp_did::DidIdentity::state(&self) -> anp_did::IdentityState
 impl anp_did::DidIdentity

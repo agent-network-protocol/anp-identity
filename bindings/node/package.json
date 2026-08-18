@@ -1,0 +1,39 @@
+{
+  "name": "@agent-network-protocol/anp-did",
+  "version": "0.1.0",
+  "description": "Node.js bindings for the ANP E1 DID identity module",
+  "license": "MIT",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "native.cjs",
+    "*.node",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release && node scripts/wrap.mjs",
+    "build:debug": "napi build --platform && node scripts/wrap.mjs",
+    "build:all": "napi build --release && node scripts/wrap.mjs",
+    "test": "node --test test/*.test.cjs && node scripts/check-dts.mjs"
+  },
+  "napi": {
+    "binaryName": "anp-did",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.8.6",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

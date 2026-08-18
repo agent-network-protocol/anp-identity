@@ -1,4 +1,7 @@
 /target/
 /.coverage
 /node_modules/
+/bindings/node/node_modules/
 *.log
+*.node
+/bindings/node/native.d.ts

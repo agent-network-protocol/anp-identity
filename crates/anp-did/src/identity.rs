@@ -312,6 +312,19 @@ impl DidIdentity {
             .ok_or(DidError::KeyNotFound)
     }
 
+    pub fn public_key_bytes(&self, kid: &str) -> DidResult<Vec<u8>> {
+        let metadata = self.key_metadata(kid)?;
+        let method = anp::authentication::find_verification_method(self.document(), &metadata.kid)
+            .ok_or(DidError::InvalidIdentity)?;
+        match anp::authentication::extract_public_key(&method)
+            .map_err(|_| DidError::InvalidPublicKey)?
+        {
+            anp::PublicKeyMaterial::Ed25519(key) => Ok(key.to_bytes().to_vec()),
+            anp::PublicKeyMaterial::X25519(key) => Ok(key.to_vec()),
+            _ => Err(DidError::InvalidPublicKey),
+        }
+    }
+
     #[allow(dead_code)]
     pub(crate) fn runtime(&self) -> &Arc<StoreRuntime> {
         &self.runtime
