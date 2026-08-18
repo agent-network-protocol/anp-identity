@@ -2,6 +2,7 @@ pub mod anp_did
 pub enum anp_did::DidError
 pub anp_did::DidError::Conflict
 pub anp_did::DidError::CorruptRecord
+pub anp_did::DidError::Crypto
 pub anp_did::DidError::DuplicateKid
 pub anp_did::DidError::EmptyPath
 pub anp_did::DidError::ExternalRootControl
@@ -13,9 +14,12 @@ pub anp_did::DidError::InvalidManagedRootCount
 pub anp_did::DidError::InvalidPathSegment
 pub anp_did::DidError::InvalidPublicKey
 pub anp_did::DidError::InvalidService
+pub anp_did::DidError::Io(alloc::string::String)
 pub anp_did::DidError::MissingManagedRequestSigning
 pub anp_did::DidError::ProviderUnavailable
 pub anp_did::DidError::RootKeyMismatch
+pub anp_did::DidError::SecretNotFound
+pub anp_did::DidError::Serialization(alloc::string::String)
 pub anp_did::DidError::UnsupportedOperation
 pub anp_did::DidError::UnsupportedProfile
 pub enum anp_did::DidExtensionSpec

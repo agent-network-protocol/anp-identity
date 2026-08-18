@@ -1,9 +1,19 @@
 //! Stateful E1 DID identity primitives with a non-exportable private-key API boundary.
 
 mod error;
+#[allow(dead_code)]
+mod fs_util;
 mod input;
+#[allow(dead_code)]
+mod keystore;
 mod manifest;
+#[allow(dead_code)]
+mod platform;
 mod secret;
+#[allow(dead_code)]
+mod store;
+#[allow(dead_code)]
+mod store_lock;
 
 pub use error::{DidError, DidResult};
 pub use input::{

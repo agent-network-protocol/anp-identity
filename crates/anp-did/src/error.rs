@@ -36,8 +36,16 @@ pub enum DidError {
     RootKeyMismatch,
     #[error("the encrypted record is damaged")]
     CorruptRecord,
+    #[error("the requested secret does not exist")]
+    SecretNotFound,
     #[error("the store generation changed")]
     Conflict,
+    #[error("filesystem operation failed: {0}")]
+    Io(String),
+    #[error("serialization failed: {0}")]
+    Serialization(String),
+    #[error("cryptographic operation failed")]
+    Crypto,
     #[error("the requested operation is not supported in v1")]
     UnsupportedOperation,
 }
