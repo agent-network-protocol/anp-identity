@@ -296,22 +296,48 @@ impl DidIdentity {
     }
 
     pub fn managed_key_metadata(&self, kid: &str) -> DidResult<&KeyMetadata> {
-        let kid = crate::input::canonicalize_kid(&self.record.did, kid)?;
-        let metadata = self
-            .record
-            .keys
-            .iter()
-            .find(|metadata| metadata.kid == kid)
-            .ok_or(DidError::KeyNotFound)?;
+        let metadata = self.key_metadata(kid)?;
         if metadata.origin == crate::KeyOrigin::External {
             return Err(DidError::ExternalKeyOperation);
         }
         Ok(metadata)
     }
 
+    pub fn key_metadata(&self, kid: &str) -> DidResult<&KeyMetadata> {
+        let kid = crate::input::canonicalize_kid(&self.record.did, kid)?;
+        self.record
+            .keys
+            .iter()
+            .find(|metadata| metadata.kid == kid)
+            .ok_or(DidError::KeyNotFound)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn runtime(&self) -> &Arc<StoreRuntime> {
         &self.runtime
+    }
+
+    pub(crate) fn record(&self) -> &IdentityRecord {
+        &self.record
+    }
+
+    pub(crate) fn replace_record(&mut self, record: IdentityRecord) {
+        self.record = record;
+    }
+
+    pub(crate) fn load_managed_secret(
+        &self,
+        metadata: &KeyMetadata,
+    ) -> DidResult<crate::secret::SecretBytes> {
+        let secret_ref = SecretRef {
+            identity_id: self.identity_id().to_string(),
+            key_id: metadata.kid.clone(),
+            role: metadata.role,
+            version: metadata.version,
+        };
+        self.runtime
+            .key_store()
+            .open(self.runtime.root_key(), &secret_ref)
     }
 }
 
@@ -340,6 +366,7 @@ fn recover(runtime: &Arc<StoreRuntime>) -> DidResult<IdentityRegistry> {
         }
         remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
     }
+    crate::lifecycle::recover_update_journals(runtime, &guard)?;
     drop(guard);
     read_registry(runtime.root())
 }

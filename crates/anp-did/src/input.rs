@@ -217,7 +217,7 @@ impl ExternalPublicKeySpec {
 }
 
 impl ServiceSpec {
-    fn validate(&self) -> DidResult<()> {
+    pub(crate) fn validate(&self) -> DidResult<()> {
         let fragment = self.id.strip_prefix('#').unwrap_or(&self.id);
         if fragment.starts_with('#') {
             return Err(DidError::InvalidService);
@@ -298,7 +298,7 @@ fn validate_path_segment(segment: &str) -> DidResult<()> {
     Ok(())
 }
 
-fn validate_fragment(fragment: &str) -> DidResult<()> {
+pub(crate) fn validate_fragment(fragment: &str) -> DidResult<()> {
     if fragment.is_empty()
         || fragment.len() > MAX_KID_FRAGMENT_LEN
         || !fragment.bytes().all(is_identifier_byte)

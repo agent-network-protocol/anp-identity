@@ -29,7 +29,7 @@ pub(crate) struct ManagedPrivateKey {
 }
 
 impl ManagedPrivateKey {
-    fn generate(fragment: String, role: KeyRole) -> Self {
+    pub(crate) fn generate(fragment: String, role: KeyRole) -> Self {
         let mut bytes = match role {
             KeyRole::E2eeAgreement => x25519_dalek::StaticSecret::random_from_rng(OsRng).to_bytes(),
             KeyRole::RootControl | KeyRole::RequestSigning | KeyRole::E2eeSigning => {
@@ -212,6 +212,48 @@ pub(crate) fn public_keys_equal(left: &PublicKeyMaterial, right: &PublicKeyMater
     }
 }
 
+pub(crate) fn sign_root_document(
+    document: &Value,
+    root_kid: &str,
+    root_secret: &SecretBytes,
+    domain: Option<String>,
+) -> DidResult<Value> {
+    if root_secret.expose().len() != 32 {
+        return Err(DidError::InvalidIdentity);
+    }
+    let mut bytes = Zeroizing::new([0_u8; 32]);
+    bytes.copy_from_slice(root_secret.expose());
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&bytes);
+    let public_key = PublicKeyMaterial::Ed25519(signing_key.verifying_key());
+    let prepared = prepare_w3c_proof(
+        document,
+        &public_key,
+        root_kid,
+        ProofGenerationOptions {
+            proof_purpose: Some("assertionMethod".to_string()),
+            proof_type: Some(PROOF_TYPE_DATA_INTEGRITY.to_string()),
+            cryptosuite: Some(CRYPTOSUITE_EDDSA_JCS_2022.to_string()),
+            created: Some(Utc::now().to_rfc3339()),
+            domain,
+            challenge: Some(random_challenge()),
+        },
+    )
+    .map_err(|_| DidError::InvalidIdentity)?;
+    let signature = PrivateKeyMaterial::Ed25519(signing_key)
+        .sign_message(prepared.signing_input())
+        .map_err(|_| DidError::Crypto)?;
+    complete_w3c_proof(prepared, &signature).map_err(|_| DidError::InvalidIdentity)
+}
+
+pub(crate) fn ed25519_public_multibase(public_key: &PublicKeyMaterial) -> DidResult<String> {
+    let PublicKeyMaterial::Ed25519(public_key) = public_key else {
+        return Err(DidError::InvalidPublicKey);
+    };
+    let mut bytes = vec![0xed, 0x01];
+    bytes.extend_from_slice(&public_key.to_bytes());
+    Ok(format!("z{}", bs58::encode(bytes).into_string()))
+}
+
 fn public_key_from_raw(role: KeyRole, bytes: &Zeroizing<[u8; 32]>) -> PublicKeyMaterial {
     match role {
         KeyRole::E2eeAgreement => {
@@ -255,7 +297,7 @@ fn relationships(role: KeyRole) -> Vec<DidVerificationRelationship> {
     }
 }
 
-fn service_json(service: &ServiceSpec) -> Value {
+pub(crate) fn service_json(service: &ServiceSpec) -> Value {
     let mut value = json!({
         "id": if service.id.starts_with('#') {
             service.id.clone()
@@ -312,7 +354,7 @@ fn apply_extensions(
     Ok(())
 }
 
-fn key_metadata(
+pub(crate) fn key_metadata(
     document: &Value,
     kid: &str,
     role: KeyRole,
@@ -329,6 +371,7 @@ fn key_metadata(
         role,
         origin,
         state: KeyState::Active,
+        version: 1,
         public_key_multibase: multibase.to_string(),
         created_at: created_at.to_string(),
     })

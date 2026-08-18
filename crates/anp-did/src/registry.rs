@@ -9,12 +9,14 @@ use sha2::{Digest, Sha256};
 
 use crate::fs_util::{ensure_private_dir, write_atomic_private};
 use crate::keystore::SecretRef;
+use crate::lifecycle::PendingRevisionRecord;
 use crate::store_lock::StoreWriteGuard;
 use crate::{Capabilities, DidError, DidResult, KeyRole};
 
 const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const IDENTITY_SCHEMA_VERSION: u32 = 1;
 const JOURNAL_SCHEMA_VERSION: u32 = 1;
+const UPDATE_JOURNAL_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +47,7 @@ pub struct KeyMetadata {
     pub role: KeyRole,
     pub origin: KeyOrigin,
     pub state: KeyState,
+    pub version: u32,
     pub public_key_multibase: String,
     pub created_at: String,
 }
@@ -66,10 +69,13 @@ pub(crate) struct IdentityRecord {
     pub(crate) did: String,
     pub(crate) state: IdentityState,
     pub(crate) revision: u64,
+    pub(crate) generation: u64,
     pub(crate) document: Value,
     pub(crate) keys: Vec<KeyMetadata>,
     pub(crate) capabilities: Capabilities,
     pub(crate) created_at: String,
+    #[serde(default)]
+    pub(crate) pending_revision: Option<PendingRevisionRecord>,
 }
 
 impl IdentityRecord {
@@ -92,6 +98,43 @@ pub(crate) struct CreationJournal {
     pub(crate) did: String,
     pub(crate) secret_refs: Vec<SecretRef>,
     pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UpdateJournalKind {
+    Prepare,
+    Cleanup,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpdateJournal {
+    schema_version: u32,
+    pub(crate) revision_id: String,
+    pub(crate) identity_id: String,
+    pub(crate) secret_refs: Vec<SecretRef>,
+    pub(crate) kind: UpdateJournalKind,
+    pub(crate) created_at: String,
+}
+
+impl UpdateJournal {
+    pub(crate) fn new(
+        revision_id: String,
+        identity_id: String,
+        secret_refs: Vec<SecretRef>,
+        kind: UpdateJournalKind,
+        created_at: String,
+    ) -> Self {
+        Self {
+            schema_version: UPDATE_JOURNAL_SCHEMA_VERSION,
+            revision_id,
+            identity_id,
+            secret_refs,
+            kind,
+            created_at,
+        }
+    }
 }
 
 impl CreationJournal {
@@ -238,6 +281,50 @@ pub(crate) fn remove_journal(
     remove_if_exists(&journal_path(root, transaction_id))
 }
 
+pub(crate) fn write_update_journal(
+    root: &Path,
+    guard: &StoreWriteGuard,
+    journal: &UpdateJournal,
+) -> DidResult<()> {
+    guard.require_store(root)?;
+    ensure_private_dir(&root.join("update-transactions"))?;
+    let bytes = serde_json::to_vec_pretty(journal).map_err(|_| DidError::InvalidIdentity)?;
+    write_atomic_private(&update_journal_path(root, &journal.revision_id), &bytes)
+}
+
+pub(crate) fn list_update_journals(root: &Path) -> DidResult<Vec<UpdateJournal>> {
+    let entries = match fs::read_dir(root.join("update-transactions")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(DidError::Io(error.to_string())),
+    };
+    let mut journals = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| DidError::Io(error.to_string()))?;
+        if entry.path().extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let bytes = fs::read(entry.path()).map_err(|_| DidError::InvalidIdentity)?;
+        let journal: UpdateJournal =
+            serde_json::from_slice(&bytes).map_err(|_| DidError::InvalidIdentity)?;
+        if journal.schema_version != UPDATE_JOURNAL_SCHEMA_VERSION {
+            return Err(DidError::InvalidIdentity);
+        }
+        journals.push(journal);
+    }
+    journals.sort_by(|left, right| left.revision_id.cmp(&right.revision_id));
+    Ok(journals)
+}
+
+pub(crate) fn remove_update_journal(
+    root: &Path,
+    guard: &StoreWriteGuard,
+    revision_id: &str,
+) -> DidResult<()> {
+    guard.require_store(root)?;
+    remove_if_exists(&update_journal_path(root, revision_id))
+}
+
 pub(crate) fn new_identity_record(
     identity_id: String,
     did: String,
@@ -252,10 +339,12 @@ pub(crate) fn new_identity_record(
         did,
         state: IdentityState::Creating,
         revision: 1,
+        generation: 1,
         document,
         keys,
         capabilities,
         created_at,
+        pending_revision: None,
     }
 }
 
@@ -271,6 +360,11 @@ fn identity_path(root: &Path, identity_id: &str) -> PathBuf {
 fn journal_path(root: &Path, transaction_id: &str) -> PathBuf {
     root.join("transactions")
         .join(format!("{}.json", storage_key(transaction_id)))
+}
+
+fn update_journal_path(root: &Path, revision_id: &str) -> PathBuf {
+    root.join("update-transactions")
+        .join(format!("{}.json", storage_key(revision_id)))
 }
 
 fn storage_key(value: &str) -> String {

@@ -46,6 +46,20 @@ pub enum DidError {
     KeyNotFound,
     #[error("the requested KID is external and has no managed private key")]
     ExternalKeyOperation,
+    #[error("the key role does not authorize this operation")]
+    KeyRoleViolation,
+    #[error("the key state does not authorize this operation")]
+    KeyNotUsable,
+    #[error("the peer public key is invalid")]
+    InvalidPeerKey,
+    #[error("signature verification failed")]
+    VerificationFailed,
+    #[error("an identity already has a pending document revision")]
+    PendingRevisionExists,
+    #[error("the pending document revision does not exist")]
+    PendingRevisionNotFound,
+    #[error("the document revision is not in a valid publication state for this operation")]
+    InvalidPublicationState,
     #[error("the identity document or local identity record is invalid")]
     InvalidIdentity,
     #[error("the store generation changed")]

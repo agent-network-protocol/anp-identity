@@ -105,6 +105,19 @@ fn identity_creation_supports_one_four_n_and_external_public_keys() {
         Some(DidError::ExternalKeyOperation)
     );
     assert_eq!(
+        identity.sign("#external-signing", b"must fail").err(),
+        Some(DidError::ExternalKeyOperation)
+    );
+    use ed25519_dalek::Signer;
+    let external_signature = external_private.sign(b"external verification");
+    identity
+        .verify(
+            "#external-signing",
+            b"external verification",
+            &external_signature.to_bytes(),
+        )
+        .unwrap();
+    assert_eq!(
         identity.managed_key_metadata("#missing").err(),
         Some(DidError::KeyNotFound)
     );
