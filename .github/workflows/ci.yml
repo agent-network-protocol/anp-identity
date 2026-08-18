@@ -16,13 +16,13 @@ jobs:
         with:
           repository: agent-network-protocol/anp
           path: anp
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-08-01
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.88.0
           components: rustfmt, clippy
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          toolchain: nightly-2026-08-01
       - name: Install public API checker
         run: cargo install cargo-public-api --locked --version 0.52.0
       - name: Format
