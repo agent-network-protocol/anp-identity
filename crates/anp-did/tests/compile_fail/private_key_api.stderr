@@ -1,0 +1,11 @@
+error[E0603]: module `secret` is private
+ --> tests/compile_fail/private_key_api.rs:1:14
+  |
+1 | use anp_did::secret::SecretBytes;
+  |              ^^^^^^ private module
+  |
+note: the module `secret` is defined here
+ --> src/lib.rs
+  |
+  | mod secret;
+  | ^^^^^^^^^^

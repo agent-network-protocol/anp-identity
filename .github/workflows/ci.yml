@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: anp-did
+      - uses: actions/checkout@v4
+        with:
+          repository: agent-network-protocol/anp
+          path: anp
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-08-01
+      - name: Install public API checker
+        run: cargo install cargo-public-api --locked --version 0.52.0
+      - name: Format
+        working-directory: anp-did
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        working-directory: anp-did
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        working-directory: anp-did
+        run: cargo test --workspace --all-features
+      - name: Public API baseline
+        working-directory: anp-did
+        run: ./scripts/check-public-api.sh

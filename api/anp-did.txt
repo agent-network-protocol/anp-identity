@@ -1,0 +1,94 @@
+pub mod anp_did
+pub enum anp_did::DidError
+pub anp_did::DidError::Conflict
+pub anp_did::DidError::CorruptRecord
+pub anp_did::DidError::DuplicateKid
+pub anp_did::DidError::EmptyPath
+pub anp_did::DidError::ExternalRootControl
+pub anp_did::DidError::ForeignKid
+pub anp_did::DidError::InvalidDomain
+pub anp_did::DidError::InvalidExtension
+pub anp_did::DidError::InvalidKidFragment
+pub anp_did::DidError::InvalidManagedRootCount
+pub anp_did::DidError::InvalidPathSegment
+pub anp_did::DidError::InvalidPublicKey
+pub anp_did::DidError::InvalidService
+pub anp_did::DidError::MissingManagedRequestSigning
+pub anp_did::DidError::ProviderUnavailable
+pub anp_did::DidError::RootKeyMismatch
+pub anp_did::DidError::UnsupportedOperation
+pub anp_did::DidError::UnsupportedProfile
+pub enum anp_did::DidExtensionSpec
+pub anp_did::DidExtensionSpec::DeviceManifest(anp_did::DeviceManifestSpec)
+pub enum anp_did::DidProfile
+pub anp_did::DidProfile::E1
+pub enum anp_did::ExternalPublicKeyMaterial
+pub anp_did::ExternalPublicKeyMaterial::Jwk
+pub anp_did::ExternalPublicKeyMaterial::Jwk::public_key_jwk: anp_did::PublicOkpJwk
+pub anp_did::ExternalPublicKeyMaterial::Multibase
+pub anp_did::ExternalPublicKeyMaterial::Multibase::value: alloc::string::String
+pub enum anp_did::KeyRole
+pub anp_did::KeyRole::E2eeAgreement
+pub anp_did::KeyRole::E2eeSigning
+pub anp_did::KeyRole::RequestSigning
+pub anp_did::KeyRole::RootControl
+pub enum anp_did::RootKeyProviderKind
+pub anp_did::RootKeyProviderKind::Injected
+pub anp_did::RootKeyProviderKind::LocalPrivateFile
+pub anp_did::RootKeyProviderKind::OsKeyring
+pub struct anp_did::Capabilities
+pub anp_did::Capabilities::did_wba: bool
+pub struct anp_did::DeviceManifestEntrySpec
+pub anp_did::DeviceManifestEntrySpec::device_id: alloc::string::String
+pub anp_did::DeviceManifestEntrySpec::e2ee_key_id: alloc::string::String
+pub anp_did::DeviceManifestEntrySpec::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_did::DeviceManifestEntrySpec::signing_key_id: alloc::string::String
+pub struct anp_did::DeviceManifestSpec
+pub anp_did::DeviceManifestSpec::devices: alloc::vec::Vec<anp_did::DeviceManifestEntrySpec>
+pub struct anp_did::DidCreateSpec
+pub anp_did::DidCreateSpec::agent_description_url: core::option::Option<alloc::string::String>
+pub anp_did::DidCreateSpec::capabilities: anp_did::Capabilities
+pub anp_did::DidCreateSpec::domain: alloc::string::String
+pub anp_did::DidCreateSpec::extensions: alloc::vec::Vec<anp_did::DidExtensionSpec>
+pub anp_did::DidCreateSpec::external_keys: alloc::vec::Vec<anp_did::ExternalPublicKeySpec>
+pub anp_did::DidCreateSpec::managed_keys: alloc::vec::Vec<anp_did::ManagedKeySpec>
+pub anp_did::DidCreateSpec::path_segments: alloc::vec::Vec<alloc::string::String>
+pub anp_did::DidCreateSpec::port: core::option::Option<u16>
+pub anp_did::DidCreateSpec::profile: anp_did::DidProfile
+pub anp_did::DidCreateSpec::services: alloc::vec::Vec<anp_did::ServiceSpec>
+impl anp_did::DidCreateSpec
+pub fn anp_did::DidCreateSpec::validate(&self) -> anp_did::DidResult<()>
+pub fn anp_did::DidCreateSpec::validate_for_did(&self, &str) -> anp_did::DidResult<()>
+pub struct anp_did::ExternalPublicKeySpec
+pub anp_did::ExternalPublicKeySpec::kid: alloc::string::String
+pub anp_did::ExternalPublicKeySpec::material: anp_did::ExternalPublicKeyMaterial
+pub anp_did::ExternalPublicKeySpec::role: anp_did::KeyRole
+impl anp_did::ExternalPublicKeySpec
+pub fn anp_did::ExternalPublicKeySpec::parse_public_key(&self) -> anp_did::DidResult<anp::keys::PublicKeyMaterial>
+pub struct anp_did::ManagedKeySpec
+pub anp_did::ManagedKeySpec::fragment: alloc::string::String
+pub anp_did::ManagedKeySpec::role: anp_did::KeyRole
+pub struct anp_did::PublicOkpJwk
+pub anp_did::PublicOkpJwk::crv: alloc::string::String
+pub anp_did::PublicOkpJwk::kty: alloc::string::String
+pub anp_did::PublicOkpJwk::x: alloc::string::String
+pub struct anp_did::RootKeyProviderBinding
+pub anp_did::RootKeyProviderBinding::account: core::option::Option<alloc::string::String>
+pub anp_did::RootKeyProviderBinding::key_id: alloc::string::String
+pub anp_did::RootKeyProviderBinding::kind: anp_did::RootKeyProviderKind
+pub struct anp_did::ServiceSpec
+pub anp_did::ServiceSpec::id: alloc::string::String
+pub anp_did::ServiceSpec::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_did::ServiceSpec::security_profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_did::ServiceSpec::service_endpoint: alloc::string::String
+pub anp_did::ServiceSpec::service_type: alloc::string::String
+pub struct anp_did::StoreManifest
+pub anp_did::StoreManifest::created_at: alloc::string::String
+pub anp_did::StoreManifest::generation: u64
+pub anp_did::StoreManifest::provider: anp_did::RootKeyProviderBinding
+pub anp_did::StoreManifest::rekey_generation: u64
+pub anp_did::StoreManifest::root_key_fingerprint: alloc::string::String
+pub anp_did::StoreManifest::schema_version: u32
+pub anp_did::StoreManifest::store_id: alloc::string::String
+pub const anp_did::STORE_MANIFEST_SCHEMA_VERSION: u32
+pub type anp_did::DidResult<T> = core::result::Result<T, anp_did::DidError>
