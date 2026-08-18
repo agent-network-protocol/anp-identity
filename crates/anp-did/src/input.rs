@@ -312,7 +312,7 @@ fn is_identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~')
 }
 
-fn canonicalize_kid(did: &str, kid: &str) -> DidResult<String> {
+pub(crate) fn canonicalize_kid(did: &str, kid: &str) -> DidResult<String> {
     let prefix = format!("{did}#");
     let fragment = if let Some(fragment) = kid.strip_prefix('#') {
         fragment

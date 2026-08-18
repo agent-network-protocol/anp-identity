@@ -105,6 +105,10 @@ impl StoreRuntime {
         &self.manifest
     }
 
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub(crate) fn root_key(&self) -> &RootKey {
         &self.root_key
     }

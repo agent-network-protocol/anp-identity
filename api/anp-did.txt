@@ -3,18 +3,23 @@ pub enum anp_did::DidError
 pub anp_did::DidError::Conflict
 pub anp_did::DidError::CorruptRecord
 pub anp_did::DidError::Crypto
+pub anp_did::DidError::DuplicateIdentity
 pub anp_did::DidError::DuplicateKid
 pub anp_did::DidError::EmptyPath
+pub anp_did::DidError::ExternalKeyOperation
 pub anp_did::DidError::ExternalRootControl
 pub anp_did::DidError::ForeignKid
+pub anp_did::DidError::IdentityNotFound
 pub anp_did::DidError::InvalidDomain
 pub anp_did::DidError::InvalidExtension
+pub anp_did::DidError::InvalidIdentity
 pub anp_did::DidError::InvalidKidFragment
 pub anp_did::DidError::InvalidManagedRootCount
 pub anp_did::DidError::InvalidPathSegment
 pub anp_did::DidError::InvalidPublicKey
 pub anp_did::DidError::InvalidService
 pub anp_did::DidError::Io(alloc::string::String)
+pub anp_did::DidError::KeyNotFound
 pub anp_did::DidError::MissingManagedRequestSigning
 pub anp_did::DidError::ProviderUnavailable
 pub anp_did::DidError::RootKeyMismatch
@@ -31,11 +36,21 @@ pub anp_did::ExternalPublicKeyMaterial::Jwk
 pub anp_did::ExternalPublicKeyMaterial::Jwk::public_key_jwk: anp_did::PublicOkpJwk
 pub anp_did::ExternalPublicKeyMaterial::Multibase
 pub anp_did::ExternalPublicKeyMaterial::Multibase::value: alloc::string::String
+pub enum anp_did::IdentityState
+pub anp_did::IdentityState::Active
+pub anp_did::IdentityState::Creating
+pub enum anp_did::KeyOrigin
+pub anp_did::KeyOrigin::External
+pub anp_did::KeyOrigin::Managed
 pub enum anp_did::KeyRole
 pub anp_did::KeyRole::E2eeAgreement
 pub anp_did::KeyRole::E2eeSigning
 pub anp_did::KeyRole::RequestSigning
 pub anp_did::KeyRole::RootControl
+pub enum anp_did::KeyState
+pub anp_did::KeyState::Active
+pub anp_did::KeyState::Retired
+pub anp_did::KeyState::Revoked
 pub enum anp_did::RootKeyProviderKind
 pub anp_did::RootKeyProviderKind::Injected
 pub anp_did::RootKeyProviderKind::LocalPrivateFile
@@ -63,12 +78,50 @@ pub anp_did::DidCreateSpec::services: alloc::vec::Vec<anp_did::ServiceSpec>
 impl anp_did::DidCreateSpec
 pub fn anp_did::DidCreateSpec::validate(&self) -> anp_did::DidResult<()>
 pub fn anp_did::DidCreateSpec::validate_for_did(&self, &str) -> anp_did::DidResult<()>
+pub struct anp_did::DidIdentity
+impl anp_did::DidIdentity
+pub fn anp_did::DidIdentity::capabilities(&self) -> &anp_did::Capabilities
+pub fn anp_did::DidIdentity::did(&self) -> &str
+pub fn anp_did::DidIdentity::document(&self) -> &serde_json::value::Value
+pub fn anp_did::DidIdentity::identity_id(&self) -> &str
+pub fn anp_did::DidIdentity::keys(&self) -> &[anp_did::KeyMetadata]
+pub fn anp_did::DidIdentity::managed_key_metadata(&self, &str) -> anp_did::DidResult<&anp_did::KeyMetadata>
+pub fn anp_did::DidIdentity::revision(&self) -> u64
+pub fn anp_did::DidIdentity::state(&self) -> anp_did::IdentityState
+impl core::fmt::Debug for anp_did::DidIdentity
+pub fn anp_did::DidIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct anp_did::DidStore
+impl anp_did::DidStore
+pub fn anp_did::DidStore::create_identity(&mut self, anp_did::DidCreateSpec) -> anp_did::DidResult<anp_did::DidIdentity>
+pub fn anp_did::DidStore::generation(&self) -> u64
+pub fn anp_did::DidStore::initialize_injected(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, [u8; 32]) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::initialize_keyring(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, bool) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::initialize_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::list_identities(&self) -> anp_did::DidResult<alloc::vec::Vec<anp_did::IdentitySummary>>
+pub fn anp_did::DidStore::open_identity(&self, &str) -> anp_did::DidResult<anp_did::DidIdentity>
+pub fn anp_did::DidStore::open_injected(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, [u8; 32]) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::open_keyring(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::open_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_did::DidResult<Self>
+impl core::fmt::Debug for anp_did::DidStore
+pub fn anp_did::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct anp_did::ExternalPublicKeySpec
 pub anp_did::ExternalPublicKeySpec::kid: alloc::string::String
 pub anp_did::ExternalPublicKeySpec::material: anp_did::ExternalPublicKeyMaterial
 pub anp_did::ExternalPublicKeySpec::role: anp_did::KeyRole
 impl anp_did::ExternalPublicKeySpec
 pub fn anp_did::ExternalPublicKeySpec::parse_public_key(&self) -> anp_did::DidResult<anp::keys::PublicKeyMaterial>
+pub struct anp_did::IdentitySummary
+pub anp_did::IdentitySummary::created_at: alloc::string::String
+pub anp_did::IdentitySummary::did: alloc::string::String
+pub anp_did::IdentitySummary::identity_id: alloc::string::String
+pub anp_did::IdentitySummary::state: anp_did::IdentityState
+pub struct anp_did::KeyMetadata
+pub anp_did::KeyMetadata::created_at: alloc::string::String
+pub anp_did::KeyMetadata::kid: alloc::string::String
+pub anp_did::KeyMetadata::origin: anp_did::KeyOrigin
+pub anp_did::KeyMetadata::public_key_multibase: alloc::string::String
+pub anp_did::KeyMetadata::role: anp_did::KeyRole
+pub anp_did::KeyMetadata::state: anp_did::KeyState
 pub struct anp_did::ManagedKeySpec
 pub anp_did::ManagedKeySpec::fragment: alloc::string::String
 pub anp_did::ManagedKeySpec::role: anp_did::KeyRole

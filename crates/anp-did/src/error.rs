@@ -38,6 +38,16 @@ pub enum DidError {
     CorruptRecord,
     #[error("the requested secret does not exist")]
     SecretNotFound,
+    #[error("the requested identity does not exist")]
+    IdentityNotFound,
+    #[error("the DID identity already exists")]
+    DuplicateIdentity,
+    #[error("the requested KID does not exist")]
+    KeyNotFound,
+    #[error("the requested KID is external and has no managed private key")]
+    ExternalKeyOperation,
+    #[error("the identity document or local identity record is invalid")]
+    InvalidIdentity,
     #[error("the store generation changed")]
     Conflict,
     #[error("filesystem operation failed: {0}")]

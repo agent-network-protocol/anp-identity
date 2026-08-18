@@ -4,7 +4,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::fs_util::write_private_if_absent;
 use crate::store_lock::StoreWriteGuard;
@@ -23,10 +23,11 @@ impl RootKey {
         Self::from_bytes(bytes)
     }
 
-    pub(crate) fn from_bytes(bytes: [u8; ROOT_KEY_LEN]) -> Self {
-        Self {
-            bytes: Zeroizing::new(bytes),
-        }
+    pub(crate) fn from_bytes(mut bytes: [u8; ROOT_KEY_LEN]) -> Self {
+        let mut protected = Zeroizing::new([0_u8; ROOT_KEY_LEN]);
+        protected.copy_from_slice(&bytes);
+        bytes.zeroize();
+        Self { bytes: protected }
     }
 
     pub(crate) fn expose(&self) -> &[u8; ROOT_KEY_LEN] {
@@ -203,10 +204,17 @@ pub(crate) fn default_file_root_key_path(store_root: &Path) -> PathBuf {
 
 fn decode_root_key(encoded: &[u8]) -> DidResult<[u8; ROOT_KEY_LEN]> {
     let encoded = trim_ascii_whitespace(encoded);
-    let bytes = URL_SAFE_NO_PAD
-        .decode(encoded)
-        .map_err(|_| DidError::RootKeyMismatch)?;
-    bytes.try_into().map_err(|_| DidError::RootKeyMismatch)
+    let bytes = Zeroizing::new(
+        URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|_| DidError::RootKeyMismatch)?,
+    );
+    if bytes.len() != ROOT_KEY_LEN {
+        return Err(DidError::RootKeyMismatch);
+    }
+    let mut output = [0_u8; ROOT_KEY_LEN];
+    output.copy_from_slice(&bytes);
+    Ok(output)
 }
 
 fn trim_ascii_whitespace(mut value: &[u8]) -> &[u8] {
