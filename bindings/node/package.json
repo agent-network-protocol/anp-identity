@@ -1,8 +1,8 @@
 {
   "name": "@agent-network-protocol/anp-identity",
   "version": "0.1.0",
-  "description": "Node.js bindings for the ANP E1 DID identity module",
-  "license": "MIT",
+  "description": "Secure E1 DID identity custody and lifecycle management for ANP",
+  "license": "Apache-2.0",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
@@ -10,7 +10,8 @@
     "index.d.ts",
     "native.cjs",
     "*.node",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "napi build --platform --release && node scripts/wrap.mjs",

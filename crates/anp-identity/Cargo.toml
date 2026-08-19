@@ -5,7 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Stateful E1 DID identity and private-key boundary for ANP"
+description = "Secure E1 DID identity custody and lifecycle management for ANP"
+readme = "../../README.md"
 
 [dependencies]
 anp.workspace = true
