@@ -1,5 +1,5 @@
 use anp::authentication::find_verification_method;
-use anp_did::{Capabilities, DidCreateSpec, DidProfile, DidStore, KeyRole, ManagedKeySpec};
+use anp_identity::{Capabilities, DidCreateSpec, DidProfile, DidStore, KeyRole, ManagedKeySpec};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use hkdf::Hkdf;
@@ -26,7 +26,7 @@ fn main() {
     let alice_shared = alice.ecdh("#agreement", &bob_public).expect("Alice ECDH");
     let bob_shared = bob.ecdh("#agreement", &alice_public).expect("Bob ECDH");
 
-    let context = format!("anp-did:e2ee-example:v1:{}:{}", alice.did(), bob.did());
+    let context = format!("anp-identity:e2ee-example:v1:{}:{}", alice.did(), bob.did());
     let alice_session = derive_session_key(alice_shared.as_bytes(), context.as_bytes());
     let bob_session = derive_session_key(bob_shared.as_bytes(), context.as_bytes());
     assert_eq!(&*alice_session, &*bob_session);
@@ -54,7 +54,7 @@ fn derive_session_key(shared: &[u8; 32], context: &[u8]) -> Zeroizing<[u8; 32]> 
     output
 }
 
-fn agreement_public(identity: &anp_did::DidIdentity) -> [u8; 32] {
+fn agreement_public(identity: &anp_identity::DidIdentity) -> [u8; 32] {
     let kid = identity
         .key_metadata("#agreement")
         .expect("agreement metadata")

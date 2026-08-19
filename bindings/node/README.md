@@ -1,6 +1,6 @@
-# @agent-network-protocol/anp-did
+# @agent-network-protocol/anp-identity
 
-Node.js bindings for the E1-only `anp-did` Rust crate. All APIs that can touch
+Node.js bindings for the E1-only `anp-identity` Rust crate. All APIs that can touch
 the filesystem or OS keyring are asynchronous.
 
 Private DID keys are never returned by the JavaScript API. This is a logical

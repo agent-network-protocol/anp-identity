@@ -6,7 +6,7 @@ async function call(operation) {
   try {
     return await operation
   } catch (error) {
-    const match = /ANP_DID_CODE:([^:]+):(.*)$/s.exec(String(error.message))
+    const match = /ANP_IDENTITY_CODE:([^:]+):(.*)$/s.exec(String(error.message))
     if (match) {
       error.code = match[1]
       error.message = match[2]

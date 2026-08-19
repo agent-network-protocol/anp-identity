@@ -1,4 +1,4 @@
-# anp-did v1 boundary
+# anp-identity v1 boundary
 
 ## Security boundary
 

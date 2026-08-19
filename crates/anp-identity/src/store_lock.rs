@@ -15,7 +15,7 @@ pub(crate) struct StoreLock {
 impl StoreLock {
     pub(crate) fn new(store_root: impl Into<PathBuf>) -> Self {
         let store_root = store_root.into();
-        let lock_path = store_root.join(".anp-did.lock");
+        let lock_path = store_root.join(".anp-identity.lock");
         Self {
             store_root,
             lock_path,
@@ -60,7 +60,7 @@ mod tests {
 
     use super::*;
 
-    const CHILD_ROOT_ENV: &str = "ANP_DID_LOCK_TEST_ROOT";
+    const CHILD_ROOT_ENV: &str = "ANP_IDENTITY_LOCK_TEST_ROOT";
 
     #[test]
     fn store_lock_serializes_threads() {

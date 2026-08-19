@@ -1,12 +1,12 @@
 [workspace]
-members = ["bindings/node", "crates/anp-did"]
+members = ["bindings/node", "crates/anp-identity"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 rust-version = "1.88.0"
 license = "MIT"
-repository = "https://github.com/agent-network-protocol/anp-did"
+repository = "https://github.com/agent-network-protocol/anp-identity"
 
 [workspace.dependencies]
 anp = { path = "../anp/rust", version = "0.9.4", default-features = false }

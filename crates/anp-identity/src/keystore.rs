@@ -23,7 +23,7 @@ use crate::{DidError, DidResult, KeyRole};
 
 const RECORD_SCHEMA_VERSION: u32 = 1;
 const RECORD_NONCE_LEN: usize = 12;
-const RECORD_HKDF_SALT: &[u8] = b"anp-did:keystore:hkdf-salt:v1";
+const RECORD_HKDF_SALT: &[u8] = b"anp-identity:keystore:hkdf-salt:v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SecretRef {
@@ -242,7 +242,7 @@ fn derive_record_key(root_key: &RootKey, aad: &[u8]) -> DidResult<Zeroizing<[u8;
 
 fn aad_for_ref(schema_version: u32, secret_ref: &SecretRef) -> Vec<u8> {
     let mut aad = Vec::new();
-    push_field(&mut aad, "domain", "anp-did:keystore:v1");
+    push_field(&mut aad, "domain", "anp-identity:keystore:v1");
     push_field(&mut aad, "schema", &schema_version.to_string());
     push_field(&mut aad, "identity", &secret_ref.identity_id);
     push_field(&mut aad, "kid", &secret_ref.key_id);

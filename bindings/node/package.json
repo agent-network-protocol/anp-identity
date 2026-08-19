@@ -1,5 +1,5 @@
 {
-  "name": "@agent-network-protocol/anp-did",
+  "name": "@agent-network-protocol/anp-identity",
   "version": "0.1.0",
   "description": "Node.js bindings for the ANP E1 DID identity module",
   "license": "MIT",
@@ -19,7 +19,7 @@
     "test": "node scripts/wrap.mjs && node --test test/*.test.cjs && node scripts/check-dts.mjs"
   },
   "napi": {
-    "binaryName": "anp-did",
+    "binaryName": "anp-identity",
     "targets": [
       "x86_64-unknown-linux-gnu",
       "aarch64-unknown-linux-gnu",

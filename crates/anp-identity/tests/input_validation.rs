@@ -1,4 +1,4 @@
-use anp_did::{
+use anp_identity::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
     DidExtensionSpec, DidProfile, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyRole,
     ManagedKeySpec, PublicOkpJwk,
@@ -72,7 +72,7 @@ fn rejects_private_jwk_unknown_extension_and_oversized_input() {
     assert!(serde_json::from_str::<ExternalPublicKeySpec>(private_jwk).is_err());
 
     let unknown_extension = r#"{"type":"unknown","value":{}}"#;
-    assert!(serde_json::from_str::<anp_did::DidExtensionSpec>(unknown_extension).is_err());
+    assert!(serde_json::from_str::<anp_identity::DidExtensionSpec>(unknown_extension).is_err());
 
     let mut spec = valid_spec();
     spec.path_segments[0] = "x".repeat(129);

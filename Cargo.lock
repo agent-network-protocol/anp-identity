@@ -71,7 +71,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "anp-did"
+name = "anp-identity"
 version = "0.1.0"
 dependencies = [
  "anp",
@@ -96,10 +96,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "anp-did-node"
+name = "anp-identity-node"
 version = "0.1.0"
 dependencies = [
- "anp-did",
+ "anp-identity",
  "napi",
  "napi-build",
  "napi-derive",

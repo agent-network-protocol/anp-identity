@@ -70,13 +70,13 @@ function requireNative() {
   } else if (process.platform === 'android') {
     if (process.arch === 'arm64') {
       try {
-        return require('./anp-did.android-arm64.node')
+        return require('./anp-identity.android-arm64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-android-arm64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-android-arm64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-android-arm64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-android-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -86,13 +86,13 @@ function requireNative() {
       }
     } else if (process.arch === 'arm') {
       try {
-        return require('./anp-did.android-arm-eabi.node')
+        return require('./anp-identity.android-arm-eabi.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-android-arm-eabi')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-android-arm-eabi/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-android-arm-eabi')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-android-arm-eabi/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -107,13 +107,13 @@ function requireNative() {
     if (process.arch === 'x64') {
       if ((process.config && process.config.variables && process.config.variables.shlib_suffix === 'dll.a') || (process.config && process.config.variables && process.config.variables.node_target_type === 'shared_library')) {
         try {
-        return require('./anp-did.win32-x64-gnu.node')
+        return require('./anp-identity.win32-x64-gnu.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-win32-x64-gnu')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-win32-x64-gnu/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-win32-x64-gnu')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-win32-x64-gnu/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -123,13 +123,13 @@ function requireNative() {
       }
       } else {
         try {
-        return require('./anp-did.win32-x64-msvc.node')
+        return require('./anp-identity.win32-x64-msvc.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-win32-x64-msvc')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-win32-x64-msvc/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-win32-x64-msvc')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-win32-x64-msvc/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -140,13 +140,13 @@ function requireNative() {
       }
     } else if (process.arch === 'ia32') {
       try {
-        return require('./anp-did.win32-ia32-msvc.node')
+        return require('./anp-identity.win32-ia32-msvc.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-win32-ia32-msvc')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-win32-ia32-msvc/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-win32-ia32-msvc')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-win32-ia32-msvc/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -156,13 +156,13 @@ function requireNative() {
       }
     } else if (process.arch === 'arm64') {
       try {
-        return require('./anp-did.win32-arm64-msvc.node')
+        return require('./anp-identity.win32-arm64-msvc.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-win32-arm64-msvc')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-win32-arm64-msvc/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-win32-arm64-msvc')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-win32-arm64-msvc/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -175,13 +175,13 @@ function requireNative() {
     }
   } else if (process.platform === 'darwin') {
     try {
-      return require('./anp-did.darwin-universal.node')
+      return require('./anp-identity.darwin-universal.node')
     } catch (e) {
       loadErrors.push(e)
     }
     try {
-      const binding = require('@agent-network-protocol/anp-did-darwin-universal')
-      const bindingPackageVersion = require('@agent-network-protocol/anp-did-darwin-universal/package.json').version
+      const binding = require('@agent-network-protocol/anp-identity-darwin-universal')
+      const bindingPackageVersion = require('@agent-network-protocol/anp-identity-darwin-universal/package.json').version
       if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
         throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
@@ -191,13 +191,13 @@ function requireNative() {
     }
     if (process.arch === 'x64') {
       try {
-        return require('./anp-did.darwin-x64.node')
+        return require('./anp-identity.darwin-x64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-darwin-x64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-darwin-x64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-darwin-x64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-darwin-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -207,13 +207,13 @@ function requireNative() {
       }
     } else if (process.arch === 'arm64') {
       try {
-        return require('./anp-did.darwin-arm64.node')
+        return require('./anp-identity.darwin-arm64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-darwin-arm64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-darwin-arm64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-darwin-arm64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-darwin-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -227,13 +227,13 @@ function requireNative() {
   } else if (process.platform === 'freebsd') {
     if (process.arch === 'x64') {
       try {
-        return require('./anp-did.freebsd-x64.node')
+        return require('./anp-identity.freebsd-x64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-freebsd-x64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-freebsd-x64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-freebsd-x64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-freebsd-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -243,13 +243,13 @@ function requireNative() {
       }
     } else if (process.arch === 'arm64') {
       try {
-        return require('./anp-did.freebsd-arm64.node')
+        return require('./anp-identity.freebsd-arm64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-freebsd-arm64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-freebsd-arm64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-freebsd-arm64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-freebsd-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -264,13 +264,13 @@ function requireNative() {
     if (process.arch === 'x64') {
       if (isMusl()) {
         try {
-          return require('./anp-did.linux-x64-musl.node')
+          return require('./anp-identity.linux-x64-musl.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-x64-musl')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-x64-musl/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-x64-musl')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-x64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -280,13 +280,13 @@ function requireNative() {
         }
       } else {
         try {
-          return require('./anp-did.linux-x64-gnu.node')
+          return require('./anp-identity.linux-x64-gnu.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-x64-gnu')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-x64-gnu/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-x64-gnu')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-x64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -298,13 +298,13 @@ function requireNative() {
     } else if (process.arch === 'arm64') {
       if (isMusl()) {
         try {
-          return require('./anp-did.linux-arm64-musl.node')
+          return require('./anp-identity.linux-arm64-musl.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-arm64-musl')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-arm64-musl/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-arm64-musl')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-arm64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -314,13 +314,13 @@ function requireNative() {
         }
       } else {
         try {
-          return require('./anp-did.linux-arm64-gnu.node')
+          return require('./anp-identity.linux-arm64-gnu.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-arm64-gnu')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-arm64-gnu/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-arm64-gnu')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-arm64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -332,13 +332,13 @@ function requireNative() {
     } else if (process.arch === 'arm') {
       if (isMusl()) {
         try {
-          return require('./anp-did.linux-arm-musleabihf.node')
+          return require('./anp-identity.linux-arm-musleabihf.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-arm-musleabihf')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-arm-musleabihf/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-arm-musleabihf/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -348,13 +348,13 @@ function requireNative() {
         }
       } else {
         try {
-          return require('./anp-did.linux-arm-gnueabihf.node')
+          return require('./anp-identity.linux-arm-gnueabihf.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-arm-gnueabihf/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-arm-gnueabihf/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -366,13 +366,13 @@ function requireNative() {
     } else if (process.arch === 'loong64') {
       if (isMusl()) {
         try {
-          return require('./anp-did.linux-loong64-musl.node')
+          return require('./anp-identity.linux-loong64-musl.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-loong64-musl')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-loong64-musl/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-loong64-musl')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-loong64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -382,13 +382,13 @@ function requireNative() {
         }
       } else {
         try {
-          return require('./anp-did.linux-loong64-gnu.node')
+          return require('./anp-identity.linux-loong64-gnu.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-loong64-gnu')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-loong64-gnu/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-loong64-gnu')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-loong64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -400,13 +400,13 @@ function requireNative() {
     } else if (process.arch === 'riscv64') {
       if (isMusl()) {
         try {
-          return require('./anp-did.linux-riscv64-musl.node')
+          return require('./anp-identity.linux-riscv64-musl.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-riscv64-musl')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-riscv64-musl/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-riscv64-musl')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-riscv64-musl/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -416,13 +416,13 @@ function requireNative() {
         }
       } else {
         try {
-          return require('./anp-did.linux-riscv64-gnu.node')
+          return require('./anp-identity.linux-riscv64-gnu.node')
         } catch (e) {
           loadErrors.push(e)
         }
         try {
-          const binding = require('@agent-network-protocol/anp-did-linux-riscv64-gnu')
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-riscv64-gnu/package.json').version
+          const binding = require('@agent-network-protocol/anp-identity-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-riscv64-gnu/package.json').version
           if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -433,13 +433,13 @@ function requireNative() {
       }
     } else if (process.arch === 'ppc64') {
       try {
-        return require('./anp-did.linux-ppc64-gnu.node')
+        return require('./anp-identity.linux-ppc64-gnu.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-linux-ppc64-gnu')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-ppc64-gnu/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-ppc64-gnu/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -449,13 +449,13 @@ function requireNative() {
       }
     } else if (process.arch === 's390x') {
       try {
-        return require('./anp-did.linux-s390x-gnu.node')
+        return require('./anp-identity.linux-s390x-gnu.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-linux-s390x-gnu')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-linux-s390x-gnu/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-linux-s390x-gnu')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-linux-s390x-gnu/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -469,13 +469,13 @@ function requireNative() {
   } else if (process.platform === 'openharmony') {
     if (process.arch === 'arm64') {
       try {
-        return require('./anp-did.openharmony-arm64.node')
+        return require('./anp-identity.openharmony-arm64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-openharmony-arm64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-openharmony-arm64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-openharmony-arm64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-openharmony-arm64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -485,13 +485,13 @@ function requireNative() {
       }
     } else if (process.arch === 'x64') {
       try {
-        return require('./anp-did.openharmony-x64.node')
+        return require('./anp-identity.openharmony-x64.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-openharmony-x64')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-openharmony-x64/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-openharmony-x64')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-openharmony-x64/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -501,13 +501,13 @@ function requireNative() {
       }
     } else if (process.arch === 'arm') {
       try {
-        return require('./anp-did.openharmony-arm.node')
+        return require('./anp-identity.openharmony-arm.node')
       } catch (e) {
         loadErrors.push(e)
       }
       try {
-        const binding = require('@agent-network-protocol/anp-did-openharmony-arm')
-        const bindingPackageVersion = require('@agent-network-protocol/anp-did-openharmony-arm/package.json').version
+        const binding = require('@agent-network-protocol/anp-identity-openharmony-arm')
+        const bindingPackageVersion = require('@agent-network-protocol/anp-identity-openharmony-arm/package.json').version
         if (bindingPackageVersion !== '0.1.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -623,10 +623,10 @@ if (!nativeBinding || forceWasi) {
     let candidateError = null
     let candidateFailed = false
     try {
-      candidateError = __napiWasiResolveCandidate('./anp-did.wasi.cjs', false, ["./anp-did.wasm32-wasi.debug.wasm","./anp-did.wasm32-wasi.wasm"])
+      candidateError = __napiWasiResolveCandidate('./anp-identity.wasi.cjs', false, ["./anp-identity.wasm32-wasi.debug.wasm","./anp-identity.wasm32-wasi.wasm"])
       candidateFailed = candidateError !== null
       if (!candidateFailed) {
-        wasiBinding = require('./anp-did.wasi.cjs')
+        wasiBinding = require('./anp-identity.wasi.cjs')
         nativeBinding = wasiBinding
         wasiBindingLoaded = true
       }
@@ -643,16 +643,16 @@ if (!nativeBinding || forceWasi) {
     let candidateError = null
     let candidateFailed = false
     try {
-      candidateError = __napiWasiResolveCandidate('@agent-network-protocol/anp-did-wasm32-wasi', true, undefined)
+      candidateError = __napiWasiResolveCandidate('@agent-network-protocol/anp-identity-wasm32-wasi', true, undefined)
       candidateFailed = candidateError !== null
       if (!candidateFailed) {
         if (process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          const bindingPackageVersion = require('@agent-network-protocol/anp-did-wasm32-wasi/package.json').version
+          const bindingPackageVersion = require('@agent-network-protocol/anp-identity-wasm32-wasi/package.json').version
           if (bindingPackageVersion !== '0.1.0') {
             throw new Error(`WASI binding package version mismatch, expected 0.1.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
         }
-        wasiBinding = require('@agent-network-protocol/anp-did-wasm32-wasi')
+        wasiBinding = require('@agent-network-protocol/anp-identity-wasm32-wasi')
         nativeBinding = wasiBinding
         wasiBindingLoaded = true
       }

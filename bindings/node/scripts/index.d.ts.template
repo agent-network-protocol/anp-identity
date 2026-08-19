@@ -143,7 +143,7 @@ export interface Header {
   value: string
 }
 
-export interface AnpDidError extends Error {
+export interface AnpIdentityError extends Error {
   code: string
 }
 

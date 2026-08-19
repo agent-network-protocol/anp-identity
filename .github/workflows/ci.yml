@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: anp-did
+          path: anp-identity
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
@@ -26,20 +26,20 @@ jobs:
       - name: Install public API checker
         run: cargo install cargo-public-api --locked --version 0.52.0
       - name: Format
-        working-directory: anp-did
+        working-directory: anp-identity
         run: cargo fmt --all -- --check
       - name: Clippy
-        working-directory: anp-did
+        working-directory: anp-identity
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
-        working-directory: anp-did
+        working-directory: anp-identity
         run: cargo test --workspace --all-features
       - name: Public API baseline
-        working-directory: anp-did
+        working-directory: anp-identity
         run: ./scripts/check-public-api.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Node binding
-        working-directory: anp-did
+        working-directory: anp-identity
         run: npm --prefix bindings/node ci && npm --prefix bindings/node run build && npm --prefix bindings/node test

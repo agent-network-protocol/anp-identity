@@ -1,6 +1,6 @@
-# anp-did
+# anp-identity
 
-`anp-did` is the stateful E1 identity module for ANP. It builds and manages DID
+`anp-identity` is the stateful E1 identity module for ANP. It builds and manages DID
 documents, keeps managed private keys behind a logical Rust API/FFI boundary,
 and exposes KID-scoped cryptographic operations without private-key export.
 

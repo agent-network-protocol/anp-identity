@@ -199,7 +199,7 @@ impl RootKeyProvider for KeyringRootKeyProvider {
 
 pub(crate) fn root_key_fingerprint(root_key: &RootKey) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"anp-did:root-key-verifier:v1");
+    digest.update(b"anp-identity:root-key-verifier:v1");
     digest.update(root_key.expose());
     URL_SAFE_NO_PAD.encode(digest.finalize())
 }

@@ -11,7 +11,7 @@ const binding = require('..')
 const { DidStore } = binding
 
 test('Node binding runs the complete E1 store and peer crypto flow', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-did-node-'))
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-identity-node-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const rootKey = Buffer.alloc(32, 7)
   const store = await DidStore.initializeInjected(root, 'node-test', rootKey)
@@ -157,9 +157,9 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
 })
 
 test('reload makes store and identity handles reusable after a conflict', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-did-node-reload-'))
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-identity-node-reload-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  const envVar = `ANP_DID_NODE_ROOT_${process.pid}_${Date.now()}`
+  const envVar = `ANP_IDENTITY_NODE_ROOT_${process.pid}_${Date.now()}`
   process.env[envVar] = Buffer.alloc(32, 14).toString('base64url')
   t.after(() => delete process.env[envVar])
 

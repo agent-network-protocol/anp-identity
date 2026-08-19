@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use anp_did::{
+use anp_identity::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
     DidExtensionSpec, DidIdentity as CoreDidIdentity, DidProfile, DidStore as CoreDidStore,
     DocumentUpdateSpec, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyMetadata, KeyRole,
@@ -553,8 +553,8 @@ impl JsDidIdentity {
             identity
                 .reconcile_update(&revision_id, &observed_remote_document)
                 .map(|outcome| match outcome {
-                    anp_did::ReconcileOutcome::RemoteOld => "remote_old".to_string(),
-                    anp_did::ReconcileOutcome::Committed => "committed".to_string(),
+                    anp_identity::ReconcileOutcome::RemoteOld => "remote_old".to_string(),
+                    anp_identity::ReconcileOutcome::Committed => "committed".to_string(),
                 })
                 .map_err(map_error)
         })
@@ -702,7 +702,7 @@ fn key_role(value: &str) -> Result<KeyRole> {
     }
 }
 
-fn identity_summary(summary: anp_did::IdentitySummary) -> JsIdentitySummary {
+fn identity_summary(summary: anp_identity::IdentitySummary) -> JsIdentitySummary {
     JsIdentitySummary {
         identity_id: summary.identity_id,
         did: summary.did,
@@ -716,13 +716,13 @@ fn key_metadata(metadata: KeyMetadata) -> JsKeyMetadata {
         kid: metadata.kid,
         role: key_role_name(metadata.role),
         origin: match metadata.origin {
-            anp_did::KeyOrigin::Managed => "managed".to_string(),
-            anp_did::KeyOrigin::External => "external".to_string(),
+            anp_identity::KeyOrigin::Managed => "managed".to_string(),
+            anp_identity::KeyOrigin::External => "external".to_string(),
         },
         state: match metadata.state {
-            anp_did::KeyState::Active => "active".to_string(),
-            anp_did::KeyState::Retired => "retired".to_string(),
-            anp_did::KeyState::Revoked => "revoked".to_string(),
+            anp_identity::KeyState::Active => "active".to_string(),
+            anp_identity::KeyState::Retired => "retired".to_string(),
+            anp_identity::KeyState::Revoked => "revoked".to_string(),
         },
         material_erased: metadata.material_erased,
         version: metadata.version,
@@ -762,10 +762,10 @@ fn key_role_name(role: KeyRole) -> String {
     .to_string()
 }
 
-fn identity_state(state: anp_did::IdentityState) -> String {
+fn identity_state(state: anp_identity::IdentityState) -> String {
     match state {
-        anp_did::IdentityState::Creating => "creating",
-        anp_did::IdentityState::Active => "active",
+        anp_identity::IdentityState::Creating => "creating",
+        anp_identity::IdentityState::Active => "active",
     }
     .to_string()
 }
@@ -814,7 +814,7 @@ fn overflow_error() -> napi::Error {
 fn js_error(code: &str, message: &str) -> napi::Error {
     napi::Error::new(
         Status::GenericFailure,
-        format!("ANP_DID_CODE:{code}:{message}"),
+        format!("ANP_IDENTITY_CODE:{code}:{message}"),
     )
 }
 

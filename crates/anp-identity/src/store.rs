@@ -196,7 +196,7 @@ mod tests {
 
             for path in [
                 root.path().join("manifest.json"),
-                root.path().join(".anp-did.lock"),
+                root.path().join(".anp-identity.lock"),
                 default_file_root_key_path(root.path()),
             ] {
                 assert_eq!(
@@ -309,8 +309,10 @@ mod tests {
     fn real_keyring_backend_roundtrips_when_available() {
         let root = tempfile::tempdir().unwrap();
         let guard = StoreLock::new(root.path()).acquire_exclusive().unwrap();
-        let provider =
-            crate::platform::KeyringRootKeyProvider::new("anp-did-integration-test", "root-key");
+        let provider = crate::platform::KeyringRootKeyProvider::new(
+            "anp-identity-integration-test",
+            "root-key",
+        );
         let created = provider.create_if_missing(&guard).unwrap();
         let loaded = provider.load_existing().unwrap();
         assert_eq!(created.expose(), loaded.expose());
