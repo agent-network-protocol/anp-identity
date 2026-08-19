@@ -57,6 +57,70 @@ fn identity_creation_persists_multiple_isolated_e1_documents() {
 }
 
 #[test]
+fn identity_store_env_provider_manifest_and_reload_are_usable() {
+    let root = tempfile::tempdir().unwrap();
+    let env_var = format!("ANP_DID_TEST_ROOT_KEY_{}", std::process::id());
+    std::env::set_var(&env_var, URL_SAFE_NO_PAD.encode([12_u8; 32]));
+    let mut first = DidStore::initialize_env(root.path(), "host-env", &env_var).unwrap();
+    assert_eq!(
+        first.manifest().provider.kind,
+        crate::RootKeyProviderKind::Injected
+    );
+    let mut stale = DidStore::open_env(root.path(), "host-env", &env_var).unwrap();
+
+    first.create_identity(standard_spec("first")).unwrap();
+    assert_eq!(
+        stale.create_identity(standard_spec("stale")).err(),
+        Some(DidError::Conflict)
+    );
+    stale.reload().unwrap();
+    stale.create_identity(standard_spec("reloaded")).unwrap();
+    assert_eq!(stale.generation(), 2);
+    std::env::remove_var(&env_var);
+}
+
+#[test]
+fn identity_reload_recovers_a_stale_identity_handle() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "host", [13_u8; 32]).unwrap();
+    let mut current = store.create_identity(standard_spec("reload")).unwrap();
+    let mut stale = store.open_identity(current.did()).unwrap();
+
+    let prepared = current
+        .prepare_update(crate::DocumentUpdateSpec {
+            request_signing_rotation: crate::RequestSigningRotation {
+                old_kid: "#request".to_string(),
+                new_fragment: "request-v2".to_string(),
+            },
+            services: None,
+        })
+        .unwrap();
+    assert_eq!(
+        stale
+            .prepare_update(crate::DocumentUpdateSpec {
+                request_signing_rotation: crate::RequestSigningRotation {
+                    old_kid: "#request".to_string(),
+                    new_fragment: "stale-request".to_string(),
+                },
+                services: None,
+            })
+            .err(),
+        Some(DidError::Conflict)
+    );
+    current.abort_update(&prepared.revision_id).unwrap();
+    stale.reload().unwrap();
+    assert!(stale
+        .prepare_update(crate::DocumentUpdateSpec {
+            request_signing_rotation: crate::RequestSigningRotation {
+                old_kid: "#request".to_string(),
+                new_fragment: "reloaded-request".to_string(),
+            },
+            services: None,
+        })
+        .is_ok());
+}
+
+#[test]
 fn identity_creation_supports_one_four_n_and_external_public_keys() {
     let root = tempfile::tempdir().unwrap();
     let mut store = DidStore::initialize_injected(root.path(), "host", [8_u8; 32]).unwrap();
@@ -246,8 +310,8 @@ fn identity_process_create_child() {
     let result = match first {
         Ok(_) => "ok",
         Err(DidError::Conflict) => {
-            let mut reopened = DidStore::open_injected(&root, "host", [11_u8; 32]).unwrap();
-            reopened
+            store.reload().unwrap();
+            store
                 .create_identity(standard_spec(&format!("process-{label}-retry")))
                 .unwrap();
             "retried"

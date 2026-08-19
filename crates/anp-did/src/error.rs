@@ -4,8 +4,6 @@ pub type DidResult<T> = Result<T, DidError>;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DidError {
-    #[error("only the E1 DID profile is supported")]
-    UnsupportedProfile,
     #[error("the DID domain is invalid")]
     InvalidDomain,
     #[error("at least one non-empty DID path segment is required")]
@@ -30,6 +28,8 @@ pub enum DidError {
     InvalidService,
     #[error("the extension definition is invalid")]
     InvalidExtension,
+    #[error("the DID store is not initialized")]
+    StoreNotFound,
     #[error("the root-key provider is unavailable")]
     ProviderUnavailable,
     #[error("the root key does not match this store")]
@@ -50,6 +50,8 @@ pub enum DidError {
     KeyRoleViolation,
     #[error("the key state does not authorize this operation")]
     KeyNotUsable,
+    #[error("the managed key material was already erased")]
+    KeyMaterialErased,
     #[error("the peer public key is invalid")]
     InvalidPeerKey,
     #[error("signature verification failed")]

@@ -5,7 +5,8 @@ use anp_did::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
     DidExtensionSpec, DidIdentity as CoreDidIdentity, DidProfile, DidStore as CoreDidStore,
     DocumentUpdateSpec, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyMetadata, KeyRole,
-    ManagedKeySpec, PublicOkpJwk, PublicationState, RequestSigningRotation, ServiceSpec,
+    ManagedKeySpec, PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind,
+    ServiceSpec, StoreManifest,
 };
 use napi::bindgen_prelude::Buffer;
 use napi::Status;
@@ -98,9 +99,28 @@ pub struct JsKeyMetadata {
     pub role: String,
     pub origin: String,
     pub state: String,
+    pub material_erased: bool,
     pub version: u32,
     pub public_key_multibase: String,
     pub created_at: String,
+}
+
+#[napi(object)]
+pub struct JsRootKeyProviderBinding {
+    pub kind: String,
+    pub key_id: String,
+    pub account: Option<String>,
+}
+
+#[napi(object)]
+pub struct JsStoreManifest {
+    pub schema_version: u32,
+    pub store_id: String,
+    pub generation: i64,
+    pub provider: JsRootKeyProviderBinding,
+    pub root_key_fingerprint: String,
+    pub created_at: String,
+    pub rekey_generation: i64,
 }
 
 #[napi(object)]
@@ -164,8 +184,10 @@ impl JsDidStore {
         root_key: Buffer,
     ) -> Result<Self> {
         let root_key = consume_root_key(root_key)?;
-        let store =
-            CoreDidStore::initialize_injected(root, key_id, *root_key).map_err(map_error)?;
+        let store = run_blocking(move || {
+            CoreDidStore::initialize_injected(root, key_id, *root_key).map_err(map_error)
+        })
+        .await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -174,7 +196,31 @@ impl JsDidStore {
     #[napi(factory)]
     pub async fn open_injected(root: String, key_id: String, root_key: Buffer) -> Result<Self> {
         let root_key = consume_root_key(root_key)?;
-        let store = CoreDidStore::open_injected(root, key_id, *root_key).map_err(map_error)?;
+        let store = run_blocking(move || {
+            CoreDidStore::open_injected(root, key_id, *root_key).map_err(map_error)
+        })
+        .await?;
+        Ok(Self {
+            inner: Arc::new(Mutex::new(store)),
+        })
+    }
+
+    #[napi(factory)]
+    pub async fn initialize_env(root: String, key_id: String, env_var: String) -> Result<Self> {
+        let store = run_blocking(move || {
+            CoreDidStore::initialize_env(root, key_id, &env_var).map_err(map_error)
+        })
+        .await?;
+        Ok(Self {
+            inner: Arc::new(Mutex::new(store)),
+        })
+    }
+
+    #[napi(factory)]
+    pub async fn open_env(root: String, key_id: String, env_var: String) -> Result<Self> {
+        let store =
+            run_blocking(move || CoreDidStore::open_env(root, key_id, &env_var).map_err(map_error))
+                .await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -182,7 +228,9 @@ impl JsDidStore {
 
     #[napi(factory)]
     pub async fn initialize_local_file(root: String) -> Result<Self> {
-        let store = CoreDidStore::initialize_local_file(root).map_err(map_error)?;
+        let store =
+            run_blocking(move || CoreDidStore::initialize_local_file(root).map_err(map_error))
+                .await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -190,7 +238,8 @@ impl JsDidStore {
 
     #[napi(factory)]
     pub async fn open_local_file(root: String) -> Result<Self> {
-        let store = CoreDidStore::open_local_file(root).map_err(map_error)?;
+        let store =
+            run_blocking(move || CoreDidStore::open_local_file(root).map_err(map_error)).await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -203,9 +252,11 @@ impl JsDidStore {
         account: String,
         fallback_to_local_file: bool,
     ) -> Result<Self> {
-        let store =
+        let store = run_blocking(move || {
             CoreDidStore::initialize_keyring(root, service, account, fallback_to_local_file)
-                .map_err(map_error)?;
+                .map_err(map_error)
+        })
+        .await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -213,7 +264,10 @@ impl JsDidStore {
 
     #[napi(factory)]
     pub async fn open_keyring(root: String, service: String, account: String) -> Result<Self> {
-        let store = CoreDidStore::open_keyring(root, service, account).map_err(map_error)?;
+        let store = run_blocking(move || {
+            CoreDidStore::open_keyring(root, service, account).map_err(map_error)
+        })
+        .await?;
         Ok(Self {
             inner: Arc::new(Mutex::new(store)),
         })
@@ -225,36 +279,53 @@ impl JsDidStore {
     }
 
     #[napi]
-    pub async fn list_identities(&self) -> Result<Vec<JsIdentitySummary>> {
-        self.inner
-            .lock()
+    pub async fn manifest(&self) -> Result<JsStoreManifest> {
+        store_manifest(self.inner.lock().await.manifest())
+    }
+
+    #[napi]
+    pub async fn reload(&self) -> Result<()> {
+        self.with_store(|store| store.reload().map_err(map_error))
             .await
-            .list_identities()
-            .map(|values| values.into_iter().map(identity_summary).collect())
-            .map_err(map_error)
+    }
+
+    #[napi]
+    pub async fn list_identities(&self) -> Result<Vec<JsIdentitySummary>> {
+        self.with_store(|store| {
+            store
+                .list_identities()
+                .map(|values| values.into_iter().map(identity_summary).collect())
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn create_identity(&self, spec: JsDidCreateSpec) -> Result<JsDidIdentity> {
         let spec = did_create_spec(spec)?;
         let identity = self
-            .inner
-            .lock()
-            .await
-            .create_identity(spec)
-            .map_err(map_error)?;
+            .with_store(move |store| store.create_identity(spec).map_err(map_error))
+            .await?;
         Ok(JsDidIdentity::new(identity))
     }
 
     #[napi]
     pub async fn open_identity(&self, did: String) -> Result<JsDidIdentity> {
         let identity = self
-            .inner
-            .lock()
-            .await
-            .open_identity(&did)
-            .map_err(map_error)?;
+            .with_store(move |store| store.open_identity(&did).map_err(map_error))
+            .await?;
         Ok(JsDidIdentity::new(identity))
+    }
+}
+
+impl JsDidStore {
+    async fn with_store<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreDidStore) -> Result<T> + Send + 'static,
+    {
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || operation(&mut inner.blocking_lock())).await
     }
 }
 
@@ -269,10 +340,25 @@ impl JsDidIdentity {
             inner: Arc::new(Mutex::new(identity)),
         }
     }
+
+    async fn with_identity<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreDidIdentity) -> Result<T> + Send + 'static,
+    {
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || operation(&mut inner.blocking_lock())).await
+    }
 }
 
 #[napi]
 impl JsDidIdentity {
+    #[napi]
+    pub async fn reload(&self) -> Result<()> {
+        self.with_identity(|identity| identity.reload().map_err(map_error))
+            .await
+    }
+
     #[napi]
     pub async fn snapshot(&self) -> Result<JsIdentitySnapshot> {
         let identity = self.inner.lock().await;
@@ -311,31 +397,40 @@ impl JsDidIdentity {
 
     #[napi]
     pub async fn sign(&self, kid: String, message: Buffer) -> Result<Buffer> {
-        self.inner
-            .lock()
-            .await
-            .sign(&kid, &message)
-            .map(Buffer::from)
-            .map_err(map_error)
+        let message = message.to_vec();
+        self.with_identity(move |identity| {
+            identity
+                .sign(&kid, &message)
+                .map(Buffer::from)
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn verify(&self, kid: String, message: Buffer, signature: Buffer) -> Result<bool> {
-        match self.inner.lock().await.verify(&kid, &message, &signature) {
-            Ok(()) => Ok(true),
-            Err(DidError::VerificationFailed) => Ok(false),
-            Err(error) => Err(map_error(error)),
-        }
+        let message = message.to_vec();
+        let signature = signature.to_vec();
+        self.with_identity(
+            move |identity| match identity.verify(&kid, &message, &signature) {
+                Ok(()) => Ok(true),
+                Err(DidError::VerificationFailed) => Ok(false),
+                Err(error) => Err(map_error(error)),
+            },
+        )
+        .await
     }
 
     #[napi]
     pub async fn ecdh(&self, kid: String, peer_public: Buffer) -> Result<Buffer> {
-        self.inner
-            .lock()
-            .await
-            .ecdh(&kid, &peer_public)
-            .map(|secret| Buffer::from(secret.as_bytes().to_vec()))
-            .map_err(map_error)
+        let peer_public = peer_public.to_vec();
+        self.with_identity(move |identity| {
+            identity
+                .ecdh(&kid, &peer_public)
+                .map(|secret| Buffer::from(secret.as_bytes().to_vec()))
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
@@ -355,11 +450,12 @@ impl JsDidIdentity {
         service_domain: String,
         version: String,
     ) -> Result<String> {
-        self.inner
-            .lock()
-            .await
-            .legacy_did_wba_header(&kid, &service_domain, &version)
-            .map_err(map_error)
+        self.with_identity(move |identity| {
+            identity
+                .legacy_did_wba_header(&kid, &service_domain, &version)
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
@@ -377,33 +473,33 @@ impl JsDidIdentity {
                 .map(|header| (header.name, header.value))
                 .collect::<BTreeMap<_, _>>()
         });
-        self.inner
-            .lock()
-            .await
-            .http_signature_headers(
-                &kid,
-                &request_url,
-                &request_method,
-                headers.as_ref(),
-                body.as_deref(),
-            )
-            .map(|headers| {
-                headers
-                    .into_iter()
-                    .map(|(name, value)| JsHeader { name, value })
-                    .collect()
-            })
-            .map_err(map_error)
+        let body = body.map(|body| body.to_vec());
+        self.with_identity(move |identity| {
+            identity
+                .http_signature_headers(
+                    &kid,
+                    &request_url,
+                    &request_method,
+                    headers.as_ref(),
+                    body.as_deref(),
+                )
+                .map(|headers| {
+                    headers
+                        .into_iter()
+                        .map(|(name, value)| JsHeader { name, value })
+                        .collect()
+                })
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn prepare_update(&self, spec: JsDocumentUpdateSpec) -> Result<JsPreparedUpdate> {
+        let spec = document_update_spec(spec);
         let prepared = self
-            .inner
-            .lock()
-            .await
-            .prepare_update(document_update_spec(spec))
-            .map_err(map_error)?;
+            .with_identity(move |identity| identity.prepare_update(spec).map_err(map_error))
+            .await?;
         Ok(JsPreparedUpdate {
             revision_id: prepared.revision_id,
             candidate_document: prepared.candidate_document,
@@ -413,47 +509,38 @@ impl JsDidIdentity {
 
     #[napi]
     pub async fn begin_publication(&self, revision_id: String) -> Result<()> {
-        self.inner
-            .lock()
-            .await
-            .begin_publication(&revision_id)
-            .map_err(map_error)
+        self.with_identity(move |identity| {
+            identity.begin_publication(&revision_id).map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn mark_publication_uncertain(&self, revision_id: String) -> Result<()> {
-        self.inner
-            .lock()
-            .await
-            .mark_publication_uncertain(&revision_id)
-            .map_err(map_error)
+        self.with_identity(move |identity| {
+            identity
+                .mark_publication_uncertain(&revision_id)
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn mark_published(&self, revision_id: String) -> Result<()> {
-        self.inner
-            .lock()
+        self.with_identity(move |identity| identity.mark_published(&revision_id).map_err(map_error))
             .await
-            .mark_published(&revision_id)
-            .map_err(map_error)
     }
 
     #[napi]
     pub async fn commit_update(&self, revision_id: String) -> Result<()> {
-        self.inner
-            .lock()
+        self.with_identity(move |identity| identity.commit_update(&revision_id).map_err(map_error))
             .await
-            .commit_update(&revision_id)
-            .map_err(map_error)
     }
 
     #[napi]
     pub async fn abort_update(&self, revision_id: String) -> Result<()> {
-        self.inner
-            .lock()
+        self.with_identity(move |identity| identity.abort_update(&revision_id).map_err(map_error))
             .await
-            .abort_update(&revision_id)
-            .map_err(map_error)
     }
 
     #[napi]
@@ -462,33 +549,28 @@ impl JsDidIdentity {
         revision_id: String,
         observed_remote_document: Value,
     ) -> Result<String> {
-        self.inner
-            .lock()
-            .await
-            .reconcile_update(&revision_id, &observed_remote_document)
-            .map(|outcome| match outcome {
-                anp_did::ReconcileOutcome::RemoteOld => "remote_old".to_string(),
-                anp_did::ReconcileOutcome::Committed => "committed".to_string(),
-            })
-            .map_err(map_error)
+        self.with_identity(move |identity| {
+            identity
+                .reconcile_update(&revision_id, &observed_remote_document)
+                .map(|outcome| match outcome {
+                    anp_did::ReconcileOutcome::RemoteOld => "remote_old".to_string(),
+                    anp_did::ReconcileOutcome::Committed => "committed".to_string(),
+                })
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
     pub async fn end_retirement(&self, kid: String) -> Result<()> {
-        self.inner
-            .lock()
+        self.with_identity(move |identity| identity.end_retirement(&kid).map_err(map_error))
             .await
-            .end_retirement(&kid)
-            .map_err(map_error)
     }
 
     #[napi]
     pub async fn delete_revoked_key(&self, kid: String) -> Result<()> {
-        self.inner
-            .lock()
+        self.with_identity(move |identity| identity.delete_revoked_key(&kid).map_err(map_error))
             .await
-            .delete_revoked_key(&kid)
-            .map_err(map_error)
     }
 }
 
@@ -642,10 +724,32 @@ fn key_metadata(metadata: KeyMetadata) -> JsKeyMetadata {
             anp_did::KeyState::Retired => "retired".to_string(),
             anp_did::KeyState::Revoked => "revoked".to_string(),
         },
+        material_erased: metadata.material_erased,
         version: metadata.version,
         public_key_multibase: metadata.public_key_multibase,
         created_at: metadata.created_at,
     }
+}
+
+fn store_manifest(manifest: &StoreManifest) -> Result<JsStoreManifest> {
+    Ok(JsStoreManifest {
+        schema_version: manifest.schema_version,
+        store_id: manifest.store_id.clone(),
+        generation: i64::try_from(manifest.generation).map_err(|_| overflow_error())?,
+        provider: JsRootKeyProviderBinding {
+            kind: match manifest.provider.kind {
+                RootKeyProviderKind::OsKeyring => "os_keyring",
+                RootKeyProviderKind::Injected => "injected",
+                RootKeyProviderKind::LocalPrivateFile => "local_private_file",
+            }
+            .to_string(),
+            key_id: manifest.provider.key_id.clone(),
+            account: manifest.provider.account.clone(),
+        },
+        root_key_fingerprint: manifest.root_key_fingerprint.clone(),
+        created_at: manifest.created_at.clone(),
+        rekey_generation: i64::try_from(manifest.rekey_generation).map_err(|_| overflow_error())?,
+    })
 }
 
 fn key_role_name(role: KeyRole) -> String {
@@ -690,6 +794,16 @@ fn consume_root_key(mut buffer: Buffer) -> Result<Zeroizing<[u8; 32]>> {
     Ok(output)
 }
 
+async fn run_blocking<T, F>(operation: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|_| js_error("internal", "blocking operation failed"))?
+}
+
 fn overflow_error() -> napi::Error {
     js_error(
         "integer_overflow",
@@ -706,7 +820,6 @@ fn js_error(code: &str, message: &str) -> napi::Error {
 
 fn map_error(error: DidError) -> napi::Error {
     let code = match &error {
-        DidError::UnsupportedProfile => "unsupported_profile",
         DidError::InvalidDomain => "invalid_domain",
         DidError::EmptyPath => "empty_path",
         DidError::InvalidPathSegment => "invalid_path_segment",
@@ -719,6 +832,7 @@ fn map_error(error: DidError) -> napi::Error {
         DidError::InvalidPublicKey => "invalid_public_key",
         DidError::InvalidService => "invalid_service",
         DidError::InvalidExtension => "invalid_extension",
+        DidError::StoreNotFound => "store_not_found",
         DidError::ProviderUnavailable => "provider_unavailable",
         DidError::RootKeyMismatch => "root_key_mismatch",
         DidError::CorruptRecord => "corrupt_record",
@@ -729,6 +843,7 @@ fn map_error(error: DidError) -> napi::Error {
         DidError::ExternalKeyOperation => "external_key_operation",
         DidError::KeyRoleViolation => "key_role_violation",
         DidError::KeyNotUsable => "key_not_usable",
+        DidError::KeyMaterialErased => "key_material_erased",
         DidError::InvalidPeerKey => "invalid_peer_key",
         DidError::VerificationFailed => "verification_failed",
         DidError::PendingRevisionExists => "pending_revision_exists",

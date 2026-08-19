@@ -17,6 +17,7 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
   const store = await DidStore.initializeInjected(root, 'node-test', rootKey)
   assert.ok(rootKey.every((byte) => byte === 0), 'native boundary must overwrite the input Buffer')
   assert.deepEqual(Object.keys(store), [], 'the native store handle must remain private')
+  assert.equal((await store.manifest()).provider.kind, 'injected')
 
   const invalidRootKey = Buffer.alloc(31, 9)
   await assert.rejects(
@@ -24,6 +25,13 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
     (error) => error.code === 'invalid_root_key',
   )
   assert.ok(invalidRootKey.every((byte) => byte === 0))
+
+  const missingKey = Buffer.alloc(32, 7)
+  await assert.rejects(
+    DidStore.openInjected(path.join(root, 'missing'), 'node-test', missingKey),
+    (error) => error.code === 'store_not_found',
+  )
+  assert.ok(missingKey.every((byte) => byte === 0))
 
   const alice = await store.createIdentity(identitySpec('alice'))
   const bob = await store.createIdentity(identitySpec('bob'))
@@ -85,6 +93,16 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
     'committed',
   )
   assert.equal((await alice.snapshot()).revision, 3)
+  await alice.endRetirement('#request')
+  await alice.deleteRevokedKey('#request')
+  assert.equal(
+    (await alice.snapshot()).keys.find((key) => key.kid.endsWith('#request')).materialErased,
+    true,
+  )
+  await assert.rejects(
+    alice.deleteRevokedKey('#request'),
+    (error) => error.code === 'key_material_erased',
+  )
 
   const reopenKey = Buffer.alloc(32, 7)
   const reopened = await DidStore.openInjected(root, 'node-test', reopenKey)
@@ -136,6 +154,42 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
   assert.deepEqual(Object.keys(binding).sort(), ['DidIdentity', 'DidStore'])
   const serialized = JSON.stringify(rotated)
   assert.doesNotMatch(serialized, /private[_A-Z]?key|BEGIN PRIVATE KEY/i)
+})
+
+test('reload makes store and identity handles reusable after a conflict', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-did-node-reload-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const envVar = `ANP_DID_NODE_ROOT_${process.pid}_${Date.now()}`
+  process.env[envVar] = Buffer.alloc(32, 14).toString('base64url')
+  t.after(() => delete process.env[envVar])
+
+  const first = await DidStore.initializeEnv(root, 'node-env', envVar)
+  const staleStore = await DidStore.openEnv(root, 'node-env', envVar)
+  const current = await first.createIdentity(identitySpec('reload-current'))
+  await assert.rejects(
+    staleStore.createIdentity(identitySpec('reload-conflict')),
+    (error) => error.code === 'conflict',
+  )
+  await staleStore.reload()
+  await staleStore.createIdentity(identitySpec('reload-success'))
+  assert.equal((await staleStore.listIdentities()).length, 2)
+
+  const staleIdentity = await staleStore.openIdentity((await current.snapshot()).did)
+  const prepared = await current.prepareUpdate({
+    requestSigningRotation: { oldKid: '#request', newFragment: 'request-v2' },
+  })
+  await assert.rejects(
+    staleIdentity.prepareUpdate({
+      requestSigningRotation: { oldKid: '#request', newFragment: 'stale-request' },
+    }),
+    (error) => error.code === 'conflict',
+  )
+  await current.abortUpdate(prepared.revisionId)
+  await staleIdentity.reload()
+  const retried = await staleIdentity.prepareUpdate({
+    requestSigningRotation: { oldKid: '#request', newFragment: 'reloaded-request' },
+  })
+  await staleIdentity.abortUpdate(retried.revisionId)
 })
 
 function identitySpec(name) {

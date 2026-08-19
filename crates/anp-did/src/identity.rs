@@ -80,6 +80,26 @@ impl DidStore {
         Self::from_runtime(runtime)
     }
 
+    pub fn initialize_env(
+        root: impl Into<PathBuf>,
+        key_id: impl Into<String>,
+        env_var: &str,
+    ) -> DidResult<Self> {
+        let provider = InjectedRootKeyProvider::from_env(key_id, env_var)?;
+        let runtime = StoreRuntime::initialize(root, ProviderInitialization::Required(&provider))?;
+        Self::from_runtime(runtime)
+    }
+
+    pub fn open_env(
+        root: impl Into<PathBuf>,
+        key_id: impl Into<String>,
+        env_var: &str,
+    ) -> DidResult<Self> {
+        let provider = InjectedRootKeyProvider::from_env(key_id, env_var)?;
+        let runtime = StoreRuntime::open(root, &[&provider])?;
+        Self::from_runtime(runtime)
+    }
+
     pub fn initialize_local_file(root: impl Into<PathBuf>) -> DidResult<Self> {
         let root = root.into();
         let provider =
@@ -133,6 +153,15 @@ impl DidStore {
 
     pub fn generation(&self) -> u64 {
         self.registry_generation
+    }
+
+    pub fn manifest(&self) -> &crate::StoreManifest {
+        self.runtime.manifest()
+    }
+
+    pub fn reload(&mut self) -> DidResult<()> {
+        self.registry_generation = recover(&self.runtime)?.generation;
+        Ok(())
     }
 
     pub fn list_identities(&self) -> DidResult<Vec<IdentitySummary>> {
@@ -267,6 +296,25 @@ impl DidStore {
 }
 
 impl DidIdentity {
+    pub fn reload(&mut self) -> DidResult<()> {
+        let identity_id = self.identity_id().to_string();
+        let did = self.did().to_string();
+        let registry = recover(&self.runtime)?;
+        if registry
+            .identities
+            .get(&did)
+            .is_none_or(|summary| summary.identity_id != identity_id)
+        {
+            return Err(DidError::IdentityNotFound);
+        }
+        let record = read_identity(self.runtime.root(), &identity_id)?;
+        if record.did != did || record.state != IdentityState::Active {
+            return Err(DidError::InvalidIdentity);
+        }
+        self.record = record;
+        Ok(())
+    }
+
     pub fn identity_id(&self) -> &str {
         &self.record.identity_id
     }
@@ -325,7 +373,6 @@ impl DidIdentity {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn runtime(&self) -> &Arc<StoreRuntime> {
         &self.runtime
     }

@@ -116,32 +116,12 @@ impl StoreRuntime {
     pub(crate) fn key_store(&self) -> &FileKeyStore {
         &self.key_store
     }
-
-    pub(crate) fn compare_and_swap_manifest(
-        &mut self,
-        guard: &StoreWriteGuard,
-        expected_generation: u64,
-        update: impl FnOnce(&mut StoreManifest),
-    ) -> DidResult<()> {
-        let mut current = read_manifest(&self.root)?;
-        if current.generation != expected_generation {
-            return Err(DidError::Conflict);
-        }
-        update(&mut current);
-        current.generation = current
-            .generation
-            .checked_add(1)
-            .ok_or(DidError::Conflict)?;
-        write_manifest(&self.root, guard, &current)?;
-        self.manifest = current;
-        Ok(())
-    }
 }
 
 fn read_manifest(root: &Path) -> DidResult<StoreManifest> {
     let bytes = std::fs::read(manifest_path(root)).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
-            DidError::ProviderUnavailable
+            DidError::StoreNotFound
         } else {
             DidError::Io(error.to_string())
         }
@@ -175,18 +155,12 @@ fn random_store_id() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Child, Command};
-    use std::time::Duration;
-
     use super::*;
     use crate::platform::{
         default_file_root_key_path, FileRootKeyProvider, InjectedRootKeyProvider,
         MemoryRootKeyProvider, UnavailableRootKeyProvider,
     };
     use crate::RootKeyProviderKind;
-
-    const PROCESS_ROOT_ENV: &str = "ANP_DID_STORE_PROCESS_ROOT";
-    const PROCESS_LABEL_ENV: &str = "ANP_DID_STORE_PROCESS_LABEL";
 
     #[test]
     fn provider_initialization_falls_back_only_for_a_new_store() {
@@ -309,6 +283,16 @@ mod tests {
     }
 
     #[test]
+    fn missing_store_is_distinct_from_an_unavailable_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let injected = InjectedRootKeyProvider::new("host", [7_u8; 32]);
+        assert_eq!(
+            StoreRuntime::open(root.path(), &[&injected]).err(),
+            Some(DidError::StoreNotFound)
+        );
+    }
+
+    #[test]
     fn provider_pin_distinguishes_wrong_root_key_from_corrupt_record() {
         let root = tempfile::tempdir().unwrap();
         let provider = InjectedRootKeyProvider::new("host", [7_u8; 32]);
@@ -321,80 +305,6 @@ mod tests {
     }
 
     #[test]
-    fn manifest_generation_compare_and_swap_rejects_stale_writers() {
-        let root = tempfile::tempdir().unwrap();
-        let provider = InjectedRootKeyProvider::new("host", [7_u8; 32]);
-        let mut first =
-            StoreRuntime::initialize(root.path(), ProviderInitialization::Required(&provider))
-                .unwrap();
-        let mut stale = StoreRuntime::open(root.path(), &[&provider]).unwrap();
-        let guard = first.acquire_write().unwrap();
-        first
-            .compare_and_swap_manifest(&guard, 1, |manifest| {
-                manifest.rekey_generation = 0;
-            })
-            .unwrap();
-        drop(guard);
-        let stale_guard = stale.acquire_write().unwrap();
-        assert_eq!(
-            stale.compare_and_swap_manifest(&stale_guard, 1, |_| {}),
-            Err(DidError::Conflict)
-        );
-    }
-
-    #[test]
-    fn store_lock_manifest_generation_compare_and_swap_is_process_safe() {
-        let root = tempfile::tempdir().unwrap();
-        let provider = InjectedRootKeyProvider::new("host", [7_u8; 32]);
-        StoreRuntime::initialize(root.path(), ProviderInitialization::Required(&provider)).unwrap();
-        let mut children = [
-            spawn_store_process(root.path(), "a"),
-            spawn_store_process(root.path(), "b"),
-        ];
-        wait_for_path(&root.path().join("ready-a"));
-        wait_for_path(&root.path().join("ready-b"));
-        std::fs::write(root.path().join("go"), b"go").unwrap();
-        for child in &mut children {
-            assert!(child.wait().unwrap().success());
-        }
-        let mut results = [
-            std::fs::read_to_string(root.path().join("result-a")).unwrap(),
-            std::fs::read_to_string(root.path().join("result-b")).unwrap(),
-        ];
-        results.sort();
-        assert_eq!(results, ["conflict", "ok"]);
-        assert_eq!(
-            StoreRuntime::open(root.path(), &[&provider])
-                .unwrap()
-                .manifest()
-                .generation,
-            2
-        );
-    }
-
-    #[test]
-    #[ignore]
-    fn store_lock_process_cas_child() {
-        let Some(root) = std::env::var_os(PROCESS_ROOT_ENV) else {
-            return;
-        };
-        let root = PathBuf::from(root);
-        let label = std::env::var(PROCESS_LABEL_ENV).unwrap();
-        let provider = InjectedRootKeyProvider::new("host", [7_u8; 32]);
-        let mut runtime = StoreRuntime::open(&root, &[&provider]).unwrap();
-        std::fs::write(root.join(format!("ready-{label}")), b"ready").unwrap();
-        wait_for_path(&root.join("go"));
-        let expected = runtime.manifest().generation;
-        let guard = runtime.acquire_write().unwrap();
-        let result = match runtime.compare_and_swap_manifest(&guard, expected, |_| {}) {
-            Ok(()) => "ok",
-            Err(DidError::Conflict) => "conflict",
-            Err(error) => panic!("unexpected CAS result: {error}"),
-        };
-        std::fs::write(root.join(format!("result-{label}")), result).unwrap();
-    }
-
-    #[test]
     #[ignore = "requires a real desktop keyring or Secret Service"]
     fn real_keyring_backend_roundtrips_when_available() {
         let root = tempfile::tempdir().unwrap();
@@ -404,29 +314,5 @@ mod tests {
         let created = provider.create_if_missing(&guard).unwrap();
         let loaded = provider.load_existing().unwrap();
         assert_eq!(created.expose(), loaded.expose());
-    }
-
-    fn spawn_store_process(root: &Path, label: &str) -> Child {
-        Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--ignored",
-                "--exact",
-                "store::tests::store_lock_process_cas_child",
-                "--nocapture",
-            ])
-            .env(PROCESS_ROOT_ENV, root)
-            .env(PROCESS_LABEL_ENV, label)
-            .spawn()
-            .unwrap()
-    }
-
-    fn wait_for_path(path: &Path) {
-        for _ in 0..200 {
-            if path.exists() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        panic!("timed out waiting for {}", path.display());
     }
 }

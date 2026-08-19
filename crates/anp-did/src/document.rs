@@ -371,6 +371,7 @@ pub(crate) fn key_metadata(
         role,
         origin,
         state: KeyState::Active,
+        material_erased: false,
         version: 1,
         public_key_multibase: multibase.to_string(),
         created_at: created_at.to_string(),

@@ -2,12 +2,10 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-#[allow(dead_code)]
 pub(crate) struct SecretBytes {
     bytes: Zeroizing<Vec<u8>>,
 }
 
-#[allow(dead_code)]
 impl SecretBytes {
     pub(crate) fn new(bytes: Vec<u8>) -> Self {
         Self {

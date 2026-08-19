@@ -9,7 +9,14 @@ space with Node.js and is not an HSM or independent KMS.
 
 `initializeInjected()` and `openInjected()` consume and overwrite their
 32-byte root-key `Buffer`, including validation-error paths. Pass a disposable
-Buffer and do not expect to reuse it after the call.
+Buffer containing uniformly random bytes—not a password—and do not expect to
+reuse it after the call. `initializeEnv()` / `openEnv()` read the same key as
+unpadded base64url from a named environment variable.
+
+After a cross-process `conflict`, call `reload()` on the affected `DidStore` or
+`DidIdentity`, inspect the refreshed snapshot, and then decide whether to retry.
+Explicit deletion leaves the authorization state `revoked` and exposes
+`materialErased: true` in key metadata.
 
 `ecdh()` returns a raw X25519 result as a `Buffer`. It is not a session key. Use
 a domain-separated HKDF immediately, then overwrite the Buffer. JavaScript

@@ -202,11 +202,12 @@ impl DidIdentity {
         let guard = self.runtime().acquire_write()?;
         let mut record = self.current_record_for_mutation()?;
         reject_uncertain_mutation(&record)?;
-        let metadata = record
+        let metadata_index = record
             .keys
             .iter()
-            .find(|metadata| metadata.kid == kid)
+            .position(|metadata| metadata.kid == kid)
             .ok_or(DidError::KeyNotFound)?;
+        let metadata = &record.keys[metadata_index];
         if metadata.origin == KeyOrigin::External {
             return Err(DidError::ExternalKeyOperation);
         }
@@ -216,14 +217,18 @@ impl DidIdentity {
         if metadata.state != KeyState::Revoked {
             return Err(DidError::KeyNotUsable);
         }
+        if metadata.material_erased {
+            return Err(DidError::KeyMaterialErased);
+        }
         let secret_ref = SecretRef {
             identity_id: self.identity_id().to_string(),
             key_id: metadata.kid.clone(),
             role: metadata.role,
             version: metadata.version,
         };
-        persist_record(self.runtime(), &guard, &mut record)?;
         self.runtime().key_store().delete(&guard, &secret_ref)?;
+        record.keys[metadata_index].material_erased = true;
+        persist_record(self.runtime(), &guard, &mut record)?;
         drop(guard);
         self.replace_record(record);
         Ok(())

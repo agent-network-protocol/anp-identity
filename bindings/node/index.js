@@ -30,6 +30,14 @@ class DidStore {
     return new DidStore(await call(native.DidStore.openInjected(root, keyId, rootKey)))
   }
 
+  static async initializeEnv(root, keyId, envVar) {
+    return new DidStore(await call(native.DidStore.initializeEnv(root, keyId, envVar)))
+  }
+
+  static async openEnv(root, keyId, envVar) {
+    return new DidStore(await call(native.DidStore.openEnv(root, keyId, envVar)))
+  }
+
   static async initializeLocalFile(root) {
     return new DidStore(await call(native.DidStore.initializeLocalFile(root)))
   }
@@ -52,6 +60,14 @@ class DidStore {
     return call(this.#inner.generation())
   }
 
+  manifest() {
+    return call(this.#inner.manifest())
+  }
+
+  reload() {
+    return call(this.#inner.reload())
+  }
+
   listIdentities() {
     return call(this.#inner.listIdentities())
   }
@@ -70,6 +86,10 @@ class DidIdentity {
 
   constructor(inner) {
     this.#inner = inner
+  }
+
+  reload() {
+    return call(this.#inner.reload())
   }
 
   snapshot() {

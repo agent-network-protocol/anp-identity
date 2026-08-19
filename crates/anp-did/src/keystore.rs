@@ -1,6 +1,8 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+
+#[cfg(test)]
+use std::collections::BTreeMap;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -135,6 +137,7 @@ impl FileKeyStore {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn list(&self) -> DidResult<Vec<SecretRef>> {
         let entries = match fs::read_dir(&self.records_root) {
             Ok(entries) => entries,

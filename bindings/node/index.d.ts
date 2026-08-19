@@ -5,6 +5,7 @@ export type KeyRole = 'root_control' | 'request_signing' | 'e2ee_signing' | 'e2e
 export type KeyOrigin = 'managed' | 'external'
 export type KeyState = 'active' | 'retired' | 'revoked'
 export type PublicationState = 'prepared' | 'publication_in_flight' | 'publication_uncertain' | 'published'
+export type RootKeyProviderKind = 'os_keyring' | 'injected' | 'local_private_file'
 
 export interface Capabilities {
   didWba: boolean
@@ -80,9 +81,27 @@ export interface KeyMetadata {
   role: KeyRole
   origin: KeyOrigin
   state: KeyState
+  /** True only after explicit local crypto-erasure of a managed revoked key. */
+  materialErased: boolean
   version: number
   publicKeyMultibase: string
   createdAt: string
+}
+
+export interface RootKeyProviderBinding {
+  kind: RootKeyProviderKind
+  keyId: string
+  account?: string
+}
+
+export interface StoreManifest {
+  schemaVersion: number
+  storeId: string
+  generation: number
+  provider: RootKeyProviderBinding
+  rootKeyFingerprint: string
+  createdAt: string
+  rekeyGeneration: number
 }
 
 export interface IdentitySnapshot {
@@ -134,11 +153,18 @@ export class DidStore {
   static initializeInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
   /** Consumes and overwrites rootKey, including validation-error paths. */
   static openInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
+  /** Reads a base64url-encoded, uniformly random 32-byte root key from envVar. */
+  static initializeEnv(root: string, keyId: string, envVar: string): Promise<DidStore>
+  /** Reads a base64url-encoded, uniformly random 32-byte root key from envVar. */
+  static openEnv(root: string, keyId: string, envVar: string): Promise<DidStore>
   static initializeLocalFile(root: string): Promise<DidStore>
   static openLocalFile(root: string): Promise<DidStore>
   static initializeKeyring(root: string, service: string, account: string, fallbackToLocalFile: boolean): Promise<DidStore>
   static openKeyring(root: string, service: string, account: string): Promise<DidStore>
   generation(): Promise<number>
+  manifest(): Promise<StoreManifest>
+  /** Refreshes the generation and runs crash recovery before retrying a conflict. */
+  reload(): Promise<void>
   listIdentities(): Promise<IdentitySummary[]>
   createIdentity(spec: DidCreateSpec): Promise<DidIdentity>
   openIdentity(did: string): Promise<DidIdentity>
@@ -146,6 +172,8 @@ export class DidStore {
 
 export class DidIdentity {
   private constructor()
+  /** Refreshes the committed identity snapshot before retrying a conflict. */
+  reload(): Promise<void>
   snapshot(): Promise<IdentitySnapshot>
   pendingRevision(): Promise<PendingRevisionSummary | undefined>
   sign(kid: string, message: Buffer): Promise<Buffer>

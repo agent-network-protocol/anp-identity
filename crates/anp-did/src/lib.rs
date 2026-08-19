@@ -1,24 +1,18 @@
 //! Stateful E1 DID identity primitives with a non-exportable private-key API boundary.
 
 mod crypto_ops;
-#[allow(dead_code)]
 mod document;
 mod error;
-#[allow(dead_code)]
 mod fs_util;
 mod identity;
 mod input;
-#[allow(dead_code)]
 mod keystore;
 mod lifecycle;
 mod manifest;
-#[allow(dead_code)]
 mod platform;
 mod registry;
 mod secret;
-#[allow(dead_code)]
 mod store;
-#[allow(dead_code)]
 mod store_lock;
 
 pub use crypto_ops::SharedSecret;

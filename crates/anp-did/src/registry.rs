@@ -47,6 +47,8 @@ pub struct KeyMetadata {
     pub role: KeyRole,
     pub origin: KeyOrigin,
     pub state: KeyState,
+    #[serde(default)]
+    pub material_erased: bool,
     pub version: u32,
     pub public_key_multibase: String,
     pub created_at: String,

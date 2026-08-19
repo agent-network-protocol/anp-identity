@@ -1,6 +1,7 @@
 use anp::authentication::{validate_did_document_binding, verify_auth_header_signature};
 
 use super::*;
+use crate::keystore::SecretRef;
 use crate::registry::list_update_journals;
 use crate::{Capabilities, DidCreateSpec, DidProfile, DidStore, ManagedKeySpec};
 
@@ -86,6 +87,11 @@ fn lifecycle_candidate_reconcile_commit_retire_revoke_and_delete() {
         Err(DidError::KeyNotUsable)
     );
     identity.delete_revoked_key("#request").unwrap();
+    assert!(identity.key_metadata("#request").unwrap().material_erased);
+    assert_eq!(
+        identity.delete_revoked_key("#request"),
+        Err(DidError::KeyMaterialErased)
+    );
     assert_eq!(
         identity.delete_revoked_key("#root"),
         Err(DidError::UnsupportedOperation)
@@ -233,6 +239,36 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     );
     identity.commit_update(&prepared.revision_id).unwrap();
     assert_eq!(identity.revision(), 2);
+}
+
+#[test]
+fn lifecycle_crypto_erasure_converges_when_the_secret_is_already_absent() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "host", [38_u8; 32]).unwrap();
+    let mut identity = store.create_identity(spec("erasure-retry")).unwrap();
+    let prepared = identity.prepare_update(update("request-v2")).unwrap();
+    identity.begin_publication(&prepared.revision_id).unwrap();
+    identity.mark_published(&prepared.revision_id).unwrap();
+    identity.commit_update(&prepared.revision_id).unwrap();
+    identity.end_retirement("#request").unwrap();
+
+    let metadata = identity.key_metadata("#request").unwrap();
+    let secret_ref = SecretRef {
+        identity_id: identity.identity_id().to_string(),
+        key_id: metadata.kid.clone(),
+        role: metadata.role,
+        version: metadata.version,
+    };
+    let guard = identity.runtime().acquire_write().unwrap();
+    identity
+        .runtime()
+        .key_store()
+        .delete(&guard, &secret_ref)
+        .unwrap();
+    drop(guard);
+
+    identity.delete_revoked_key("#request").unwrap();
+    assert!(identity.key_metadata("#request").unwrap().material_erased);
 }
 
 #[test]

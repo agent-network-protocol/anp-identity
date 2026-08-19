@@ -3,11 +3,20 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const actual = readFileSync(join(root, 'index.d.ts'), 'utf8')
-const expected = readFileSync(join(root, 'test', 'fixtures', 'index.d.ts'), 'utf8')
-if (actual !== expected) {
-  throw new Error('index.d.ts differs from the reviewed snapshot')
+const declarations = [
+  ['index.d.ts', join(root, 'test', 'fixtures', 'index.d.ts')],
+  ['native.d.ts', join(root, 'test', 'fixtures', 'native.d.ts')],
+]
+for (const [name, fixture] of declarations) {
+  const actual = readFileSync(join(root, name), 'utf8')
+  const expected = readFileSync(fixture, 'utf8')
+  if (actual !== expected) {
+    throw new Error(`${name} differs from the reviewed snapshot`)
+  }
 }
+const actual = declarations
+  .map(([name]) => readFileSync(join(root, name), 'utf8'))
+  .join('\n')
 for (const forbidden of [
   /private[_A-Z]?key/i,
   /private[_A-Z]?pem/i,

@@ -21,6 +21,7 @@ pub anp_did::DidError::InvalidPublicKey
 pub anp_did::DidError::InvalidPublicationState
 pub anp_did::DidError::InvalidService
 pub anp_did::DidError::Io(alloc::string::String)
+pub anp_did::DidError::KeyMaterialErased
 pub anp_did::DidError::KeyNotFound
 pub anp_did::DidError::KeyNotUsable
 pub anp_did::DidError::KeyRoleViolation
@@ -31,8 +32,8 @@ pub anp_did::DidError::ProviderUnavailable
 pub anp_did::DidError::RootKeyMismatch
 pub anp_did::DidError::SecretNotFound
 pub anp_did::DidError::Serialization(alloc::string::String)
+pub anp_did::DidError::StoreNotFound
 pub anp_did::DidError::UnsupportedOperation
-pub anp_did::DidError::UnsupportedProfile
 pub anp_did::DidError::VerificationFailed
 pub enum anp_did::DidExtensionSpec
 pub anp_did::DidExtensionSpec::DeviceManifest(anp_did::DeviceManifestSpec)
@@ -114,6 +115,7 @@ pub fn anp_did::DidIdentity::key_metadata(&self, &str) -> anp_did::DidResult<&an
 pub fn anp_did::DidIdentity::keys(&self) -> &[anp_did::KeyMetadata]
 pub fn anp_did::DidIdentity::managed_key_metadata(&self, &str) -> anp_did::DidResult<&anp_did::KeyMetadata>
 pub fn anp_did::DidIdentity::public_key_bytes(&self, &str) -> anp_did::DidResult<alloc::vec::Vec<u8>>
+pub fn anp_did::DidIdentity::reload(&mut self) -> anp_did::DidResult<()>
 pub fn anp_did::DidIdentity::revision(&self) -> u64
 pub fn anp_did::DidIdentity::state(&self) -> anp_did::IdentityState
 impl anp_did::DidIdentity
@@ -128,14 +130,18 @@ pub struct anp_did::DidStore
 impl anp_did::DidStore
 pub fn anp_did::DidStore::create_identity(&mut self, anp_did::DidCreateSpec) -> anp_did::DidResult<anp_did::DidIdentity>
 pub fn anp_did::DidStore::generation(&self) -> u64
+pub fn anp_did::DidStore::initialize_env(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, &str) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::initialize_injected(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, [u8; 32]) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::initialize_keyring(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, bool) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::initialize_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::list_identities(&self) -> anp_did::DidResult<alloc::vec::Vec<anp_did::IdentitySummary>>
+pub fn anp_did::DidStore::manifest(&self) -> &anp_did::StoreManifest
+pub fn anp_did::DidStore::open_env(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, &str) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::open_identity(&self, &str) -> anp_did::DidResult<anp_did::DidIdentity>
 pub fn anp_did::DidStore::open_injected(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, [u8; 32]) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::open_keyring(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> anp_did::DidResult<Self>
 pub fn anp_did::DidStore::open_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_did::DidResult<Self>
+pub fn anp_did::DidStore::reload(&mut self) -> anp_did::DidResult<()>
 impl core::fmt::Debug for anp_did::DidStore
 pub fn anp_did::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct anp_did::DocumentUpdateSpec
@@ -145,8 +151,6 @@ pub struct anp_did::ExternalPublicKeySpec
 pub anp_did::ExternalPublicKeySpec::kid: alloc::string::String
 pub anp_did::ExternalPublicKeySpec::material: anp_did::ExternalPublicKeyMaterial
 pub anp_did::ExternalPublicKeySpec::role: anp_did::KeyRole
-impl anp_did::ExternalPublicKeySpec
-pub fn anp_did::ExternalPublicKeySpec::parse_public_key(&self) -> anp_did::DidResult<anp::keys::PublicKeyMaterial>
 pub struct anp_did::IdentitySummary
 pub anp_did::IdentitySummary::created_at: alloc::string::String
 pub anp_did::IdentitySummary::did: alloc::string::String
@@ -155,6 +159,7 @@ pub anp_did::IdentitySummary::state: anp_did::IdentityState
 pub struct anp_did::KeyMetadata
 pub anp_did::KeyMetadata::created_at: alloc::string::String
 pub anp_did::KeyMetadata::kid: alloc::string::String
+pub anp_did::KeyMetadata::material_erased: bool
 pub anp_did::KeyMetadata::origin: anp_did::KeyOrigin
 pub anp_did::KeyMetadata::public_key_multibase: alloc::string::String
 pub anp_did::KeyMetadata::role: anp_did::KeyRole

@@ -185,7 +185,7 @@ impl DidCreateSpec {
 }
 
 impl ExternalPublicKeySpec {
-    pub fn parse_public_key(&self) -> DidResult<PublicKeyMaterial> {
+    pub(crate) fn parse_public_key(&self) -> DidResult<PublicKeyMaterial> {
         if self.role == KeyRole::RootControl {
             return Err(DidError::ExternalRootControl);
         }
@@ -248,6 +248,7 @@ impl DidExtensionSpec {
                         || device.signing_key_id.len() > MAX_SERVICE_VALUE_LEN
                         || device.e2ee_key_id.trim().is_empty()
                         || device.e2ee_key_id.len() > MAX_SERVICE_VALUE_LEN
+                        || device.profiles.is_empty()
                         || device
                             .profiles
                             .iter()

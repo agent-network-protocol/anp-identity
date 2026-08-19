@@ -15,6 +15,11 @@ The local-file root-key fallback protects file permissions and accidental
 disclosure. An attacker who obtains both that root-key file and the encrypted
 records can decrypt them offline.
 
+Injected and environment-provided root keys are raw cryptographic keys. They
+must contain 32 uniformly random bytes; password-based derivation is outside the
+v1 API. The manifest fingerprint detects a wrong key but does not make a
+low-entropy caller-provided value resistant to offline guessing.
+
 Internally, private material uses fixed-size values or DER held in zeroizing
 containers. Private PEM is not stored in ordinary `String` values. Secret debug
 output and errors are redacted.
@@ -42,6 +47,16 @@ hosting/publication and all E2EE session/message state.
 Document updates use prepare/publication/commit reconciliation. A publication
 with an unknown result enters `PublicationUncertain` and can only be reconciled
 against the observed remote document.
+
+Generation conflicts preserve the caller's stale snapshot. Callers explicitly
+reload the store or identity, inspect the newly committed snapshot, and then
+decide whether to retry. Reload also runs the same lock-protected crash recovery
+used when reopening a store.
+
+Revocation and crypto-erasure are distinct. A revoked key remains represented in
+metadata and the DID document for historical verification and audit. Explicit
+local deletion sets `material_erased`; v1 does not compact historical
+verification methods from a published DID document.
 
 Multiple identities share no global singleton. Every operation is scoped to a
 store, identity, and KID. Cross-identity KID use fails closed.

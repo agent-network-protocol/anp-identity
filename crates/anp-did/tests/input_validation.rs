@@ -1,6 +1,7 @@
 use anp_did::{
-    Capabilities, DidCreateSpec, DidError, DidProfile, ExternalPublicKeyMaterial,
-    ExternalPublicKeySpec, KeyRole, ManagedKeySpec, PublicOkpJwk,
+    Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
+    DidExtensionSpec, DidProfile, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyRole,
+    ManagedKeySpec, PublicOkpJwk,
 };
 
 fn valid_spec() -> DidCreateSpec {
@@ -85,4 +86,15 @@ fn rejects_private_jwk_unknown_extension_and_oversized_input() {
 
     let unsupported_profile = r#""k1""#;
     assert!(serde_json::from_str::<DidProfile>(unsupported_profile).is_err());
+
+    let mut spec = valid_spec();
+    spec.extensions = vec![DidExtensionSpec::DeviceManifest(DeviceManifestSpec {
+        devices: vec![DeviceManifestEntrySpec {
+            device_id: "device-1".to_string(),
+            signing_key_id: "#request".to_string(),
+            e2ee_key_id: "#agreement".to_string(),
+            profiles: Vec::new(),
+        }],
+    })];
+    assert_eq!(spec.validate(), Err(DidError::InvalidExtension));
 }

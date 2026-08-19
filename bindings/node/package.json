@@ -16,7 +16,7 @@
     "build": "napi build --platform --release && node scripts/wrap.mjs",
     "build:debug": "napi build --platform && node scripts/wrap.mjs",
     "build:all": "napi build --release && node scripts/wrap.mjs",
-    "test": "node --test test/*.test.cjs && node scripts/check-dts.mjs"
+    "test": "node scripts/wrap.mjs && node --test test/*.test.cjs && node scripts/check-dts.mjs"
   },
   "napi": {
     "binaryName": "anp-did",
