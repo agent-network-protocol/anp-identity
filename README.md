@@ -21,9 +21,11 @@ available through `DidStore::manifest()`.
 
 Concurrent writers use optimistic generation checks. After `Conflict`, call
 `DidStore::reload()` or `DidIdentity::reload()` before inspecting the new
-committed state and deciding whether to retry. Explicit crypto-erasure keeps a
-key `Revoked` and records `KeyMetadata::material_erased = true`; authorization
-state and local key-material state are intentionally separate.
+committed state and deciding whether to retry. Reload takes the store-wide
+exclusive lock and runs crash recovery, so it is a conflict-recovery operation,
+not a cheap polling read. Explicit crypto-erasure keeps a key `Revoked` and
+records `KeyMetadata::material_erased = true`; authorization state and local
+key-material state are intentionally separate.
 
 See [`docs/boundary.md`](docs/boundary.md) for the security and ownership
 boundary.

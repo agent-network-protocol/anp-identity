@@ -15,8 +15,9 @@ unpadded base64url from a named environment variable.
 
 After a cross-process `conflict`, call `reload()` on the affected `DidStore` or
 `DidIdentity`, inspect the refreshed snapshot, and then decide whether to retry.
-Explicit deletion leaves the authorization state `revoked` and exposes
-`materialErased: true` in key metadata.
+Reload takes the store-wide exclusive lock and runs crash recovery; it is not a
+cheap polling operation. Explicit deletion leaves the authorization state
+`revoked` and exposes `materialErased: true` in key metadata.
 
 `ecdh()` returns a raw X25519 result as a `Buffer`. It is not a session key. Use
 a domain-separated HKDF immediately, then overwrite the Buffer. JavaScript

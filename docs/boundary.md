@@ -51,7 +51,9 @@ against the observed remote document.
 Generation conflicts preserve the caller's stale snapshot. Callers explicitly
 reload the store or identity, inspect the newly committed snapshot, and then
 decide whether to retry. Reload also runs the same lock-protected crash recovery
-used when reopening a store.
+used when reopening a store. Both store and identity reload take the store-wide
+exclusive lock, so callers should use them after a conflict rather than in a
+tight polling loop.
 
 Revocation and crypto-erasure are distinct. A revoked key remains represented in
 metadata and the DID document for historical verification and audit. Explicit

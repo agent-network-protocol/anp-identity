@@ -163,7 +163,7 @@ export class DidStore {
   static openKeyring(root: string, service: string, account: string): Promise<DidStore>
   generation(): Promise<number>
   manifest(): Promise<StoreManifest>
-  /** Refreshes the generation and runs crash recovery before retrying a conflict. */
+  /** Takes the store-wide exclusive lock, runs recovery, and refreshes after a conflict. */
   reload(): Promise<void>
   listIdentities(): Promise<IdentitySummary[]>
   createIdentity(spec: DidCreateSpec): Promise<DidIdentity>
@@ -172,7 +172,7 @@ export class DidStore {
 
 export class DidIdentity {
   private constructor()
-  /** Refreshes the committed identity snapshot before retrying a conflict. */
+  /** Takes the store-wide exclusive lock, runs recovery, and refreshes after a conflict. */
   reload(): Promise<void>
   snapshot(): Promise<IdentitySnapshot>
   pendingRevision(): Promise<PendingRevisionSummary | undefined>

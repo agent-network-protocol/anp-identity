@@ -17,6 +17,9 @@ use crate::{
 
 const PROCESS_ROOT_ENV: &str = "ANP_DID_IDENTITY_PROCESS_ROOT";
 const PROCESS_LABEL_ENV: &str = "ANP_DID_IDENTITY_PROCESS_LABEL";
+const ENV_PROVIDER_ROOT_ENV: &str = "ANP_DID_IDENTITY_ENV_PROVIDER_ROOT";
+const ENV_PROVIDER_MODE_ENV: &str = "ANP_DID_IDENTITY_ENV_PROVIDER_MODE";
+const ENV_PROVIDER_KEY_ENV: &str = "ANP_DID_IDENTITY_ENV_PROVIDER_KEY";
 
 #[test]
 fn identity_creation_persists_multiple_isolated_e1_documents() {
@@ -57,16 +60,14 @@ fn identity_creation_persists_multiple_isolated_e1_documents() {
 }
 
 #[test]
-fn identity_store_env_provider_manifest_and_reload_are_usable() {
+fn identity_store_manifest_and_reload_are_usable() {
     let root = tempfile::tempdir().unwrap();
-    let env_var = format!("ANP_DID_TEST_ROOT_KEY_{}", std::process::id());
-    std::env::set_var(&env_var, URL_SAFE_NO_PAD.encode([12_u8; 32]));
-    let mut first = DidStore::initialize_env(root.path(), "host-env", &env_var).unwrap();
+    let mut first = DidStore::initialize_injected(root.path(), "host", [12_u8; 32]).unwrap();
     assert_eq!(
         first.manifest().provider.kind,
         crate::RootKeyProviderKind::Injected
     );
-    let mut stale = DidStore::open_env(root.path(), "host-env", &env_var).unwrap();
+    let mut stale = DidStore::open_injected(root.path(), "host", [12_u8; 32]).unwrap();
 
     first.create_identity(standard_spec("first")).unwrap();
     assert_eq!(
@@ -76,7 +77,34 @@ fn identity_store_env_provider_manifest_and_reload_are_usable() {
     stale.reload().unwrap();
     stale.create_identity(standard_spec("reloaded")).unwrap();
     assert_eq!(stale.generation(), 2);
-    std::env::remove_var(&env_var);
+}
+
+#[test]
+fn identity_env_provider_works_with_child_process_environment() {
+    let root = tempfile::tempdir().unwrap();
+    for mode in ["initialize", "open"] {
+        let mut child = spawn_identity_env_process(root.path(), mode);
+        let status = child.wait().unwrap();
+        assert!(status.success(), "env provider child failed in {mode} mode");
+    }
+}
+
+#[test]
+#[ignore]
+fn identity_env_provider_child() {
+    let Some(root) = std::env::var_os(ENV_PROVIDER_ROOT_ENV) else {
+        return;
+    };
+    let mode = std::env::var(ENV_PROVIDER_MODE_ENV).unwrap();
+    let store = match mode.as_str() {
+        "initialize" => DidStore::initialize_env(root, "host-env", ENV_PROVIDER_KEY_ENV).unwrap(),
+        "open" => DidStore::open_env(root, "host-env", ENV_PROVIDER_KEY_ENV).unwrap(),
+        _ => panic!("unknown env provider child mode"),
+    };
+    assert_eq!(
+        store.manifest().provider.kind,
+        crate::RootKeyProviderKind::Injected
+    );
 }
 
 #[test]
@@ -385,6 +413,21 @@ fn spawn_identity_process(root: &Path, label: &str) -> Child {
         ])
         .env(PROCESS_ROOT_ENV, root)
         .env(PROCESS_LABEL_ENV, label)
+        .spawn()
+        .unwrap()
+}
+
+fn spawn_identity_env_process(root: &Path, mode: &str) -> Child {
+    Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "identity::tests::identity_env_provider_child",
+            "--nocapture",
+        ])
+        .env(ENV_PROVIDER_ROOT_ENV, root)
+        .env(ENV_PROVIDER_MODE_ENV, mode)
+        .env(ENV_PROVIDER_KEY_ENV, URL_SAFE_NO_PAD.encode([12_u8; 32]))
         .spawn()
         .unwrap()
 }
