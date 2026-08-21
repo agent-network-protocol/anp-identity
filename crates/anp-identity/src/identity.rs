@@ -16,15 +16,16 @@ use crate::platform::{
 };
 use crate::registry::{
     list_journals, new_identity_record, read_identity, read_registry, remove_identity,
-    remove_journal, write_identity, write_journal, write_registry, CreationJournal, IdentityRecord,
-    IdentityRegistry,
+    remove_journal, write_identity, write_journal, write_registry, CreationJournal,
+    CreationJournalKind, DocumentCheckpoint, IdentityRecord, IdentityRegistry, NewIdentityRecord,
+    RootCapabilityState,
 };
 use crate::store::{ProviderInitialization, StoreRuntime};
 use crate::{DidCreateSpec, DidError, DidResult, IdentityState, IdentitySummary, KeyMetadata};
 
 pub struct DidStore {
-    runtime: Arc<StoreRuntime>,
-    registry_generation: u64,
+    pub(crate) runtime: Arc<StoreRuntime>,
+    pub(crate) registry_generation: u64,
 }
 
 impl fmt::Debug for DidStore {
@@ -40,8 +41,8 @@ impl fmt::Debug for DidStore {
 
 #[derive(Clone)]
 pub struct DidIdentity {
-    runtime: Arc<StoreRuntime>,
-    record: IdentityRecord,
+    pub(crate) runtime: Arc<StoreRuntime>,
+    pub(crate) record: IdentityRecord,
 }
 
 impl fmt::Debug for DidIdentity {
@@ -178,7 +179,10 @@ impl DidStore {
             .get(did)
             .ok_or(DidError::IdentityNotFound)?;
         let record = read_identity(self.runtime.root(), &summary.identity_id)?;
-        if record.did != did || record.state != IdentityState::Active {
+        if record.did != did
+            || record.state == IdentityState::Creating
+            || record.state != summary.state
+        {
             return Err(DidError::InvalidIdentity);
         }
         Ok(DidIdentity {
@@ -259,14 +263,26 @@ impl DidStore {
         }
         verify_all_persisted_keys(&self.runtime, &built, &secret_refs)?;
 
-        let mut record = new_identity_record(
+        let root_key_fingerprint = crate::document::root_key_fingerprint(&built.document)?;
+        let checkpoint = DocumentCheckpoint {
+            document_version: 1,
+            registry_version: 1,
+            document_digest: crate::document::document_digest(&built.document)?,
+        };
+        let local_authorization =
+            crate::adoption::infer_local_authorization(&built.document, &built.metadata)?;
+        let mut record = new_identity_record(NewIdentityRecord {
             identity_id,
-            built.did.clone(),
-            built.document,
-            built.metadata,
-            spec.capabilities,
-            built.created_at,
-        );
+            did: built.did.clone(),
+            document: built.document,
+            keys: built.metadata,
+            capabilities: spec.capabilities,
+            root_capability: RootCapabilityState::Active,
+            root_key_fingerprint,
+            checkpoint,
+            local_authorization,
+            created_at: built.created_at,
+        });
         write_identity(self.runtime.root(), &guard, &record)?;
         maybe_fail(failure, CreationFailurePoint::IdentityCreatingPersisted)?;
 
@@ -308,7 +324,14 @@ impl DidIdentity {
             return Err(DidError::IdentityNotFound);
         }
         let record = read_identity(self.runtime.root(), &identity_id)?;
-        if record.did != did || record.state != IdentityState::Active {
+        let summary = registry
+            .identities
+            .get(&did)
+            .ok_or(DidError::IdentityNotFound)?;
+        if record.did != did
+            || record.state == IdentityState::Creating
+            || record.state != summary.state
+        {
             return Err(DidError::InvalidIdentity);
         }
         self.record = record;
@@ -403,8 +426,26 @@ impl DidIdentity {
 
 fn recover(runtime: &Arc<StoreRuntime>) -> DidResult<IdentityRegistry> {
     let guard = runtime.acquire_write()?;
-    let registry = read_registry(runtime.root())?;
+    let mut registry = read_registry(runtime.root())?;
     for journal in list_journals(runtime.root())? {
+        if journal.kind == CreationJournalKind::StateTransition {
+            let record = read_identity(runtime.root(), &journal.identity_id)?;
+            if record.did != journal.did {
+                return Err(DidError::InvalidIdentity);
+            }
+            if registry.identities.get(&journal.did) != Some(&record.summary()) {
+                registry
+                    .identities
+                    .insert(journal.did.clone(), record.summary());
+                registry.generation = registry
+                    .generation
+                    .checked_add(1)
+                    .ok_or(DidError::Conflict)?;
+                write_registry(runtime.root(), &guard, &registry)?;
+            }
+            remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
+            continue;
+        }
         let committed = registry
             .identities
             .get(&journal.did)
@@ -455,7 +496,7 @@ fn verify_persisted_key(
     Ok(())
 }
 
-fn random_id() -> String {
+pub(crate) fn random_id() -> String {
     let mut bytes = [0_u8; 16];
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)

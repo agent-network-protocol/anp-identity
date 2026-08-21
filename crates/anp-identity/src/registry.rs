@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::adoption::{LocalAuthorizationRecord, PendingEnrollmentRecord};
 use crate::fs_util::{ensure_private_dir, write_atomic_private};
 use crate::keystore::SecretRef;
 use crate::lifecycle::PendingRevisionRecord;
@@ -28,6 +29,7 @@ pub enum KeyOrigin {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyState {
+    Pending,
     Active,
     Retired,
     Revoked,
@@ -37,7 +39,31 @@ pub enum KeyState {
 #[serde(rename_all = "snake_case")]
 pub enum IdentityState {
     Creating,
+    Enrolling,
     Active,
+    Revoked,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RootCapabilityState {
+    Absent,
+    Pending,
+    Active,
+}
+
+impl Default for RootCapabilityState {
+    fn default() -> Self {
+        Self::Active
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DocumentCheckpoint {
+    pub document_version: u64,
+    pub registry_version: u64,
+    pub document_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,6 +86,8 @@ pub struct IdentitySummary {
     pub identity_id: String,
     pub did: String,
     pub state: IdentityState,
+    #[serde(default)]
+    pub root_capability: RootCapabilityState,
     pub created_at: String,
 }
 
@@ -75,6 +103,16 @@ pub(crate) struct IdentityRecord {
     pub(crate) document: Value,
     pub(crate) keys: Vec<KeyMetadata>,
     pub(crate) capabilities: Capabilities,
+    #[serde(default)]
+    pub(crate) root_capability: RootCapabilityState,
+    #[serde(default)]
+    pub(crate) root_key_fingerprint: String,
+    #[serde(default)]
+    pub(crate) checkpoint: Option<DocumentCheckpoint>,
+    #[serde(default)]
+    pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
+    #[serde(default)]
+    pub(crate) pending_enrollment: Option<PendingEnrollmentRecord>,
     pub(crate) created_at: String,
     #[serde(default)]
     pub(crate) pending_revision: Option<PendingRevisionRecord>,
@@ -86,6 +124,7 @@ impl IdentityRecord {
             identity_id: self.identity_id.clone(),
             did: self.did.clone(),
             state: self.state,
+            root_capability: self.root_capability,
             created_at: self.created_at.clone(),
         }
     }
@@ -95,11 +134,21 @@ impl IdentityRecord {
 #[serde(deny_unknown_fields)]
 pub(crate) struct CreationJournal {
     schema_version: u32,
+    #[serde(default)]
+    pub(crate) kind: CreationJournalKind,
     pub(crate) transaction_id: String,
     pub(crate) identity_id: String,
     pub(crate) did: String,
     pub(crate) secret_refs: Vec<SecretRef>,
     pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CreationJournalKind {
+    #[default]
+    Create,
+    StateTransition,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,10 +198,28 @@ impl CreationJournal {
     ) -> Self {
         Self {
             schema_version: JOURNAL_SCHEMA_VERSION,
+            kind: CreationJournalKind::Create,
             transaction_id,
             identity_id,
             did,
             secret_refs,
+            created_at,
+        }
+    }
+
+    pub(crate) fn new_state_transition(
+        transaction_id: String,
+        identity_id: String,
+        did: String,
+        created_at: String,
+    ) -> Self {
+        Self {
+            schema_version: JOURNAL_SCHEMA_VERSION,
+            kind: CreationJournalKind::StateTransition,
+            transaction_id,
+            identity_id,
+            did,
+            secret_refs: Vec::new(),
             created_at,
         }
     }
@@ -211,10 +278,24 @@ pub(crate) fn read_identity(root: &Path, identity_id: &str) -> DidResult<Identit
             DidError::Io(error.to_string())
         }
     })?;
-    let record: IdentityRecord =
+    let mut record: IdentityRecord =
         serde_json::from_slice(&bytes).map_err(|_| DidError::InvalidIdentity)?;
     if record.schema_version != IDENTITY_SCHEMA_VERSION || record.identity_id != identity_id {
         return Err(DidError::InvalidIdentity);
+    }
+    if record.root_key_fingerprint.is_empty() {
+        record.root_key_fingerprint = crate::document::root_key_fingerprint(&record.document)?;
+    }
+    if record.checkpoint.is_none() {
+        record.checkpoint = Some(DocumentCheckpoint {
+            document_version: record.revision,
+            registry_version: 1,
+            document_digest: crate::document::document_digest(&record.document)?,
+        });
+    }
+    if record.local_authorization.is_none() {
+        record.local_authorization =
+            crate::adoption::infer_local_authorization(&record.document, &record.keys)?;
     }
     Ok(record)
 }
@@ -327,25 +408,36 @@ pub(crate) fn remove_update_journal(
     remove_if_exists(&update_journal_path(root, revision_id))
 }
 
-pub(crate) fn new_identity_record(
-    identity_id: String,
-    did: String,
-    document: Value,
-    keys: Vec<KeyMetadata>,
-    capabilities: Capabilities,
-    created_at: String,
-) -> IdentityRecord {
+pub(crate) struct NewIdentityRecord {
+    pub(crate) identity_id: String,
+    pub(crate) did: String,
+    pub(crate) document: Value,
+    pub(crate) keys: Vec<KeyMetadata>,
+    pub(crate) capabilities: Capabilities,
+    pub(crate) root_capability: RootCapabilityState,
+    pub(crate) root_key_fingerprint: String,
+    pub(crate) checkpoint: DocumentCheckpoint,
+    pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
+    pub(crate) created_at: String,
+}
+
+pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
     IdentityRecord {
         schema_version: IDENTITY_SCHEMA_VERSION,
-        identity_id,
-        did,
+        identity_id: input.identity_id,
+        did: input.did,
         state: IdentityState::Creating,
         revision: 1,
         generation: 1,
-        document,
-        keys,
-        capabilities,
-        created_at,
+        document: input.document,
+        keys: input.keys,
+        capabilities: input.capabilities,
+        root_capability: input.root_capability,
+        root_key_fingerprint: input.root_key_fingerprint,
+        checkpoint: Some(input.checkpoint),
+        local_authorization: input.local_authorization,
+        pending_enrollment: None,
+        created_at: input.created_at,
         pending_revision: None,
     }
 }

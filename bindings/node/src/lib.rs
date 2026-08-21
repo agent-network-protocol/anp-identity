@@ -90,7 +90,15 @@ pub struct JsIdentitySummary {
     pub identity_id: String,
     pub did: String,
     pub state: String,
+    pub root_capability: String,
     pub created_at: String,
+}
+
+#[napi(object)]
+pub struct JsDocumentCheckpoint {
+    pub document_version: i64,
+    pub registry_version: i64,
+    pub document_digest: String,
 }
 
 #[napi(object)]
@@ -129,6 +137,9 @@ pub struct JsIdentitySnapshot {
     pub did: String,
     pub state: String,
     pub revision: i64,
+    pub root_capability: String,
+    pub root_key_fingerprint: String,
+    pub checkpoint: Option<JsDocumentCheckpoint>,
     pub document: Value,
     pub capabilities: JsCapabilities,
     pub keys: Vec<JsKeyMetadata>,
@@ -375,6 +386,20 @@ impl JsDidIdentity {
             did: identity.did().to_string(),
             state: identity_state(identity.state()),
             revision: i64::try_from(identity.revision()).map_err(|_| overflow_error())?,
+            root_capability: root_capability(identity.root_capability()),
+            root_key_fingerprint: identity.root_key_fingerprint().to_string(),
+            checkpoint: identity
+                .checkpoint()
+                .map(|checkpoint| -> Result<JsDocumentCheckpoint> {
+                    Ok(JsDocumentCheckpoint {
+                        document_version: i64::try_from(checkpoint.document_version)
+                            .map_err(|_| overflow_error())?,
+                        registry_version: i64::try_from(checkpoint.registry_version)
+                            .map_err(|_| overflow_error())?,
+                        document_digest: checkpoint.document_digest.clone(),
+                    })
+                })
+                .transpose()?,
             document: identity.document().clone(),
             capabilities: JsCapabilities {
                 did_wba: identity.capabilities().did_wba,
@@ -726,6 +751,7 @@ fn identity_summary(summary: anp_identity::IdentitySummary) -> JsIdentitySummary
         identity_id: summary.identity_id,
         did: summary.did,
         state: identity_state(summary.state),
+        root_capability: root_capability(summary.root_capability),
         created_at: summary.created_at,
     }
 }
@@ -739,6 +765,7 @@ fn key_metadata(metadata: KeyMetadata) -> JsKeyMetadata {
             anp_identity::KeyOrigin::External => "external".to_string(),
         },
         state: match metadata.state {
+            anp_identity::KeyState::Pending => "pending".to_string(),
             anp_identity::KeyState::Active => "active".to_string(),
             anp_identity::KeyState::Retired => "retired".to_string(),
             anp_identity::KeyState::Revoked => "revoked".to_string(),
@@ -785,7 +812,18 @@ fn key_role_name(role: KeyRole) -> String {
 fn identity_state(state: anp_identity::IdentityState) -> String {
     match state {
         anp_identity::IdentityState::Creating => "creating",
+        anp_identity::IdentityState::Enrolling => "enrolling",
         anp_identity::IdentityState::Active => "active",
+        anp_identity::IdentityState::Revoked => "revoked",
+    }
+    .to_string()
+}
+
+fn root_capability(state: anp_identity::RootCapabilityState) -> String {
+    match state {
+        anp_identity::RootCapabilityState::Absent => "absent",
+        anp_identity::RootCapabilityState::Pending => "pending",
+        anp_identity::RootCapabilityState::Active => "active",
     }
     .to_string()
 }

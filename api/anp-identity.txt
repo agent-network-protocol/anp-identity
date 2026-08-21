@@ -1,5 +1,10 @@
 pub mod anp_identity
 pub use anp_identity::HttpSignatureOptions
+pub enum anp_identity::AdoptDocumentOutcome
+pub anp_identity::AdoptDocumentOutcome::Activated
+pub anp_identity::AdoptDocumentOutcome::Revoked
+pub anp_identity::AdoptDocumentOutcome::Unchanged
+pub anp_identity::AdoptDocumentOutcome::Updated
 pub enum anp_identity::DidError
 pub anp_identity::DidError::Conflict
 pub anp_identity::DidError::CorruptRecord
@@ -48,6 +53,8 @@ pub anp_identity::ExternalPublicKeyMaterial::Multibase::value: alloc::string::St
 pub enum anp_identity::IdentityState
 pub anp_identity::IdentityState::Active
 pub anp_identity::IdentityState::Creating
+pub anp_identity::IdentityState::Enrolling
+pub anp_identity::IdentityState::Revoked
 pub enum anp_identity::KeyOrigin
 pub anp_identity::KeyOrigin::External
 pub anp_identity::KeyOrigin::Managed
@@ -59,6 +66,7 @@ pub anp_identity::KeyRole::RequestSigning
 pub anp_identity::KeyRole::RootControl
 pub enum anp_identity::KeyState
 pub anp_identity::KeyState::Active
+pub anp_identity::KeyState::Pending
 pub anp_identity::KeyState::Retired
 pub anp_identity::KeyState::Revoked
 pub enum anp_identity::PublicationState
@@ -69,10 +77,19 @@ pub anp_identity::PublicationState::Published
 pub enum anp_identity::ReconcileOutcome
 pub anp_identity::ReconcileOutcome::Committed
 pub anp_identity::ReconcileOutcome::RemoteOld
+pub enum anp_identity::RootCapabilityState
+pub anp_identity::RootCapabilityState::Absent
+pub anp_identity::RootCapabilityState::Active
+pub anp_identity::RootCapabilityState::Pending
+impl core::default::Default for anp_identity::RootCapabilityState
+pub fn anp_identity::RootCapabilityState::default() -> Self
 pub enum anp_identity::RootKeyProviderKind
 pub anp_identity::RootKeyProviderKind::Injected
 pub anp_identity::RootKeyProviderKind::LocalPrivateFile
 pub anp_identity::RootKeyProviderKind::OsKeyring
+pub struct anp_identity::AdoptVerifiedDocumentSpec
+pub anp_identity::AdoptVerifiedDocumentSpec::document: serde_json::value::Value
+pub anp_identity::AdoptVerifiedDocumentSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub struct anp_identity::Capabilities
 pub anp_identity::Capabilities::did_wba: bool
 pub struct anp_identity::DeviceManifestEntrySpec
@@ -108,6 +125,11 @@ pub fn anp_identity::DidIdentity::mark_published(&mut self, &str) -> anp_identit
 pub fn anp_identity::DidIdentity::pending_revision(&self) -> core::option::Option<anp_identity::PendingRevisionSummary>
 pub fn anp_identity::DidIdentity::prepare_update(&mut self, anp_identity::DocumentUpdateSpec) -> anp_identity::DidResult<anp_identity::PreparedUpdate>
 pub fn anp_identity::DidIdentity::reconcile_update(&mut self, &str, &serde_json::value::Value) -> anp_identity::DidResult<anp_identity::ReconcileOutcome>
+impl anp_identity::DidIdentity
+pub fn anp_identity::DidIdentity::adopt_verified_document(&mut self, anp_identity::AdoptVerifiedDocumentSpec) -> anp_identity::DidResult<anp_identity::AdoptDocumentOutcome>
+pub fn anp_identity::DidIdentity::checkpoint(&self) -> core::option::Option<&anp_identity::DocumentCheckpoint>
+pub fn anp_identity::DidIdentity::root_capability(&self) -> anp_identity::RootCapabilityState
+pub fn anp_identity::DidIdentity::root_key_fingerprint(&self) -> &str
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::capabilities(&self) -> &anp_identity::Capabilities
 pub fn anp_identity::DidIdentity::did(&self) -> &str
@@ -146,11 +168,29 @@ pub fn anp_identity::DidStore::open_injected(impl core::convert::Into<std::path:
 pub fn anp_identity::DidStore::open_keyring(impl core::convert::Into<std::path::PathBuf>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> anp_identity::DidResult<Self>
 pub fn anp_identity::DidStore::open_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_identity::DidResult<Self>
 pub fn anp_identity::DidStore::reload(&mut self) -> anp_identity::DidResult<()>
+impl anp_identity::DidStore
+pub fn anp_identity::DidStore::prepare_enrollment(&mut self, anp_identity::EnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedEnrollment)>
 impl core::fmt::Debug for anp_identity::DidStore
 pub fn anp_identity::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct anp_identity::DocumentCheckpoint
+pub anp_identity::DocumentCheckpoint::document_digest: alloc::string::String
+pub anp_identity::DocumentCheckpoint::document_version: u64
+pub anp_identity::DocumentCheckpoint::registry_version: u64
 pub struct anp_identity::DocumentUpdateSpec
 pub anp_identity::DocumentUpdateSpec::request_signing_rotation: anp_identity::RequestSigningRotation
 pub anp_identity::DocumentUpdateSpec::services: core::option::Option<alloc::vec::Vec<anp_identity::ServiceSpec>>
+pub struct anp_identity::EnrollmentPublicKey
+pub anp_identity::EnrollmentPublicKey::kid: alloc::string::String
+pub anp_identity::EnrollmentPublicKey::public_key_multibase: alloc::string::String
+pub anp_identity::EnrollmentPublicKey::role: anp_identity::KeyRole
+pub struct anp_identity::EnrollmentSpec
+pub anp_identity::EnrollmentSpec::capabilities: anp_identity::Capabilities
+pub anp_identity::EnrollmentSpec::device_e2ee_fragment: alloc::string::String
+pub anp_identity::EnrollmentSpec::device_id: alloc::string::String
+pub anp_identity::EnrollmentSpec::device_signing_fragment: alloc::string::String
+pub anp_identity::EnrollmentSpec::evidence: anp_identity::VerifiedDocumentEvidence
+pub anp_identity::EnrollmentSpec::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::EnrollmentSpec::verified_document: serde_json::value::Value
 pub struct anp_identity::ExternalPublicKeySpec
 pub anp_identity::ExternalPublicKeySpec::kid: alloc::string::String
 pub anp_identity::ExternalPublicKeySpec::material: anp_identity::ExternalPublicKeyMaterial
@@ -159,6 +199,7 @@ pub struct anp_identity::IdentitySummary
 pub anp_identity::IdentitySummary::created_at: alloc::string::String
 pub anp_identity::IdentitySummary::did: alloc::string::String
 pub anp_identity::IdentitySummary::identity_id: alloc::string::String
+pub anp_identity::IdentitySummary::root_capability: anp_identity::RootCapabilityState
 pub anp_identity::IdentitySummary::state: anp_identity::IdentityState
 pub struct anp_identity::KeyMetadata
 pub anp_identity::KeyMetadata::created_at: alloc::string::String
@@ -180,6 +221,16 @@ pub anp_identity::PendingRevisionSummary::generation: u64
 pub anp_identity::PendingRevisionSummary::parent_revision: u64
 pub anp_identity::PendingRevisionSummary::revision_id: alloc::string::String
 pub anp_identity::PendingRevisionSummary::state: anp_identity::PublicationState
+pub struct anp_identity::PreparedEnrollment
+pub anp_identity::PreparedEnrollment::checkpoint: anp_identity::DocumentCheckpoint
+pub anp_identity::PreparedEnrollment::device_e2ee_key: anp_identity::EnrollmentPublicKey
+pub anp_identity::PreparedEnrollment::device_id: alloc::string::String
+pub anp_identity::PreparedEnrollment::device_signing_key: anp_identity::EnrollmentPublicKey
+pub anp_identity::PreparedEnrollment::did: alloc::string::String
+pub anp_identity::PreparedEnrollment::enrollment_id: alloc::string::String
+pub anp_identity::PreparedEnrollment::identity_id: alloc::string::String
+pub anp_identity::PreparedEnrollment::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::PreparedEnrollment::root_key_fingerprint: alloc::string::String
 pub struct anp_identity::PreparedUpdate
 pub anp_identity::PreparedUpdate::candidate_digest: alloc::string::String
 pub anp_identity::PreparedUpdate::candidate_document: serde_json::value::Value
@@ -214,5 +265,10 @@ pub anp_identity::StoreManifest::rekey_generation: u64
 pub anp_identity::StoreManifest::root_key_fingerprint: alloc::string::String
 pub anp_identity::StoreManifest::schema_version: u32
 pub anp_identity::StoreManifest::store_id: alloc::string::String
+pub struct anp_identity::VerifiedDocumentEvidence
+pub anp_identity::VerifiedDocumentEvidence::document_digest: alloc::string::String
+pub anp_identity::VerifiedDocumentEvidence::document_version: u64
+pub anp_identity::VerifiedDocumentEvidence::registry_version: u64
 pub const anp_identity::STORE_MANIFEST_SCHEMA_VERSION: u32
+pub fn anp_identity::canonical_document_digest(&serde_json::value::Value) -> anp_identity::DidResult<alloc::string::String>
 pub type anp_identity::DidResult<T> = core::result::Result<T, anp_identity::DidError>

@@ -1,5 +1,6 @@
 //! Stateful E1 DID identity primitives with a non-exportable private-key API boundary.
 
+mod adoption;
 mod crypto_ops;
 mod document;
 mod error;
@@ -15,6 +16,10 @@ mod secret;
 mod store;
 mod store_lock;
 
+pub use adoption::{
+    canonical_document_digest, AdoptDocumentOutcome, AdoptVerifiedDocumentSpec,
+    EnrollmentPublicKey, EnrollmentSpec, PreparedEnrollment, VerifiedDocumentEvidence,
+};
 pub use anp::authentication::HttpSignatureOptions;
 pub use crypto_ops::SharedSecret;
 pub use error::{DidError, DidResult};
@@ -31,4 +36,7 @@ pub use lifecycle::{
 pub use manifest::{
     RootKeyProviderBinding, RootKeyProviderKind, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION,
 };
-pub use registry::{IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState};
+pub use registry::{
+    DocumentCheckpoint, IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState,
+    RootCapabilityState,
+};

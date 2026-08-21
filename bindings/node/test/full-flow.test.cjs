@@ -37,6 +37,9 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
   const bob = await store.createIdentity(identitySpec('bob'))
   const aliceSnapshot = await alice.snapshot()
   assert.equal(aliceSnapshot.state, 'active')
+  assert.equal(aliceSnapshot.rootCapability, 'active')
+  assert.match(aliceSnapshot.rootKeyFingerprint, /^sha256:/)
+  assert.equal(aliceSnapshot.checkpoint.documentVersion, 1)
   assert.equal(aliceSnapshot.keys.length, 5)
   assert.equal((await store.listIdentities()).length, 2)
 

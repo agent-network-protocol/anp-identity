@@ -73,6 +73,12 @@ export interface JsDidExtensionSpec {
   deviceManifest?: JsDeviceManifestSpec
 }
 
+export interface JsDocumentCheckpoint {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
+}
+
 export interface JsDocumentUpdateSpec {
   requestSigningRotation: JsRequestSigningRotation
   services?: Array<JsServiceSpec>
@@ -107,6 +113,9 @@ export interface JsIdentitySnapshot {
   did: string
   state: string
   revision: number
+  rootCapability: string
+  rootKeyFingerprint: string
+  checkpoint?: JsDocumentCheckpoint
   document: any
   capabilities: JsCapabilities
   keys: Array<JsKeyMetadata>
@@ -116,6 +125,7 @@ export interface JsIdentitySummary {
   identityId: string
   did: string
   state: string
+  rootCapability: string
   createdAt: string
 }
 

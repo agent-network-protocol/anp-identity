@@ -3,6 +3,7 @@ use chrono::Utc;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
 use anp::authentication::{
@@ -253,6 +254,69 @@ pub(crate) fn ed25519_public_multibase(public_key: &PublicKeyMaterial) -> DidRes
     let mut bytes = vec![0xed, 0x01];
     bytes.extend_from_slice(&public_key.to_bytes());
     Ok(format!("z{}", bs58::encode(bytes).into_string()))
+}
+
+pub(crate) fn public_key_multibase(public_key: &PublicKeyMaterial) -> DidResult<String> {
+    match public_key {
+        PublicKeyMaterial::Ed25519(_) => ed25519_public_multibase(public_key),
+        PublicKeyMaterial::X25519(bytes) => {
+            let mut encoded = vec![0xec, 0x01];
+            encoded.extend_from_slice(bytes);
+            Ok(format!("z{}", bs58::encode(encoded).into_string()))
+        }
+        _ => Err(DidError::InvalidPublicKey),
+    }
+}
+
+pub(crate) fn document_digest(document: &Value) -> DidResult<String> {
+    let canonical = serde_json_canonicalizer::to_vec(document)
+        .map_err(|error| DidError::Serialization(error.to_string()))?;
+    Ok(format!(
+        "sha256:{}",
+        URL_SAFE_NO_PAD.encode(Sha256::digest(canonical))
+    ))
+}
+
+pub(crate) fn root_key_fingerprint(document: &Value) -> DidResult<String> {
+    let root_kid = document
+        .get("proof")
+        .and_then(Value::as_object)
+        .and_then(|proof| proof.get("verificationMethod"))
+        .and_then(Value::as_str)
+        .ok_or(DidError::InvalidIdentity)?;
+    let method = find_verification_method(document, root_kid).ok_or(DidError::InvalidIdentity)?;
+    let public =
+        anp::authentication::extract_public_key(&method).map_err(|_| DidError::InvalidPublicKey)?;
+    let PublicKeyMaterial::Ed25519(public) = public else {
+        return Err(DidError::InvalidPublicKey);
+    };
+    let mut digest = Sha256::new();
+    digest.update(b"anp-identity:root-public-fingerprint:v1\0");
+    digest.update(public.to_bytes());
+    Ok(format!(
+        "sha256:{}",
+        URL_SAFE_NO_PAD.encode(digest.finalize())
+    ))
+}
+
+pub(crate) fn key_metadata_from_public(
+    kid: &str,
+    role: KeyRole,
+    origin: KeyOrigin,
+    state: KeyState,
+    public_key: &PublicKeyMaterial,
+    created_at: &str,
+) -> DidResult<KeyMetadata> {
+    Ok(KeyMetadata {
+        kid: kid.to_string(),
+        role,
+        origin,
+        state,
+        material_erased: false,
+        version: 1,
+        public_key_multibase: public_key_multibase(public_key)?,
+        created_at: created_at.to_string(),
+    })
 }
 
 fn public_key_from_raw(role: KeyRole, bytes: &Zeroizing<[u8; 32]>) -> PublicKeyMaterial {

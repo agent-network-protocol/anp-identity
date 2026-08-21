@@ -31,6 +31,7 @@ impl fmt::Debug for SharedSecret {
 
 impl DidIdentity {
     pub fn sign(&self, kid: &str, message: &[u8]) -> DidResult<Vec<u8>> {
+        self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
         require_active(metadata)?;
         if !matches!(
@@ -46,6 +47,7 @@ impl DidIdentity {
     }
 
     pub fn sign_device_assertion(&self, kid: &str, message: &[u8]) -> DidResult<Vec<u8>> {
+        self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
         require_active(metadata)?;
         if metadata.role != KeyRole::DeviceSigning {
@@ -72,6 +74,7 @@ impl DidIdentity {
     }
 
     pub fn ecdh(&self, kid: &str, peer_public: &[u8]) -> DidResult<SharedSecret> {
+        self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
         require_active(metadata)?;
         if metadata.role != KeyRole::E2eeAgreement {
@@ -151,6 +154,7 @@ impl DidIdentity {
     }
 
     fn request_signing_metadata(&self, kid: &str) -> DidResult<&KeyMetadata> {
+        self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
         require_active(metadata)?;
         if !matches!(
@@ -167,6 +171,13 @@ impl DidIdentity {
         let signing_key = ed25519_signing_key(&secret)?;
         use ed25519_dalek::Signer;
         Ok(signing_key.sign(message).to_bytes().to_vec())
+    }
+
+    fn require_operational(&self) -> DidResult<()> {
+        if self.state() != crate::IdentityState::Active {
+            return Err(DidError::KeyNotUsable);
+        }
+        Ok(())
     }
 }
 

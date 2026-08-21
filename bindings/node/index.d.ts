@@ -3,7 +3,9 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 
 export type KeyRole = 'root_control' | 'device_signing' | 'request_signing' | 'e2ee_signing' | 'e2ee_agreement'
 export type KeyOrigin = 'managed' | 'external'
-export type KeyState = 'active' | 'retired' | 'revoked'
+export type KeyState = 'pending' | 'active' | 'retired' | 'revoked'
+export type IdentityState = 'creating' | 'enrolling' | 'active' | 'revoked'
+export type RootCapabilityState = 'absent' | 'pending' | 'active'
 export type PublicationState = 'prepared' | 'publication_in_flight' | 'publication_uncertain' | 'published'
 export type RootKeyProviderKind = 'os_keyring' | 'injected' | 'local_private_file'
 
@@ -72,8 +74,15 @@ export interface DidCreateSpec {
 export interface IdentitySummary {
   identityId: string
   did: string
-  state: 'creating' | 'active'
+  state: IdentityState
+  rootCapability: RootCapabilityState
   createdAt: string
+}
+
+export interface DocumentCheckpoint {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
 }
 
 export interface KeyMetadata {
@@ -107,8 +116,11 @@ export interface StoreManifest {
 export interface IdentitySnapshot {
   identityId: string
   did: string
-  state: 'creating' | 'active'
+  state: IdentityState
   revision: number
+  rootCapability: RootCapabilityState
+  rootKeyFingerprint: string
+  checkpoint?: DocumentCheckpoint
   document: JsonValue
   capabilities: Capabilities
   keys: KeyMetadata[]
