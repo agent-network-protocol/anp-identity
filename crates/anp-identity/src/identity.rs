@@ -446,6 +446,38 @@ fn recover(runtime: &Arc<StoreRuntime>) -> DidResult<IdentityRegistry> {
             remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
             continue;
         }
+        if journal.kind == CreationJournalKind::RootImport {
+            let record = read_identity(runtime.root(), &journal.identity_id)?;
+            if record.did != journal.did {
+                return Err(DidError::InvalidIdentity);
+            }
+            let committed = matches!(
+                record.root_capability,
+                RootCapabilityState::Pending | RootCapabilityState::Active
+            ) && record.keys.iter().any(|key| {
+                key.role == crate::KeyRole::RootControl
+                    && key.origin == crate::KeyOrigin::Managed
+                    && !key.material_erased
+            });
+            if committed {
+                if registry.identities.get(&journal.did) != Some(&record.summary()) {
+                    registry
+                        .identities
+                        .insert(journal.did.clone(), record.summary());
+                    registry.generation = registry
+                        .generation
+                        .checked_add(1)
+                        .ok_or(DidError::Conflict)?;
+                    write_registry(runtime.root(), &guard, &registry)?;
+                }
+            } else {
+                for secret_ref in &journal.secret_refs {
+                    runtime.key_store().delete(&guard, secret_ref)?;
+                }
+            }
+            remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
+            continue;
+        }
         let committed = registry
             .identities
             .get(&journal.did)

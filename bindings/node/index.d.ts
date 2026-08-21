@@ -85,6 +85,27 @@ export interface DocumentCheckpoint {
   documentDigest: string
 }
 
+export interface VerifiedDocumentEvidence {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
+}
+
+export interface RootTransferExportSpec {
+  targetDid: string
+  senderDeviceId: string
+  recipientDeviceId: string
+  recipientAgreementKid: string
+  recipientAgreementPublic: Buffer
+  rootKid: string
+  ttlSeconds: number
+}
+
+export interface RootPromotionSpec {
+  document: JsonValue
+  evidence: VerifiedDocumentEvidence
+}
+
 export interface KeyMetadata {
   kid: string
   role: KeyRole
@@ -228,4 +249,7 @@ export class DidIdentity {
   reconcileUpdate(revisionId: string, observedRemoteDocument: JsonValue): Promise<'remote_old' | 'committed'>
   endRetirement(kid: string): Promise<void>
   deleteRevokedKey(kid: string): Promise<void>
+  exportWrappedRoot(spec: RootTransferExportSpec): Promise<JsonValue>
+  importWrappedRoot(envelope: JsonValue): Promise<'pending' | 'active'>
+  confirmRootPromotion(spec: RootPromotionSpec): Promise<void>
 }

@@ -19,6 +19,9 @@ export declare class DidIdentity {
   reconcileUpdate(revisionId: string, observedRemoteDocument: any): Promise<string>
   endRetirement(kid: string): Promise<void>
   deleteRevokedKey(kid: string): Promise<void>
+  exportWrappedRoot(spec: JsRootTransferExportSpec): Promise<any>
+  importWrappedRoot(envelope: any): Promise<string>
+  confirmRootPromotion(spec: JsRootPromotionSpec): Promise<void>
 }
 export type JsDidIdentity = DidIdentity
 
@@ -191,6 +194,21 @@ export interface JsRootKeyProviderBinding {
   account?: string
 }
 
+export interface JsRootPromotionSpec {
+  document: any
+  evidence: JsVerifiedDocumentEvidence
+}
+
+export interface JsRootTransferExportSpec {
+  targetDid: string
+  senderDeviceId: string
+  recipientDeviceId: string
+  recipientAgreementKid: string
+  recipientAgreementPublic: Buffer
+  rootKid: string
+  ttlSeconds: number
+}
+
 export interface JsServiceSpec {
   id: string
   serviceType: string
@@ -207,4 +225,10 @@ export interface JsStoreManifest {
   rootKeyFingerprint: string
   createdAt: string
   rekeyGeneration: number
+}
+
+export interface JsVerifiedDocumentEvidence {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
 }

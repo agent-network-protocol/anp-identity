@@ -14,6 +14,7 @@ mod lifecycle;
 mod manifest;
 mod platform;
 mod registry;
+mod root_transfer;
 mod secret;
 mod store;
 mod store_lock;
@@ -44,4 +45,10 @@ pub use manifest::{
 pub use registry::{
     DocumentCheckpoint, IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState,
     RootCapabilityState,
+};
+#[cfg(feature = "key-import")]
+pub use root_transfer::{LegacyRootTransferEvidence, LegacyRootTransferImportSpec};
+pub use root_transfer::{
+    RootPromotionSpec, RootTransferContext, RootTransferExportSpec, RootTransferImportOutcome,
+    WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE, WRAPPED_ROOT_ENVELOPE_VERSION,
 };

@@ -547,7 +547,7 @@ fn revoke_local_authorization(record: &mut IdentityRecord) {
     }
 }
 
-fn persist_state_transition(
+pub(crate) fn persist_state_transition(
     identity: &DidIdentity,
     guard: &crate::store_lock::StoreWriteGuard,
     record: &mut IdentityRecord,

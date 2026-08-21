@@ -435,6 +435,18 @@ impl DidIdentity {
         record.keys.extend(pending.new_key_metadata);
         record.document = pending.candidate_document;
         record.revision = record.revision.checked_add(1).ok_or(DidError::Conflict)?;
+        let registry_version = record
+            .checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.registry_version)
+            .unwrap_or_default()
+            .checked_add(1)
+            .ok_or(DidError::Conflict)?;
+        record.checkpoint = Some(crate::DocumentCheckpoint {
+            document_version: record.revision,
+            registry_version,
+            document_digest: crate::document::document_digest(&record.document)?,
+        });
         record.pending_revision = None;
         persist_record(self.runtime(), &guard, &mut record)?;
         drop(guard);

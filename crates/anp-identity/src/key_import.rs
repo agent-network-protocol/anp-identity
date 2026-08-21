@@ -233,7 +233,7 @@ fn validate_imported_roles(
     Ok(())
 }
 
-fn parse_private_key(
+pub(crate) fn parse_private_key(
     role: KeyRole,
     encoding: PrivateKeyEncoding,
     secret: &[u8],
@@ -270,7 +270,10 @@ fn parse_private_key(
     }
 }
 
-fn raw_private_key(material: PrivateKeyMaterial, role: KeyRole) -> DidResult<Zeroizing<[u8; 32]>> {
+pub(crate) fn raw_private_key(
+    material: PrivateKeyMaterial,
+    role: KeyRole,
+) -> DidResult<Zeroizing<[u8; 32]>> {
     match (role, material) {
         (KeyRole::E2eeAgreement, PrivateKeyMaterial::X25519(key)) => {
             Ok(Zeroizing::new(key.to_bytes()))

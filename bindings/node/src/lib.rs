@@ -6,8 +6,9 @@ use anp_identity::{
     DevicePublicKeySpec, DidCreateSpec, DidError, DidExtensionSpec, DidIdentity as CoreDidIdentity,
     DidProfile, DidStore as CoreDidStore, DocumentUpdateSpec, ExternalPublicKeyMaterial,
     ExternalPublicKeySpec, HttpSignatureOptions, KeyMetadata, KeyRole, ManagedKeySpec,
-    PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind, ServiceSpec,
-    StoreManifest,
+    PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind, RootPromotionSpec,
+    RootTransferExportSpec, RootTransferImportOutcome, ServiceSpec, StoreManifest,
+    VerifiedDocumentEvidence, WrappedRootEnvelope,
 };
 use napi::bindgen_prelude::Buffer;
 use napi::Status;
@@ -100,6 +101,30 @@ pub struct JsDocumentCheckpoint {
     pub document_version: i64,
     pub registry_version: i64,
     pub document_digest: String,
+}
+
+#[napi(object)]
+pub struct JsVerifiedDocumentEvidence {
+    pub document_version: i64,
+    pub registry_version: i64,
+    pub document_digest: String,
+}
+
+#[napi(object)]
+pub struct JsRootTransferExportSpec {
+    pub target_did: String,
+    pub sender_device_id: String,
+    pub recipient_device_id: String,
+    pub recipient_agreement_kid: String,
+    pub recipient_agreement_public: Buffer,
+    pub root_kid: String,
+    pub ttl_seconds: u32,
+}
+
+#[napi(object)]
+pub struct JsRootPromotionSpec {
+    pub document: Value,
+    pub evidence: JsVerifiedDocumentEvidence,
 }
 
 #[napi(object)]
@@ -639,6 +664,83 @@ impl JsDidIdentity {
         self.with_identity(move |identity| identity.delete_revoked_key(&kid).map_err(map_error))
             .await
     }
+
+    #[napi]
+    pub async fn export_wrapped_root(&self, spec: JsRootTransferExportSpec) -> Result<Value> {
+        let recipient_agreement_public: [u8; 32] = spec
+            .recipient_agreement_public
+            .as_ref()
+            .try_into()
+            .map_err(|_| {
+                js_error(
+                    "invalid_peer_key",
+                    "recipient agreement key must be 32 bytes",
+                )
+            })?;
+        self.with_identity(move |identity| {
+            identity
+                .export_wrapped_root(RootTransferExportSpec {
+                    target_did: spec.target_did,
+                    sender_device_id: spec.sender_device_id,
+                    recipient_device_id: spec.recipient_device_id,
+                    recipient_agreement_kid: spec.recipient_agreement_kid,
+                    recipient_agreement_public,
+                    root_kid: spec.root_kid,
+                    ttl_seconds: spec.ttl_seconds,
+                })
+                .and_then(|envelope| {
+                    serde_json::to_value(envelope)
+                        .map_err(|error| DidError::Serialization(error.to_string()))
+                })
+                .map_err(map_error)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn import_wrapped_root(&self, envelope: Value) -> Result<String> {
+        let envelope: WrappedRootEnvelope = serde_json::from_value(envelope)
+            .map_err(|_| js_error("invalid_root_transfer", "invalid wrapped-root envelope"))?;
+        self.with_identity(move |identity| {
+            identity
+                .import_wrapped_root(&envelope)
+                .map(root_import_outcome)
+                .map_err(map_error)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn confirm_root_promotion(&self, spec: JsRootPromotionSpec) -> Result<()> {
+        let evidence = verified_document_evidence(spec.evidence)?;
+        self.with_identity(move |identity| {
+            identity
+                .confirm_root_promotion(RootPromotionSpec {
+                    document: spec.document,
+                    evidence,
+                })
+                .map_err(map_error)
+        })
+        .await
+    }
+}
+
+fn verified_document_evidence(
+    evidence: JsVerifiedDocumentEvidence,
+) -> Result<VerifiedDocumentEvidence> {
+    Ok(VerifiedDocumentEvidence {
+        document_version: u64::try_from(evidence.document_version).map_err(|_| overflow_error())?,
+        registry_version: u64::try_from(evidence.registry_version).map_err(|_| overflow_error())?,
+        document_digest: evidence.document_digest,
+    })
+}
+
+fn root_import_outcome(outcome: RootTransferImportOutcome) -> String {
+    match outcome {
+        RootTransferImportOutcome::Pending => "pending",
+        RootTransferImportOutcome::Active => "active",
+    }
+    .to_string()
 }
 
 fn did_create_spec(spec: JsDidCreateSpec) -> Result<DidCreateSpec> {
@@ -964,6 +1066,10 @@ fn map_error(error: DidError) -> napi::Error {
         DidError::KeyRoleViolation => "key_role_violation",
         DidError::KeyNotUsable => "key_not_usable",
         DidError::KeyMaterialErased => "key_material_erased",
+        DidError::InvalidRootTransfer => "invalid_root_transfer",
+        DidError::RootTransferExpired => "root_transfer_expired",
+        DidError::RootCapabilityUnavailable => "root_capability_unavailable",
+        DidError::PendingRootTransferExists => "pending_root_transfer_exists",
         DidError::InvalidPeerKey => "invalid_peer_key",
         DidError::VerificationFailed => "verification_failed",
         DidError::PendingRevisionExists => "pending_revision_exists",

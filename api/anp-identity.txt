@@ -30,6 +30,7 @@ pub anp_identity::DidError::InvalidPathSegment
 pub anp_identity::DidError::InvalidPeerKey
 pub anp_identity::DidError::InvalidPublicKey
 pub anp_identity::DidError::InvalidPublicationState
+pub anp_identity::DidError::InvalidRootTransfer
 pub anp_identity::DidError::InvalidService
 pub anp_identity::DidError::Io(alloc::string::String)
 pub anp_identity::DidError::KeyMaterialErased
@@ -39,8 +40,11 @@ pub anp_identity::DidError::KeyRoleViolation
 pub anp_identity::DidError::MissingManagedRequestSigning
 pub anp_identity::DidError::PendingRevisionExists
 pub anp_identity::DidError::PendingRevisionNotFound
+pub anp_identity::DidError::PendingRootTransferExists
 pub anp_identity::DidError::ProviderUnavailable
+pub anp_identity::DidError::RootCapabilityUnavailable
 pub anp_identity::DidError::RootKeyMismatch
+pub anp_identity::DidError::RootTransferExpired
 pub anp_identity::DidError::SecretNotFound
 pub anp_identity::DidError::Serialization(alloc::string::String)
 pub anp_identity::DidError::StoreNotFound
@@ -92,6 +96,9 @@ pub enum anp_identity::RootKeyProviderKind
 pub anp_identity::RootKeyProviderKind::Injected
 pub anp_identity::RootKeyProviderKind::LocalPrivateFile
 pub anp_identity::RootKeyProviderKind::OsKeyring
+pub enum anp_identity::RootTransferImportOutcome
+pub anp_identity::RootTransferImportOutcome::Active
+pub anp_identity::RootTransferImportOutcome::Pending
 pub struct anp_identity::AdoptVerifiedDocumentSpec
 pub anp_identity::AdoptVerifiedDocumentSpec::document: serde_json::value::Value
 pub anp_identity::AdoptVerifiedDocumentSpec::evidence: anp_identity::VerifiedDocumentEvidence
@@ -155,6 +162,10 @@ pub fn anp_identity::DidIdentity::public_key_bytes(&self, &str) -> anp_identity:
 pub fn anp_identity::DidIdentity::reload(&mut self) -> anp_identity::DidResult<()>
 pub fn anp_identity::DidIdentity::revision(&self) -> u64
 pub fn anp_identity::DidIdentity::state(&self) -> anp_identity::IdentityState
+impl anp_identity::DidIdentity
+pub fn anp_identity::DidIdentity::confirm_root_promotion(&mut self, anp_identity::RootPromotionSpec) -> anp_identity::DidResult<()>
+pub fn anp_identity::DidIdentity::export_wrapped_root(&self, anp_identity::RootTransferExportSpec) -> anp_identity::DidResult<anp_identity::WrappedRootEnvelope>
+pub fn anp_identity::DidIdentity::import_wrapped_root(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::ecdh(&self, &str, &[u8]) -> anp_identity::DidResult<anp_identity::SharedSecret>
 pub fn anp_identity::DidIdentity::http_signature_headers(&self, &str, &str, &str, core::option::Option<&alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>, core::option::Option<&[u8]>) -> anp_identity::DidResult<alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
@@ -260,6 +271,27 @@ pub struct anp_identity::RootKeyProviderBinding
 pub anp_identity::RootKeyProviderBinding::account: core::option::Option<alloc::string::String>
 pub anp_identity::RootKeyProviderBinding::key_id: alloc::string::String
 pub anp_identity::RootKeyProviderBinding::kind: anp_identity::RootKeyProviderKind
+pub struct anp_identity::RootPromotionSpec
+pub anp_identity::RootPromotionSpec::document: serde_json::value::Value
+pub anp_identity::RootPromotionSpec::evidence: anp_identity::VerifiedDocumentEvidence
+pub struct anp_identity::RootTransferContext
+pub anp_identity::RootTransferContext::checkpoint: anp_identity::DocumentCheckpoint
+pub anp_identity::RootTransferContext::created_at: alloc::string::String
+pub anp_identity::RootTransferContext::expires_at: alloc::string::String
+pub anp_identity::RootTransferContext::recipient_agreement_kid: alloc::string::String
+pub anp_identity::RootTransferContext::recipient_device_id: alloc::string::String
+pub anp_identity::RootTransferContext::root_kid: alloc::string::String
+pub anp_identity::RootTransferContext::sender_device_id: alloc::string::String
+pub anp_identity::RootTransferContext::source_did: alloc::string::String
+pub anp_identity::RootTransferContext::target_did: alloc::string::String
+pub struct anp_identity::RootTransferExportSpec
+pub anp_identity::RootTransferExportSpec::recipient_agreement_kid: alloc::string::String
+pub anp_identity::RootTransferExportSpec::recipient_agreement_public: [u8; 32]
+pub anp_identity::RootTransferExportSpec::recipient_device_id: alloc::string::String
+pub anp_identity::RootTransferExportSpec::root_kid: alloc::string::String
+pub anp_identity::RootTransferExportSpec::sender_device_id: alloc::string::String
+pub anp_identity::RootTransferExportSpec::target_did: alloc::string::String
+pub anp_identity::RootTransferExportSpec::ttl_seconds: u32
 pub struct anp_identity::ServiceSpec
 pub anp_identity::ServiceSpec::id: alloc::string::String
 pub anp_identity::ServiceSpec::profiles: alloc::vec::Vec<alloc::string::String>
@@ -283,6 +315,16 @@ pub struct anp_identity::VerifiedDocumentEvidence
 pub anp_identity::VerifiedDocumentEvidence::document_digest: alloc::string::String
 pub anp_identity::VerifiedDocumentEvidence::document_version: u64
 pub anp_identity::VerifiedDocumentEvidence::registry_version: u64
+pub struct anp_identity::WrappedRootEnvelope
+pub anp_identity::WrappedRootEnvelope::ciphertext_b64u: alloc::string::String
+pub anp_identity::WrappedRootEnvelope::context: anp_identity::RootTransferContext
+pub anp_identity::WrappedRootEnvelope::envelope_type: alloc::string::String
+pub anp_identity::WrappedRootEnvelope::ephemeral_public_b64u: alloc::string::String
+pub anp_identity::WrappedRootEnvelope::nonce_b64u: alloc::string::String
+pub anp_identity::WrappedRootEnvelope::signature_b64u: alloc::string::String
+pub anp_identity::WrappedRootEnvelope::version: u32
 pub const anp_identity::STORE_MANIFEST_SCHEMA_VERSION: u32
+pub const anp_identity::WRAPPED_ROOT_ENVELOPE_TYPE: &str
+pub const anp_identity::WRAPPED_ROOT_ENVELOPE_VERSION: u32
 pub fn anp_identity::canonical_document_digest(&serde_json::value::Value) -> anp_identity::DidResult<alloc::string::String>
 pub type anp_identity::DidResult<T> = core::result::Result<T, anp_identity::DidError>

@@ -4,10 +4,25 @@ pub anp_identity::IdentityImportSpec::capabilities: anp_identity::Capabilities
 pub anp_identity::IdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub anp_identity::IdentityImportSpec::private_keys: alloc::vec::Vec<anp_identity::ImportedPrivateKey>
 pub anp_identity::IdentityImportSpec::verified_document: serde_json::value::Value
+pub anp_identity::LegacyRootTransferEvidence::accepted_at: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::checkpoint: anp_identity::DocumentCheckpoint
+pub anp_identity::LegacyRootTransferEvidence::recipient_agreement_kid: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::recipient_device_id: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::root_kid: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::sender_device_id: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::source_did: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::target_did: alloc::string::String
+pub anp_identity::LegacyRootTransferEvidence::transfer_id: alloc::string::String
+pub anp_identity::LegacyRootTransferImportSpec::encoding: anp_identity::PrivateKeyEncoding
+pub anp_identity::LegacyRootTransferImportSpec::evidence: anp_identity::LegacyRootTransferEvidence
+pub anp_identity::LegacyRootTransferImportSpec::root_key: zeroize::Zeroizing<alloc::vec::Vec<u8>>
 pub anp_identity::PrivateKeyEncoding::Pkcs8Der
 pub anp_identity::PrivateKeyEncoding::Raw32
 pub enum anp_identity::PrivateKeyEncoding
+pub fn anp_identity::DidIdentity::import_legacy_root_transfer(&mut self, anp_identity::LegacyRootTransferImportSpec) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
 pub fn anp_identity::DidStore::import_identity(&mut self, anp_identity::IdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::ImportedPrivateKey::new(impl core::convert::Into<alloc::string::String>, anp_identity::KeyRole, anp_identity::PrivateKeyEncoding, zeroize::Zeroizing<alloc::vec::Vec<u8>>) -> Self
 pub struct anp_identity::IdentityImportSpec
 pub struct anp_identity::ImportedPrivateKey
+pub struct anp_identity::LegacyRootTransferEvidence
+pub struct anp_identity::LegacyRootTransferImportSpec

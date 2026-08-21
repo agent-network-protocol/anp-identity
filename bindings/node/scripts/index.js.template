@@ -168,6 +168,18 @@ class DidIdentity {
   deleteRevokedKey(kid) {
     return call(this.#inner.deleteRevokedKey(kid))
   }
+
+  exportWrappedRoot(spec) {
+    return call(this.#inner.exportWrappedRoot(spec))
+  }
+
+  importWrappedRoot(envelope) {
+    return call(this.#inner.importWrappedRoot(envelope))
+  }
+
+  confirmRootPromotion(spec) {
+    return call(this.#inner.confirmRootPromotion(spec))
+  }
 }
 
 module.exports = { DidIdentity, DidStore }

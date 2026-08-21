@@ -77,6 +77,19 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
     httpHeaders.find((header) => header.name === 'Signature-Input').value,
     /nonce="node-challenge"/,
   )
+  const wrappedRoot = await alice.exportWrappedRoot({
+    targetDid: aliceSnapshot.did,
+    senderDeviceId: 'device-1',
+    recipientDeviceId: 'device-1',
+    recipientAgreementKid: `${aliceSnapshot.did}#agreement`,
+    recipientAgreementPublic: await alice.publicKeyBytes('#agreement'),
+    rootKid: `${aliceSnapshot.did}#root`,
+    ttlSeconds: 300,
+  })
+  assert.equal(wrappedRoot.type, 'anp.identity.root-transfer.wrapped')
+  assert.equal(wrappedRoot.version, 1)
+  assert.equal(await alice.importWrappedRoot(wrappedRoot), 'active')
+  await store.reload()
 
   const prepared = await alice.prepareUpdate({
     requestSigningRotation: { oldKid: '#request', newFragment: 'request-v2' },

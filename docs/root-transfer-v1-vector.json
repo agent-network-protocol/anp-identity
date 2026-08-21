@@ -1,0 +1,23 @@
+{
+  "type": "anp.identity.root-transfer.wrapped",
+  "version": 1,
+  "context": {
+    "source_did": "did:wba:example.com:vectors:root-transfer:e1_UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4",
+    "target_did": "did:wba:example.com:vectors:root-transfer:e1_UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4",
+    "sender_device_id": "device-vector",
+    "recipient_device_id": "device-vector",
+    "recipient_agreement_kid": "did:wba:example.com:vectors:root-transfer:e1_UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4#agreement",
+    "root_kid": "did:wba:example.com:vectors:root-transfer:e1_UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4#root",
+    "checkpoint": {
+      "document_version": 1,
+      "registry_version": 1,
+      "document_digest": "sha256:_xuT81tWQp3VWF-6Goqu565qhzivb_deE1k_CzXb3zQ"
+    },
+    "created_at": "2026-08-21T00:00:00Z",
+    "expires_at": "2026-08-21T00:05:00Z"
+  },
+  "ephemeral_public_b64u": "f0QvtOzJ3WzeRjWIH74rtDO2ewBJNcQzDSHjb2gaDhI",
+  "nonce_b64u": "FxcXFxcXFxcXFxcX",
+  "ciphertext_b64u": "bhkuDAKowQxAm71n2yGlYr26fWQyBYfEVLb1JAFuFAPB79hf6d5ZFRuTfuKT-2C7",
+  "signature_b64u": "ibtQauOjjRhgegSWixReM8qcsf0GCKyTO2vHh2QDf9XSWzQej80hsBpBOlz5t0lhlClqiJoBzzY_x92tavSyAw"
+}

@@ -52,6 +52,14 @@ pub enum DidError {
     KeyNotUsable,
     #[error("the managed key material was already erased")]
     KeyMaterialErased,
+    #[error("the root-transfer envelope or evidence is invalid")]
+    InvalidRootTransfer,
+    #[error("the root-transfer envelope is expired or outside the accepted time window")]
+    RootTransferExpired,
+    #[error("the root capability does not authorize this operation")]
+    RootCapabilityUnavailable,
+    #[error("another root transfer is already pending")]
+    PendingRootTransferExists,
     #[error("the peer public key is invalid")]
     InvalidPeerKey,
     #[error("signature verification failed")]

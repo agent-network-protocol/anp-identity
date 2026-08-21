@@ -11,6 +11,7 @@ use crate::adoption::{LocalAuthorizationRecord, PendingEnrollmentRecord};
 use crate::fs_util::{ensure_private_dir, write_atomic_private};
 use crate::keystore::SecretRef;
 use crate::lifecycle::PendingRevisionRecord;
+use crate::root_transfer::{PendingRootTransferRecord, RootTransferReplayRecord};
 use crate::store_lock::StoreWriteGuard;
 use crate::{Capabilities, DidError, DidResult, KeyRole};
 
@@ -113,6 +114,10 @@ pub(crate) struct IdentityRecord {
     pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
     #[serde(default)]
     pub(crate) pending_enrollment: Option<PendingEnrollmentRecord>,
+    #[serde(default)]
+    pub(crate) pending_root_transfer: Option<PendingRootTransferRecord>,
+    #[serde(default)]
+    pub(crate) root_transfer_replays: Vec<RootTransferReplayRecord>,
     pub(crate) created_at: String,
     #[serde(default)]
     pub(crate) pending_revision: Option<PendingRevisionRecord>,
@@ -149,6 +154,7 @@ pub(crate) enum CreationJournalKind {
     #[default]
     Create,
     StateTransition,
+    RootImport,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -220,6 +226,24 @@ impl CreationJournal {
             identity_id,
             did,
             secret_refs: Vec::new(),
+            created_at,
+        }
+    }
+
+    pub(crate) fn new_root_import(
+        transaction_id: String,
+        identity_id: String,
+        did: String,
+        secret_refs: Vec<SecretRef>,
+        created_at: String,
+    ) -> Self {
+        Self {
+            schema_version: JOURNAL_SCHEMA_VERSION,
+            kind: CreationJournalKind::RootImport,
+            transaction_id,
+            identity_id,
+            did,
+            secret_refs,
             created_at,
         }
     }
@@ -437,6 +461,8 @@ pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
         checkpoint: Some(input.checkpoint),
         local_authorization: input.local_authorization,
         pending_enrollment: None,
+        pending_root_transfer: None,
+        root_transfer_replays: Vec::new(),
         created_at: input.created_at,
         pending_revision: None,
     }
