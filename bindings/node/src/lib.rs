@@ -4,9 +4,9 @@ use std::sync::Arc;
 use anp_identity::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
     DidExtensionSpec, DidIdentity as CoreDidIdentity, DidProfile, DidStore as CoreDidStore,
-    DocumentUpdateSpec, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyMetadata, KeyRole,
-    ManagedKeySpec, PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind,
-    ServiceSpec, StoreManifest,
+    DocumentUpdateSpec, ExternalPublicKeyMaterial, ExternalPublicKeySpec, HttpSignatureOptions,
+    KeyMetadata, KeyRole, ManagedKeySpec, PublicOkpJwk, PublicationState, RequestSigningRotation,
+    RootKeyProviderKind, ServiceSpec, StoreManifest,
 };
 use napi::bindgen_prelude::Buffer;
 use napi::Status;
@@ -168,6 +168,14 @@ pub struct JsPendingRevisionSummary {
 pub struct JsHeader {
     pub name: String,
     pub value: String,
+}
+
+#[napi(object)]
+pub struct JsHttpSignatureOptions {
+    pub nonce: Option<String>,
+    pub created: Option<i64>,
+    pub expires: Option<i64>,
+    pub covered_components: Option<Vec<String>>,
 }
 
 #[napi(js_name = "DidStore")]
@@ -466,6 +474,7 @@ impl JsDidIdentity {
         request_method: String,
         headers: Option<Vec<JsHeader>>,
         body: Option<Buffer>,
+        options: Option<JsHttpSignatureOptions>,
     ) -> Result<Vec<JsHeader>> {
         let headers = headers.map(|headers| {
             headers
@@ -476,12 +485,21 @@ impl JsDidIdentity {
         let body = body.map(|body| body.to_vec());
         self.with_identity(move |identity| {
             identity
-                .http_signature_headers(
+                .http_signature_headers_with_options(
                     &kid,
                     &request_url,
                     &request_method,
                     headers.as_ref(),
                     body.as_deref(),
+                    options
+                        .map(|options| HttpSignatureOptions {
+                            keyid: None,
+                            nonce: options.nonce,
+                            created: options.created,
+                            expires: options.expires,
+                            covered_components: options.covered_components,
+                        })
+                        .unwrap_or_default(),
                 )
                 .map(|headers| {
                     headers
@@ -695,6 +713,7 @@ fn service_spec(service: JsServiceSpec) -> ServiceSpec {
 fn key_role(value: &str) -> Result<KeyRole> {
     match value {
         "root_control" => Ok(KeyRole::RootControl),
+        "device_signing" => Ok(KeyRole::DeviceSigning),
         "request_signing" => Ok(KeyRole::RequestSigning),
         "e2ee_signing" => Ok(KeyRole::E2eeSigning),
         "e2ee_agreement" => Ok(KeyRole::E2eeAgreement),
@@ -755,6 +774,7 @@ fn store_manifest(manifest: &StoreManifest) -> Result<JsStoreManifest> {
 fn key_role_name(role: KeyRole) -> String {
     match role {
         KeyRole::RootControl => "root_control",
+        KeyRole::DeviceSigning => "device_signing",
         KeyRole::RequestSigning => "request_signing",
         KeyRole::E2eeSigning => "e2ee_signing",
         KeyRole::E2eeAgreement => "e2ee_agreement",

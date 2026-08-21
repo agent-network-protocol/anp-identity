@@ -9,7 +9,7 @@ export declare class DidIdentity {
   ecdh(kid: string, peerPublic: Buffer): Promise<Buffer>
   publicKeyBytes(kid: string): Promise<Buffer>
   legacyDidWbaHeader(kid: string, serviceDomain: string, version: string): Promise<string>
-  httpSignatureHeaders(kid: string, requestUrl: string, requestMethod: string, headers?: Array<JsHeader> | undefined | null, body?: Buffer | undefined | null): Promise<Array<JsHeader>>
+  httpSignatureHeaders(kid: string, requestUrl: string, requestMethod: string, headers?: Array<JsHeader> | undefined | null, body?: Buffer | undefined | null, options?: JsHttpSignatureOptions | undefined | null): Promise<Array<JsHeader>>
   prepareUpdate(spec: JsDocumentUpdateSpec): Promise<JsPreparedUpdate>
   beginPublication(revisionId: string): Promise<void>
   markPublicationUncertain(revisionId: string): Promise<void>
@@ -93,6 +93,13 @@ export interface JsExternalPublicKeySpec {
 export interface JsHeader {
   name: string
   value: string
+}
+
+export interface JsHttpSignatureOptions {
+  nonce?: string
+  created?: number
+  expires?: number
+  coveredComponents?: Array<string>
 }
 
 export interface JsIdentitySnapshot {

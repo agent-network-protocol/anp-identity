@@ -1,4 +1,5 @@
 pub mod anp_identity
+pub use anp_identity::HttpSignatureOptions
 pub enum anp_identity::DidError
 pub anp_identity::DidError::Conflict
 pub anp_identity::DidError::CorruptRecord
@@ -51,6 +52,7 @@ pub enum anp_identity::KeyOrigin
 pub anp_identity::KeyOrigin::External
 pub anp_identity::KeyOrigin::Managed
 pub enum anp_identity::KeyRole
+pub anp_identity::KeyRole::DeviceSigning
 pub anp_identity::KeyRole::E2eeAgreement
 pub anp_identity::KeyRole::E2eeSigning
 pub anp_identity::KeyRole::RequestSigning
@@ -121,8 +123,10 @@ pub fn anp_identity::DidIdentity::state(&self) -> anp_identity::IdentityState
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::ecdh(&self, &str, &[u8]) -> anp_identity::DidResult<anp_identity::SharedSecret>
 pub fn anp_identity::DidIdentity::http_signature_headers(&self, &str, &str, &str, core::option::Option<&alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>, core::option::Option<&[u8]>) -> anp_identity::DidResult<alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
+pub fn anp_identity::DidIdentity::http_signature_headers_with_options(&self, &str, &str, &str, core::option::Option<&alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>, core::option::Option<&[u8]>, anp::authentication::http_signatures::HttpSignatureOptions) -> anp_identity::DidResult<alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
 pub fn anp_identity::DidIdentity::legacy_did_wba_header(&self, &str, &str, &str) -> anp_identity::DidResult<alloc::string::String>
 pub fn anp_identity::DidIdentity::sign(&self, &str, &[u8]) -> anp_identity::DidResult<alloc::vec::Vec<u8>>
+pub fn anp_identity::DidIdentity::sign_device_assertion(&self, &str, &[u8]) -> anp_identity::DidResult<alloc::vec::Vec<u8>>
 pub fn anp_identity::DidIdentity::verify(&self, &str, &[u8], &[u8]) -> anp_identity::DidResult<()>
 impl core::fmt::Debug for anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

@@ -263,6 +263,7 @@ fn push_field(output: &mut Vec<u8>, name: &str, value: &str) {
 fn key_role_name(role: KeyRole) -> &'static str {
     match role {
         KeyRole::RootControl => "root-control",
+        KeyRole::DeviceSigning => "device-signing",
         KeyRole::RequestSigning => "request-signing",
         KeyRole::E2eeSigning => "e2ee-signing",
         KeyRole::E2eeAgreement => "e2ee-agreement",

@@ -32,9 +32,10 @@ impl ManagedPrivateKey {
     pub(crate) fn generate(fragment: String, role: KeyRole) -> Self {
         let mut bytes = match role {
             KeyRole::E2eeAgreement => x25519_dalek::StaticSecret::random_from_rng(OsRng).to_bytes(),
-            KeyRole::RootControl | KeyRole::RequestSigning | KeyRole::E2eeSigning => {
-                ed25519_dalek::SigningKey::generate(&mut OsRng).to_bytes()
-            }
+            KeyRole::RootControl
+            | KeyRole::DeviceSigning
+            | KeyRole::RequestSigning
+            | KeyRole::E2eeSigning => ed25519_dalek::SigningKey::generate(&mut OsRng).to_bytes(),
         };
         let mut protected = Zeroizing::new([0_u8; 32]);
         protected.copy_from_slice(&bytes);
@@ -260,7 +261,10 @@ fn public_key_from_raw(role: KeyRole, bytes: &Zeroizing<[u8; 32]>) -> PublicKeyM
             let secret = x25519_dalek::StaticSecret::from(**bytes);
             PublicKeyMaterial::X25519(x25519_dalek::PublicKey::from(&secret).to_bytes())
         }
-        KeyRole::RootControl | KeyRole::RequestSigning | KeyRole::E2eeSigning => {
+        KeyRole::RootControl
+        | KeyRole::DeviceSigning
+        | KeyRole::RequestSigning
+        | KeyRole::E2eeSigning => {
             let signing_key = ed25519_dalek::SigningKey::from_bytes(bytes);
             PublicKeyMaterial::Ed25519(signing_key.verifying_key())
         }
@@ -279,6 +283,7 @@ fn supplied_managed_key(key: &ManagedPrivateKey) -> SuppliedDidKey {
 fn anp_role(role: KeyRole) -> DidKeyRole {
     match role {
         KeyRole::RootControl => DidKeyRole::RootControl,
+        KeyRole::DeviceSigning => DidKeyRole::DeviceSigning,
         KeyRole::RequestSigning => DidKeyRole::RequestSigning,
         KeyRole::E2eeSigning => DidKeyRole::E2eeSigning,
         KeyRole::E2eeAgreement => DidKeyRole::E2eeAgreement,
@@ -288,6 +293,10 @@ fn anp_role(role: KeyRole) -> DidKeyRole {
 fn relationships(role: KeyRole) -> Vec<DidVerificationRelationship> {
     match role {
         KeyRole::RootControl => vec![
+            DidVerificationRelationship::Authentication,
+            DidVerificationRelationship::AssertionMethod,
+        ],
+        KeyRole::DeviceSigning => vec![
             DidVerificationRelationship::Authentication,
             DidVerificationRelationship::AssertionMethod,
         ],

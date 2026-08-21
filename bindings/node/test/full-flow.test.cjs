@@ -37,7 +37,7 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
   const bob = await store.createIdentity(identitySpec('bob'))
   const aliceSnapshot = await alice.snapshot()
   assert.equal(aliceSnapshot.state, 'active')
-  assert.equal(aliceSnapshot.keys.length, 4)
+  assert.equal(aliceSnapshot.keys.length, 5)
   assert.equal((await store.listIdentities()).length, 2)
 
   const message = Buffer.from('hello from Node')
@@ -62,8 +62,18 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
     'POST',
     [],
     Buffer.from('{"message":"hello"}'),
+    {
+      nonce: 'node-challenge',
+      created: 1700000000,
+      expires: 1700000300,
+      coveredComponents: ['@method', '@target-uri', 'content-digest'],
+    },
   )
   assert.ok(httpHeaders.some((header) => header.name === 'Signature'))
+  assert.match(
+    httpHeaders.find((header) => header.name === 'Signature-Input').value,
+    /nonce="node-challenge"/,
+  )
 
   const prepared = await alice.prepareUpdate({
     requestSigningRotation: { oldKid: '#request', newFragment: 'request-v2' },
@@ -200,6 +210,7 @@ function identitySpec(name) {
     capabilities: { didWba: true },
     managedKeys: [
       { fragment: 'root', role: 'root_control' },
+      { fragment: 'device', role: 'device_signing' },
       { fragment: 'request', role: 'request_signing' },
       { fragment: 'e2ee-signing', role: 'e2ee_signing' },
       { fragment: 'agreement', role: 'e2ee_agreement' },
@@ -222,7 +233,7 @@ function identitySpec(name) {
           devices: [
             {
               deviceId: 'device-1',
-              signingKeyId: '#e2ee-signing',
+              signingKeyId: '#device',
               e2eeKeyId: '#agreement',
               profiles: ['anp.core.binding.v1'],
             },

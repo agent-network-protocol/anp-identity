@@ -1,7 +1,7 @@
 /// JSON-compatible value accepted by the native binding.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
-export type KeyRole = 'root_control' | 'request_signing' | 'e2ee_signing' | 'e2ee_agreement'
+export type KeyRole = 'root_control' | 'device_signing' | 'request_signing' | 'e2ee_signing' | 'e2ee_agreement'
 export type KeyOrigin = 'managed' | 'external'
 export type KeyState = 'active' | 'retired' | 'revoked'
 export type PublicationState = 'prepared' | 'publication_in_flight' | 'publication_uncertain' | 'published'
@@ -143,6 +143,13 @@ export interface Header {
   value: string
 }
 
+export interface HttpSignatureOptions {
+  nonce?: string
+  created?: number
+  expires?: number
+  coveredComponents?: string[]
+}
+
 export interface AnpIdentityError extends Error {
   code: string
 }
@@ -182,7 +189,7 @@ export class DidIdentity {
   /** Raw X25519 result; derive a domain-separated session key and overwrite this Buffer. */
   ecdh(kid: string, peerPublic: Buffer): Promise<Buffer>
   legacyDidWbaHeader(kid: string, serviceDomain: string, version: string): Promise<string>
-  httpSignatureHeaders(kid: string, requestUrl: string, requestMethod: string, headers?: Header[], body?: Buffer): Promise<Header[]>
+  httpSignatureHeaders(kid: string, requestUrl: string, requestMethod: string, headers?: Header[], body?: Buffer, options?: HttpSignatureOptions): Promise<Header[]>
   prepareUpdate(spec: DocumentUpdateSpec): Promise<PreparedUpdate>
   beginPublication(revisionId: string): Promise<void>
   markPublicationUncertain(revisionId: string): Promise<void>

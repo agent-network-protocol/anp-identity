@@ -120,9 +120,16 @@ class DidIdentity {
     return call(this.#inner.legacyDidWbaHeader(kid, serviceDomain, version))
   }
 
-  httpSignatureHeaders(kid, requestUrl, requestMethod, headers, body) {
+  httpSignatureHeaders(kid, requestUrl, requestMethod, headers, body, options) {
     return call(
-      this.#inner.httpSignatureHeaders(kid, requestUrl, requestMethod, headers ?? null, body ?? null),
+      this.#inner.httpSignatureHeaders(
+        kid,
+        requestUrl,
+        requestMethod,
+        headers ?? null,
+        body ?? null,
+        options ?? null,
+      ),
     )
   }
 

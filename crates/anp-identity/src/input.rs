@@ -23,6 +23,7 @@ pub enum DidProfile {
 #[serde(rename_all = "snake_case")]
 pub enum KeyRole {
     RootControl,
+    DeviceSigning,
     RequestSigning,
     E2eeSigning,
     E2eeAgreement,
@@ -146,7 +147,7 @@ impl DidCreateSpec {
             && !self
                 .managed_keys
                 .iter()
-                .any(|key| key.role == KeyRole::RequestSigning)
+                .any(|key| matches!(key.role, KeyRole::DeviceSigning | KeyRole::RequestSigning))
         {
             return Err(DidError::MissingManagedRequestSigning);
         }
@@ -190,7 +191,7 @@ impl ExternalPublicKeySpec {
             return Err(DidError::ExternalRootControl);
         }
         let method_type = match self.role {
-            KeyRole::RequestSigning | KeyRole::E2eeSigning => "Multikey",
+            KeyRole::DeviceSigning | KeyRole::RequestSigning | KeyRole::E2eeSigning => "Multikey",
             KeyRole::E2eeAgreement => "X25519KeyAgreementKey2019",
             KeyRole::RootControl => return Err(DidError::ExternalRootControl),
         };
@@ -209,7 +210,10 @@ impl ExternalPublicKeySpec {
         let key = anp::authentication::extract_public_key(&method)
             .map_err(|_| DidError::InvalidPublicKey)?;
         match (&self.role, &key) {
-            (KeyRole::RequestSigning | KeyRole::E2eeSigning, PublicKeyMaterial::Ed25519(_))
+            (
+                KeyRole::DeviceSigning | KeyRole::RequestSigning | KeyRole::E2eeSigning,
+                PublicKeyMaterial::Ed25519(_),
+            )
             | (KeyRole::E2eeAgreement, PublicKeyMaterial::X25519(_)) => Ok(key),
             _ => Err(DidError::InvalidPublicKey),
         }
@@ -385,5 +389,18 @@ mod tests {
         assert_eq!(spec.validate_for_did(did), Err(DidError::DuplicateKid));
         spec.external_keys[0].kid = "did:wba:evil.example#request".to_string();
         assert_eq!(spec.validate_for_did(did), Err(DidError::ForeignKid));
+    }
+
+    #[test]
+    fn device_signing_satisfies_did_wba_managed_auth_requirement() {
+        let mut spec = valid_spec();
+        spec.managed_keys
+            .retain(|key| key.role != KeyRole::RequestSigning);
+        spec.managed_keys.push(ManagedKeySpec {
+            fragment: "device".to_string(),
+            role: KeyRole::DeviceSigning,
+        });
+
+        spec.validate().unwrap();
     }
 }

@@ -15,6 +15,7 @@ mod secret;
 mod store;
 mod store_lock;
 
+pub use anp::authentication::HttpSignatureOptions;
 pub use crypto_ops::SharedSecret;
 pub use error::{DidError, DidResult};
 pub use identity::{DidIdentity, DidStore};

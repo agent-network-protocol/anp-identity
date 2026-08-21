@@ -3,7 +3,7 @@ use std::fmt;
 
 use anp::authentication::{
     complete_http_signature_headers, complete_legacy_did_wba_auth_header, find_verification_method,
-    prepare_http_signature_headers, prepare_legacy_did_wba_auth_header, HttpSignatureOptions,
+    prepare_http_signature_headers, prepare_legacy_did_wba_auth_header,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -35,7 +35,7 @@ impl DidIdentity {
         require_active(metadata)?;
         if !matches!(
             metadata.role,
-            KeyRole::RequestSigning | KeyRole::E2eeSigning
+            KeyRole::DeviceSigning | KeyRole::RequestSigning | KeyRole::E2eeSigning
         ) {
             return Err(DidError::KeyRoleViolation);
         }
@@ -43,6 +43,15 @@ impl DidIdentity {
         let signing_key = ed25519_signing_key(&secret)?;
         use ed25519_dalek::Signer;
         Ok(signing_key.sign(message).to_bytes().to_vec())
+    }
+
+    pub fn sign_device_assertion(&self, kid: &str, message: &[u8]) -> DidResult<Vec<u8>> {
+        let metadata = self.managed_key_metadata(kid)?;
+        require_active(metadata)?;
+        if metadata.role != KeyRole::DeviceSigning {
+            return Err(DidError::KeyRoleViolation);
+        }
+        self.sign_prepared(metadata, message)
     }
 
     pub fn verify(&self, kid: &str, message: &[u8], signature: &[u8]) -> DidResult<()> {
@@ -107,17 +116,34 @@ impl DidIdentity {
         headers: Option<&BTreeMap<String, String>>,
         body: Option<&[u8]>,
     ) -> DidResult<BTreeMap<String, String>> {
+        self.http_signature_headers_with_options(
+            kid,
+            request_url,
+            request_method,
+            headers,
+            body,
+            crate::HttpSignatureOptions::default(),
+        )
+    }
+
+    pub fn http_signature_headers_with_options(
+        &self,
+        kid: &str,
+        request_url: &str,
+        request_method: &str,
+        headers: Option<&BTreeMap<String, String>>,
+        body: Option<&[u8]>,
+        mut options: crate::HttpSignatureOptions,
+    ) -> DidResult<BTreeMap<String, String>> {
         let metadata = self.request_signing_metadata(kid)?;
+        options.keyid = Some(metadata.kid.clone());
         let prepared = prepare_http_signature_headers(
             self.document(),
             request_url,
             request_method,
             headers,
             body,
-            HttpSignatureOptions {
-                keyid: Some(metadata.kid.clone()),
-                ..HttpSignatureOptions::default()
-            },
+            options,
         )
         .map_err(|_| DidError::InvalidIdentity)?;
         let signature = self.sign_prepared(metadata, prepared.signing_input())?;
@@ -127,7 +153,10 @@ impl DidIdentity {
     fn request_signing_metadata(&self, kid: &str) -> DidResult<&KeyMetadata> {
         let metadata = self.managed_key_metadata(kid)?;
         require_active(metadata)?;
-        if metadata.role != KeyRole::RequestSigning {
+        if !matches!(
+            metadata.role,
+            KeyRole::DeviceSigning | KeyRole::RequestSigning
+        ) {
             return Err(DidError::KeyRoleViolation);
         }
         Ok(metadata)
@@ -189,6 +218,16 @@ mod tests {
 
         let signature = alice.sign("#request", message).unwrap();
         alice.verify("#request", message, &signature).unwrap();
+        let device_signature = alice.sign_device_assertion("#device", message).unwrap();
+        alice.verify("#device", message, &device_signature).unwrap();
+        assert_eq!(
+            alice.sign_device_assertion("#request", message),
+            Err(DidError::KeyRoleViolation)
+        );
+        assert_eq!(
+            alice.sign_device_assertion("#e2ee-signing", message),
+            Err(DidError::KeyRoleViolation)
+        );
         assert_eq!(
             alice.verify("#request", b"tampered", &signature),
             Err(DidError::VerificationFailed)
@@ -255,6 +294,39 @@ mod tests {
             Some(br#"{"message":"hello"}"#),
         )
         .unwrap();
+        let challenged = alice
+            .http_signature_headers_with_options(
+                "#device",
+                "https://api.example.com/messages",
+                "POST",
+                None,
+                Some(br#"{"message":"hello"}"#),
+                crate::HttpSignatureOptions {
+                    keyid: Some("did:example:ignored#foreign".to_string()),
+                    nonce: Some("challenge-123".to_string()),
+                    created: Some(1_700_000_000),
+                    expires: Some(1_700_000_300),
+                    covered_components: Some(vec![
+                        "@method".to_string(),
+                        "@target-uri".to_string(),
+                        "content-digest".to_string(),
+                    ]),
+                },
+            )
+            .unwrap();
+        let signature_input = challenged.get("Signature-Input").unwrap();
+        assert!(signature_input.contains("nonce=\"challenge-123\""));
+        assert!(signature_input.contains("created=1700000000"));
+        assert!(signature_input.contains("expires=1700000300"));
+        assert!(signature_input.contains(&format!("keyid=\"{}#device\"", alice.did())));
+        verify_http_message_signature(
+            alice.document(),
+            "POST",
+            "https://api.example.com/messages",
+            &challenged,
+            Some(br#"{"message":"hello"}"#),
+        )
+        .unwrap();
     }
 
     fn spec(name: &str) -> DidCreateSpec {
@@ -266,6 +338,7 @@ mod tests {
             capabilities: Capabilities { did_wba: true },
             managed_keys: vec![
                 managed("root", KeyRole::RootControl),
+                managed("device", KeyRole::DeviceSigning),
                 managed("request", KeyRole::RequestSigning),
                 managed("e2ee-signing", KeyRole::E2eeSigning),
                 managed("agreement", KeyRole::E2eeAgreement),
