@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anp_identity::{
-    Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
-    DidExtensionSpec, DidIdentity as CoreDidIdentity, DidProfile, DidStore as CoreDidStore,
-    DocumentUpdateSpec, ExternalPublicKeyMaterial, ExternalPublicKeySpec, HttpSignatureOptions,
-    KeyMetadata, KeyRole, ManagedKeySpec, PublicOkpJwk, PublicationState, RequestSigningRotation,
-    RootKeyProviderKind, ServiceSpec, StoreManifest,
+    Capabilities, DeviceAddSpec, DeviceManifestEntrySpec, DeviceManifestSpec, DeviceMutationSpec,
+    DevicePublicKeySpec, DidCreateSpec, DidError, DidExtensionSpec, DidIdentity as CoreDidIdentity,
+    DidProfile, DidStore as CoreDidStore, DocumentUpdateSpec, ExternalPublicKeyMaterial,
+    ExternalPublicKeySpec, HttpSignatureOptions, KeyMetadata, KeyRole, ManagedKeySpec,
+    PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind, ServiceSpec,
+    StoreManifest,
 };
 use napi::bindgen_prelude::Buffer;
 use napi::Status;
@@ -152,8 +153,31 @@ pub struct JsRequestSigningRotation {
 }
 
 #[napi(object)]
+pub struct JsDevicePublicKeySpec {
+    pub kid: String,
+    pub public_key_multibase: String,
+}
+
+#[napi(object)]
+pub struct JsDeviceAddSpec {
+    pub device_id: String,
+    pub signing_key: JsDevicePublicKeySpec,
+    #[napi(js_name = "e2eeKey")]
+    pub e2ee_key: JsDevicePublicKeySpec,
+    pub profiles: Vec<String>,
+}
+
+#[napi(object)]
+pub struct JsDeviceMutationSpec {
+    pub operation: String,
+    pub device: Option<JsDeviceAddSpec>,
+    pub device_id: Option<String>,
+}
+
+#[napi(object)]
 pub struct JsDocumentUpdateSpec {
-    pub request_signing_rotation: JsRequestSigningRotation,
+    pub request_signing_rotation: Option<JsRequestSigningRotation>,
+    pub device_mutations: Option<Vec<JsDeviceMutationSpec>>,
     pub services: Option<Vec<JsServiceSpec>>,
 }
 
@@ -539,7 +563,7 @@ impl JsDidIdentity {
 
     #[napi]
     pub async fn prepare_update(&self, spec: JsDocumentUpdateSpec) -> Result<JsPreparedUpdate> {
-        let spec = document_update_spec(spec);
+        let spec = document_update_spec(spec)?;
         let prepared = self
             .with_identity(move |identity| identity.prepare_update(spec).map_err(map_error))
             .await?;
@@ -713,15 +737,53 @@ fn extension_spec(extension: JsDidExtensionSpec) -> Result<DidExtensionSpec> {
     }
 }
 
-fn document_update_spec(spec: JsDocumentUpdateSpec) -> DocumentUpdateSpec {
-    DocumentUpdateSpec {
-        request_signing_rotation: RequestSigningRotation {
-            old_kid: spec.request_signing_rotation.old_kid,
-            new_fragment: spec.request_signing_rotation.new_fragment,
-        },
+fn document_update_spec(spec: JsDocumentUpdateSpec) -> Result<DocumentUpdateSpec> {
+    Ok(DocumentUpdateSpec {
+        request_signing_rotation: spec.request_signing_rotation.map(|rotation| {
+            RequestSigningRotation {
+                old_kid: rotation.old_kid,
+                new_fragment: rotation.new_fragment,
+            }
+        }),
+        device_mutations: spec
+            .device_mutations
+            .unwrap_or_default()
+            .into_iter()
+            .map(device_mutation_spec)
+            .collect::<Result<Vec<_>>>()?,
         services: spec
             .services
             .map(|services| services.into_iter().map(service_spec).collect()),
+    })
+}
+
+fn device_mutation_spec(spec: JsDeviceMutationSpec) -> Result<DeviceMutationSpec> {
+    match spec.operation.as_str() {
+        "add" => {
+            let device = spec
+                .device
+                .ok_or_else(|| js_error("invalid_extension", "device add value is required"))?;
+            Ok(DeviceMutationSpec::Add {
+                device: DeviceAddSpec {
+                    device_id: device.device_id,
+                    signing_key: DevicePublicKeySpec {
+                        kid: device.signing_key.kid,
+                        public_key_multibase: device.signing_key.public_key_multibase,
+                    },
+                    e2ee_key: DevicePublicKeySpec {
+                        kid: device.e2ee_key.kid,
+                        public_key_multibase: device.e2ee_key.public_key_multibase,
+                    },
+                    profiles: device.profiles,
+                },
+            })
+        }
+        "remove" => Ok(DeviceMutationSpec::Remove {
+            device_id: spec
+                .device_id
+                .ok_or_else(|| js_error("invalid_extension", "device remove id is required"))?,
+        }),
+        _ => Err(js_error("invalid_extension", "unknown device mutation")),
     }
 }
 

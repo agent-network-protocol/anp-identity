@@ -209,10 +209,11 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     assert_eq!(
         identity
             .prepare_update(DocumentUpdateSpec {
-                request_signing_rotation: RequestSigningRotation {
+                request_signing_rotation: Some(RequestSigningRotation {
                     old_kid: "#root".to_string(),
                     new_fragment: "new-root".to_string(),
-                },
+                }),
+                device_mutations: Vec::new(),
                 services: None,
             })
             .err(),
@@ -221,10 +222,11 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     assert_eq!(
         identity
             .prepare_update(DocumentUpdateSpec {
-                request_signing_rotation: RequestSigningRotation {
+                request_signing_rotation: Some(RequestSigningRotation {
                     old_kid: "#e2ee-signing".to_string(),
                     new_fragment: "wrong-role".to_string(),
-                },
+                }),
+                device_mutations: Vec::new(),
                 services: None,
             })
             .err(),
@@ -239,6 +241,94 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     );
     identity.commit_update(&prepared.revision_id).unwrap();
     assert_eq!(identity.revision(), 2);
+}
+
+#[test]
+fn lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "host", [35_u8; 32]).unwrap();
+    let mut identity = store.create_identity(spec("device-mutation")).unwrap();
+    let signing = ManagedPrivateKey::generate("peer-sign".to_string(), KeyRole::DeviceSigning);
+    let agreement = ManagedPrivateKey::generate("peer-e2ee".to_string(), KeyRole::E2eeAgreement);
+    let signing_kid = format!("{}#peer-sign", identity.did());
+    let e2ee_kid = format!("{}#peer-e2ee", identity.did());
+
+    let added = identity
+        .prepare_update(DocumentUpdateSpec {
+            request_signing_rotation: None,
+            device_mutations: vec![DeviceMutationSpec::Add {
+                device: DeviceAddSpec {
+                    device_id: "peer-device".to_string(),
+                    signing_key: DevicePublicKeySpec {
+                        kid: signing_kid.clone(),
+                        public_key_multibase: crate::document::public_key_multibase(
+                            &signing.public_key(),
+                        )
+                        .unwrap(),
+                    },
+                    e2ee_key: DevicePublicKeySpec {
+                        kid: e2ee_kid.clone(),
+                        public_key_multibase: crate::document::public_key_multibase(
+                            &agreement.public_key(),
+                        )
+                        .unwrap(),
+                    },
+                    profiles: vec!["anp.core.binding.v1".to_string()],
+                },
+            }],
+            services: None,
+        })
+        .unwrap();
+    assert!(
+        anp::authentication::validate_device_manifest(&added.candidate_document)
+            .unwrap()
+            .is_some()
+    );
+    assert!(anp::authentication::is_authentication_authorized(
+        &added.candidate_document,
+        &signing_kid,
+    ));
+    assert!(anp::authentication::is_assertion_method_authorized(
+        &added.candidate_document,
+        &signing_kid,
+    ));
+    identity.begin_publication(&added.revision_id).unwrap();
+    identity.mark_published(&added.revision_id).unwrap();
+    identity.commit_update(&added.revision_id).unwrap();
+    assert_eq!(
+        identity.key_metadata(&signing_kid).unwrap().origin,
+        KeyOrigin::External
+    );
+    assert_eq!(
+        identity.sign_device_assertion(&signing_kid, b"external"),
+        Err(DidError::ExternalKeyOperation)
+    );
+
+    let removed = identity
+        .prepare_update(DocumentUpdateSpec {
+            request_signing_rotation: None,
+            device_mutations: vec![DeviceMutationSpec::Remove {
+                device_id: "peer-device".to_string(),
+            }],
+            services: None,
+        })
+        .unwrap();
+    assert!(
+        anp::authentication::validate_device_manifest(&removed.candidate_document)
+            .unwrap()
+            .is_none()
+    );
+    identity.begin_publication(&removed.revision_id).unwrap();
+    identity.mark_published(&removed.revision_id).unwrap();
+    identity.commit_update(&removed.revision_id).unwrap();
+    assert_eq!(
+        identity.key_metadata(&signing_kid).unwrap().state,
+        KeyState::Retired
+    );
+    assert_eq!(
+        identity.key_metadata(&e2ee_kid).unwrap().state,
+        KeyState::Retired
+    );
 }
 
 #[test]
@@ -353,10 +443,11 @@ fn valid_unknown_document(identity: &DidIdentity) -> Value {
 
 fn update(new_fragment: &str) -> DocumentUpdateSpec {
     DocumentUpdateSpec {
-        request_signing_rotation: RequestSigningRotation {
+        request_signing_rotation: Some(RequestSigningRotation {
             old_kid: "#request".to_string(),
             new_fragment: new_fragment.to_string(),
-        },
+        }),
+        device_mutations: Vec::new(),
         services: Some(vec![ServiceSpec {
             id: "message-v2".to_string(),
             service_type: "ANPMessageService".to_string(),

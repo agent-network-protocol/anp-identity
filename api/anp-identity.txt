@@ -5,6 +5,11 @@ pub anp_identity::AdoptDocumentOutcome::Activated
 pub anp_identity::AdoptDocumentOutcome::Revoked
 pub anp_identity::AdoptDocumentOutcome::Unchanged
 pub anp_identity::AdoptDocumentOutcome::Updated
+pub enum anp_identity::DeviceMutationSpec
+pub anp_identity::DeviceMutationSpec::Add
+pub anp_identity::DeviceMutationSpec::Add::device: anp_identity::DeviceAddSpec
+pub anp_identity::DeviceMutationSpec::Remove
+pub anp_identity::DeviceMutationSpec::Remove::device_id: alloc::string::String
 pub enum anp_identity::DidError
 pub anp_identity::DidError::Conflict
 pub anp_identity::DidError::CorruptRecord
@@ -92,6 +97,11 @@ pub anp_identity::AdoptVerifiedDocumentSpec::document: serde_json::value::Value
 pub anp_identity::AdoptVerifiedDocumentSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub struct anp_identity::Capabilities
 pub anp_identity::Capabilities::did_wba: bool
+pub struct anp_identity::DeviceAddSpec
+pub anp_identity::DeviceAddSpec::device_id: alloc::string::String
+pub anp_identity::DeviceAddSpec::e2ee_key: anp_identity::DevicePublicKeySpec
+pub anp_identity::DeviceAddSpec::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::DeviceAddSpec::signing_key: anp_identity::DevicePublicKeySpec
 pub struct anp_identity::DeviceManifestEntrySpec
 pub anp_identity::DeviceManifestEntrySpec::device_id: alloc::string::String
 pub anp_identity::DeviceManifestEntrySpec::e2ee_key_id: alloc::string::String
@@ -99,6 +109,9 @@ pub anp_identity::DeviceManifestEntrySpec::profiles: alloc::vec::Vec<alloc::stri
 pub anp_identity::DeviceManifestEntrySpec::signing_key_id: alloc::string::String
 pub struct anp_identity::DeviceManifestSpec
 pub anp_identity::DeviceManifestSpec::devices: alloc::vec::Vec<anp_identity::DeviceManifestEntrySpec>
+pub struct anp_identity::DevicePublicKeySpec
+pub anp_identity::DevicePublicKeySpec::kid: alloc::string::String
+pub anp_identity::DevicePublicKeySpec::public_key_multibase: alloc::string::String
 pub struct anp_identity::DidCreateSpec
 pub anp_identity::DidCreateSpec::agent_description_url: core::option::Option<alloc::string::String>
 pub anp_identity::DidCreateSpec::capabilities: anp_identity::Capabilities
@@ -177,7 +190,8 @@ pub anp_identity::DocumentCheckpoint::document_digest: alloc::string::String
 pub anp_identity::DocumentCheckpoint::document_version: u64
 pub anp_identity::DocumentCheckpoint::registry_version: u64
 pub struct anp_identity::DocumentUpdateSpec
-pub anp_identity::DocumentUpdateSpec::request_signing_rotation: anp_identity::RequestSigningRotation
+pub anp_identity::DocumentUpdateSpec::device_mutations: alloc::vec::Vec<anp_identity::DeviceMutationSpec>
+pub anp_identity::DocumentUpdateSpec::request_signing_rotation: core::option::Option<anp_identity::RequestSigningRotation>
 pub anp_identity::DocumentUpdateSpec::services: core::option::Option<alloc::vec::Vec<anp_identity::ServiceSpec>>
 pub struct anp_identity::EnrollmentPublicKey
 pub anp_identity::EnrollmentPublicKey::kid: alloc::string::String

@@ -30,7 +30,8 @@ pub use input::{
     PublicOkpJwk, ServiceSpec,
 };
 pub use lifecycle::{
-    DocumentUpdateSpec, PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
+    DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,
+    PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
     RequestSigningRotation,
 };
 pub use manifest::{

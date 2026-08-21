@@ -127,12 +127,29 @@ export interface IdentitySnapshot {
 }
 
 export interface DocumentUpdateSpec {
-  requestSigningRotation: {
+  requestSigningRotation?: {
     oldKid: string
     newFragment: string
   }
+  deviceMutations?: DeviceMutationSpec[]
   services?: ServiceSpec[]
 }
+
+export interface DevicePublicKeySpec {
+  kid: string
+  publicKeyMultibase: string
+}
+
+export interface DeviceAddSpec {
+  deviceId: string
+  signingKey: DevicePublicKeySpec
+  e2eeKey: DevicePublicKeySpec
+  profiles: string[]
+}
+
+export type DeviceMutationSpec =
+  | { operation: 'add'; device: DeviceAddSpec; deviceId?: never }
+  | { operation: 'remove'; device?: never; deviceId: string }
 
 export interface PreparedUpdate {
   revisionId: string

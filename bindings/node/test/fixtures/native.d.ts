@@ -44,6 +44,13 @@ export interface JsCapabilities {
   didWba: boolean
 }
 
+export interface JsDeviceAddSpec {
+  deviceId: string
+  signingKey: JsDevicePublicKeySpec
+  e2eeKey: JsDevicePublicKeySpec
+  profiles: Array<string>
+}
+
 export interface JsDeviceManifestEntrySpec {
   deviceId: string
   signingKeyId: string
@@ -53,6 +60,17 @@ export interface JsDeviceManifestEntrySpec {
 
 export interface JsDeviceManifestSpec {
   devices: Array<JsDeviceManifestEntrySpec>
+}
+
+export interface JsDeviceMutationSpec {
+  operation: string
+  device?: JsDeviceAddSpec
+  deviceId?: string
+}
+
+export interface JsDevicePublicKeySpec {
+  kid: string
+  publicKeyMultibase: string
 }
 
 export interface JsDidCreateSpec {
@@ -80,7 +98,8 @@ export interface JsDocumentCheckpoint {
 }
 
 export interface JsDocumentUpdateSpec {
-  requestSigningRotation: JsRequestSigningRotation
+  requestSigningRotation?: JsRequestSigningRotation
+  deviceMutations?: Array<JsDeviceMutationSpec>
   services?: Array<JsServiceSpec>
 }
 

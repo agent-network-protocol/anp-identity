@@ -116,20 +116,22 @@ fn identity_reload_recovers_a_stale_identity_handle() {
 
     let prepared = current
         .prepare_update(crate::DocumentUpdateSpec {
-            request_signing_rotation: crate::RequestSigningRotation {
+            request_signing_rotation: Some(crate::RequestSigningRotation {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-v2".to_string(),
-            },
+            }),
+            device_mutations: Vec::new(),
             services: None,
         })
         .unwrap();
     assert_eq!(
         stale
             .prepare_update(crate::DocumentUpdateSpec {
-                request_signing_rotation: crate::RequestSigningRotation {
+                request_signing_rotation: Some(crate::RequestSigningRotation {
                     old_kid: "#request".to_string(),
                     new_fragment: "stale-request".to_string(),
-                },
+                }),
+                device_mutations: Vec::new(),
                 services: None,
             })
             .err(),
@@ -139,10 +141,11 @@ fn identity_reload_recovers_a_stale_identity_handle() {
     stale.reload().unwrap();
     assert!(stale
         .prepare_update(crate::DocumentUpdateSpec {
-            request_signing_rotation: crate::RequestSigningRotation {
+            request_signing_rotation: Some(crate::RequestSigningRotation {
                 old_kid: "#request".to_string(),
                 new_fragment: "reloaded-request".to_string(),
-            },
+            }),
+            device_mutations: Vec::new(),
             services: None,
         })
         .is_ok());
