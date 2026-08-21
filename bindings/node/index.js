@@ -22,6 +22,10 @@ class DidStore {
     this.#inner = inner
   }
 
+  static canonicalDocumentDigest(document) {
+    return native.DidStore.canonicalDocumentDigest(document)
+  }
+
   static async initializeInjected(root, keyId, rootKey) {
     return new DidStore(await call(native.DidStore.initializeInjected(root, keyId, rootKey)))
   }
@@ -74,6 +78,10 @@ class DidStore {
 
   async createIdentity(spec) {
     return new DidIdentity(await call(this.#inner.createIdentity(spec)))
+  }
+
+  prepareEnrollment(spec) {
+    return call(this.#inner.prepareEnrollment(spec))
   }
 
   async openIdentity(did) {
@@ -183,6 +191,10 @@ class DidIdentity {
 
   confirmRootPromotion(spec) {
     return call(this.#inner.confirmRootPromotion(spec))
+  }
+
+  adoptVerifiedDocument(document, evidence) {
+    return call(this.#inner.adoptVerifiedDocument(document, evidence))
   }
 }
 

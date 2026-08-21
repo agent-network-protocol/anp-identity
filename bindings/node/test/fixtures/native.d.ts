@@ -22,10 +22,12 @@ export declare class DidIdentity {
   exportWrappedRoot(spec: JsRootTransferExportSpec): Promise<any>
   importWrappedRoot(envelope: any): Promise<string>
   confirmRootPromotion(spec: JsRootPromotionSpec): Promise<void>
+  adoptVerifiedDocument(document: any, evidence: JsVerifiedDocumentEvidence): Promise<string>
 }
 export type JsDidIdentity = DidIdentity
 
 export declare class DidStore {
+  static canonicalDocumentDigest(document: any): string
   static initializeInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
   static openInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
   static initializeEnv(root: string, keyId: string, envVar: string): Promise<DidStore>
@@ -39,6 +41,7 @@ export declare class DidStore {
   reload(): Promise<void>
   listIdentities(): Promise<Array<JsIdentitySummary>>
   createIdentity(spec: JsDidCreateSpec): Promise<JsDidIdentity>
+  prepareEnrollment(spec: JsEnrollmentSpec): Promise<any>
   openIdentity(did: string): Promise<JsDidIdentity>
   deleteIdentityNamespace(did: string, expectedGeneration: number): Promise<void>
 }
@@ -105,6 +108,16 @@ export interface JsDocumentUpdateSpec {
   requestSigningRotation?: JsRequestSigningRotation
   deviceMutations?: Array<JsDeviceMutationSpec>
   services?: Array<JsServiceSpec>
+}
+
+export interface JsEnrollmentSpec {
+  verifiedDocument: any
+  evidence: JsVerifiedDocumentEvidence
+  deviceId: string
+  deviceSigningFragment: string
+  deviceE2eeFragment: string
+  profiles: Array<string>
+  capabilities: JsCapabilities
 }
 
 export interface JsExternalPublicKeyMaterial {

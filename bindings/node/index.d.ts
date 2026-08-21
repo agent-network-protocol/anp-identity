@@ -107,6 +107,16 @@ export interface RootPromotionSpec {
   evidence: VerifiedDocumentEvidence
 }
 
+export interface EnrollmentSpec {
+  verifiedDocument: JsonValue
+  evidence: VerifiedDocumentEvidence
+  deviceId: string
+  deviceSigningFragment: string
+  deviceE2eeFragment: string
+  profiles: string[]
+  capabilities: Capabilities
+}
+
 export interface KeyMetadata {
   kid: string
   role: KeyRole
@@ -207,6 +217,7 @@ export interface AnpIdentityError extends Error {
 
 export class DidStore {
   private constructor()
+  static canonicalDocumentDigest(document: JsonValue): string
   /** Consumes and overwrites rootKey, including validation-error paths. */
   static initializeInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
   /** Consumes and overwrites rootKey, including validation-error paths. */
@@ -225,6 +236,7 @@ export class DidStore {
   reload(): Promise<void>
   listIdentities(): Promise<IdentitySummary[]>
   createIdentity(spec: DidCreateSpec): Promise<DidIdentity>
+  prepareEnrollment(spec: EnrollmentSpec): Promise<JsonValue>
   openIdentity(did: string): Promise<DidIdentity>
   deleteIdentityNamespace(did: string, expectedGeneration: number): Promise<void>
 }
@@ -254,4 +266,5 @@ export class DidIdentity {
   exportWrappedRoot(spec: RootTransferExportSpec): Promise<JsonValue>
   importWrappedRoot(envelope: JsonValue): Promise<'pending' | 'active'>
   confirmRootPromotion(spec: RootPromotionSpec): Promise<void>
+  adoptVerifiedDocument(document: JsonValue, evidence: VerifiedDocumentEvidence): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>
 }

@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anp_identity::{
-    Capabilities, DeviceAddSpec, DeviceManifestEntrySpec, DeviceManifestSpec, DeviceMutationSpec,
-    DevicePublicKeySpec, DidCreateSpec, DidError, DidExtensionSpec, DidIdentity as CoreDidIdentity,
-    DidProfile, DidStore as CoreDidStore, DocumentUpdateSpec, ExternalPublicKeyMaterial,
+    AdoptDocumentOutcome, AdoptVerifiedDocumentSpec, Capabilities, DeviceAddSpec,
+    DeviceManifestEntrySpec, DeviceManifestSpec, DeviceMutationSpec, DevicePublicKeySpec,
+    DidCreateSpec, DidError, DidExtensionSpec, DidIdentity as CoreDidIdentity, DidProfile,
+    DidStore as CoreDidStore, DocumentUpdateSpec, EnrollmentSpec, ExternalPublicKeyMaterial,
     ExternalPublicKeySpec, HttpSignatureOptions, KeyMetadata, KeyRole, ManagedKeySpec,
     PublicOkpJwk, PublicationState, RequestSigningRotation, RootKeyProviderKind, RootPromotionSpec,
     RootTransferExportSpec, RootTransferImportOutcome, ServiceSpec, StoreManifest,
@@ -129,6 +130,18 @@ pub struct JsRootPromotionSpec {
 }
 
 #[napi(object)]
+pub struct JsEnrollmentSpec {
+    pub verified_document: Value,
+    pub evidence: JsVerifiedDocumentEvidence,
+    pub device_id: String,
+    pub device_signing_fragment: String,
+    #[napi(js_name = "deviceE2eeFragment")]
+    pub device_e2ee_fragment: String,
+    pub profiles: Vec<String>,
+    pub capabilities: JsCapabilities,
+}
+
+#[napi(object)]
 pub struct JsKeyMetadata {
     pub kid: String,
     pub role: String,
@@ -246,6 +259,11 @@ pub struct JsDidStore {
 
 #[napi]
 impl JsDidStore {
+    #[napi]
+    pub fn canonical_document_digest(document: Value) -> Result<String> {
+        anp_identity::canonical_document_digest(&document).map_err(map_error)
+    }
+
     #[napi(factory)]
     pub async fn initialize_injected(
         root: String,
@@ -376,6 +394,31 @@ impl JsDidStore {
             .with_store(move |store| store.create_identity(spec).map_err(map_error))
             .await?;
         Ok(JsDidIdentity::new(identity))
+    }
+
+    #[napi]
+    pub async fn prepare_enrollment(&self, spec: JsEnrollmentSpec) -> Result<Value> {
+        let evidence = verified_document_evidence(spec.evidence)?;
+        self.with_store(move |store| {
+            store
+                .prepare_enrollment(EnrollmentSpec {
+                    verified_document: spec.verified_document,
+                    evidence,
+                    device_id: spec.device_id,
+                    device_signing_fragment: spec.device_signing_fragment,
+                    device_e2ee_fragment: spec.device_e2ee_fragment,
+                    profiles: spec.profiles,
+                    capabilities: Capabilities {
+                        did_wba: spec.capabilities.did_wba,
+                    },
+                })
+                .and_then(|(_, prepared)| {
+                    serde_json::to_value(prepared)
+                        .map_err(|error| DidError::Serialization(error.to_string()))
+                })
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
@@ -736,6 +779,28 @@ impl JsDidIdentity {
                     document: spec.document,
                     evidence,
                 })
+                .map_err(map_error)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn adopt_verified_document(
+        &self,
+        document: Value,
+        evidence: JsVerifiedDocumentEvidence,
+    ) -> Result<String> {
+        let evidence = verified_document_evidence(evidence)?;
+        self.with_identity(move |identity| {
+            identity
+                .adopt_verified_document(AdoptVerifiedDocumentSpec { document, evidence })
+                .map(|outcome| match outcome {
+                    AdoptDocumentOutcome::Activated => "activated",
+                    AdoptDocumentOutcome::Updated => "updated",
+                    AdoptDocumentOutcome::Unchanged => "unchanged",
+                    AdoptDocumentOutcome::Revoked => "revoked",
+                })
+                .map(str::to_string)
                 .map_err(map_error)
         })
         .await

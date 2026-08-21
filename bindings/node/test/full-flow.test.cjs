@@ -224,6 +224,89 @@ test('reload makes store and identity handles reusable after a conflict', async 
   await staleIdentity.abortUpdate(retried.revisionId)
 })
 
+test('rootless enrollment adopts and revokes one exact device', async (t) => {
+  const primaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-identity-node-primary-'))
+  const secondaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-identity-node-secondary-'))
+  t.after(() => fs.rmSync(primaryRoot, { recursive: true, force: true }))
+  t.after(() => fs.rmSync(secondaryRoot, { recursive: true, force: true }))
+  const primary = await DidStore.initializeInjected(primaryRoot, 'primary', Buffer.alloc(32, 31))
+  const secondary = await DidStore.initializeInjected(
+    secondaryRoot,
+    'secondary',
+    Buffer.alloc(32, 32),
+  )
+  const owner = await primary.createIdentity(identitySpec('enrollment-owner'))
+  const initial = await owner.snapshot()
+  const initialEvidence = {
+    documentVersion: 1,
+    registryVersion: 1,
+    documentDigest: DidStore.canonicalDocumentDigest(initial.document),
+  }
+  const prepared = await secondary.prepareEnrollment({
+    verifiedDocument: initial.document,
+    evidence: initialEvidence,
+    deviceId: 'device-secondary',
+    deviceSigningFragment: 'device-secondary-sign',
+    deviceE2eeFragment: 'device-secondary-e2ee',
+    profiles: ['anp.core.binding.v1'],
+    capabilities: { didWba: true },
+  })
+  const added = await owner.prepareUpdate({
+    deviceMutations: [
+      {
+        operation: 'add',
+        device: {
+          deviceId: prepared.device_id,
+          signingKey: {
+            kid: prepared.device_signing_key.kid,
+            publicKeyMultibase: prepared.device_signing_key.public_key_multibase,
+          },
+          e2eeKey: {
+            kid: prepared.device_e2ee_key.kid,
+            publicKeyMultibase: prepared.device_e2ee_key.public_key_multibase,
+          },
+          profiles: prepared.profiles,
+        },
+      },
+    ],
+  })
+  await owner.beginPublication(added.revisionId)
+  await owner.markPublished(added.revisionId)
+  await owner.commitUpdate(added.revisionId)
+  const secondaryIdentity = await secondary.openIdentity(prepared.did)
+  assert.equal(
+    await secondaryIdentity.adoptVerifiedDocument(added.candidateDocument, {
+      documentVersion: 2,
+      registryVersion: 2,
+      documentDigest: DidStore.canonicalDocumentDigest(added.candidateDocument),
+    }),
+    'activated',
+  )
+  await secondaryIdentity.sign(
+    prepared.device_signing_key.kid,
+    Buffer.from('device assertion'),
+  )
+
+  const removed = await owner.prepareUpdate({
+    deviceMutations: [{ operation: 'remove', deviceId: prepared.device_id }],
+  })
+  await owner.beginPublication(removed.revisionId)
+  await owner.markPublished(removed.revisionId)
+  await owner.commitUpdate(removed.revisionId)
+  assert.equal(
+    await secondaryIdentity.adoptVerifiedDocument(removed.candidateDocument, {
+      documentVersion: 3,
+      registryVersion: 3,
+      documentDigest: DidStore.canonicalDocumentDigest(removed.candidateDocument),
+    }),
+    'revoked',
+  )
+  await assert.rejects(
+    secondaryIdentity.sign(prepared.device_signing_key.kid, Buffer.from('revoked')),
+    (error) => error.code === 'key_not_usable',
+  )
+})
+
 function identitySpec(name) {
   return {
     profile: 'e1',
