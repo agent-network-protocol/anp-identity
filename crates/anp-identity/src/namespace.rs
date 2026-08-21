@@ -45,6 +45,7 @@ impl DidStore {
             || record.state == IdentityState::Creating
             || record.pending_revision.is_some()
             || record.pending_enrollment.is_some()
+            || record.pending_request_signing.is_some()
             || record.pending_root_transfer.is_some()
             || record.root_capability == crate::RootCapabilityState::Pending
         {

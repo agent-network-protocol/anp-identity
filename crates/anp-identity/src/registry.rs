@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::adoption::{LocalAuthorizationRecord, PendingEnrollmentRecord};
+use crate::adoption::{
+    LocalAuthorizationRecord, PendingEnrollmentRecord, PendingRequestSigningRecord,
+};
 use crate::fs_util::{ensure_private_dir, write_atomic_private};
 use crate::keystore::SecretRef;
 use crate::lifecycle::PendingRevisionRecord;
@@ -113,7 +115,11 @@ pub(crate) struct IdentityRecord {
     #[serde(default)]
     pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
     #[serde(default)]
+    pub(crate) local_request_signing_kid: Option<String>,
+    #[serde(default)]
     pub(crate) pending_enrollment: Option<PendingEnrollmentRecord>,
+    #[serde(default)]
+    pub(crate) pending_request_signing: Option<PendingRequestSigningRecord>,
     #[serde(default)]
     pub(crate) pending_root_transfer: Option<PendingRootTransferRecord>,
     #[serde(default)]
@@ -479,7 +485,9 @@ pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
         root_key_fingerprint: input.root_key_fingerprint,
         checkpoint: Some(input.checkpoint),
         local_authorization: input.local_authorization,
+        local_request_signing_kid: None,
         pending_enrollment: None,
+        pending_request_signing: None,
         pending_root_transfer: None,
         root_transfer_replays: Vec::new(),
         created_at: input.created_at,

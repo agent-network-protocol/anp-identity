@@ -199,6 +199,7 @@ impl anp_identity::DidStore
 pub fn anp_identity::DidStore::delete_identity_namespace(&mut self, &str, u64) -> anp_identity::DidResult<()>
 impl anp_identity::DidStore
 pub fn anp_identity::DidStore::prepare_enrollment(&mut self, anp_identity::EnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedEnrollment)>
+pub fn anp_identity::DidStore::prepare_request_signing_enrollment(&mut self, anp_identity::RequestSigningEnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedRequestSigningEnrollment)>
 impl core::fmt::Debug for anp_identity::DidStore
 pub fn anp_identity::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct anp_identity::DocumentCheckpoint
@@ -261,6 +262,13 @@ pub anp_identity::PreparedEnrollment::enrollment_id: alloc::string::String
 pub anp_identity::PreparedEnrollment::identity_id: alloc::string::String
 pub anp_identity::PreparedEnrollment::profiles: alloc::vec::Vec<alloc::string::String>
 pub anp_identity::PreparedEnrollment::root_key_fingerprint: alloc::string::String
+pub struct anp_identity::PreparedRequestSigningEnrollment
+pub anp_identity::PreparedRequestSigningEnrollment::checkpoint: anp_identity::DocumentCheckpoint
+pub anp_identity::PreparedRequestSigningEnrollment::did: alloc::string::String
+pub anp_identity::PreparedRequestSigningEnrollment::enrollment_id: alloc::string::String
+pub anp_identity::PreparedRequestSigningEnrollment::identity_id: alloc::string::String
+pub anp_identity::PreparedRequestSigningEnrollment::request_signing_key: anp_identity::EnrollmentPublicKey
+pub anp_identity::PreparedRequestSigningEnrollment::root_key_fingerprint: alloc::string::String
 pub struct anp_identity::PreparedUpdate
 pub anp_identity::PreparedUpdate::candidate_digest: alloc::string::String
 pub anp_identity::PreparedUpdate::candidate_document: serde_json::value::Value
@@ -269,6 +277,11 @@ pub struct anp_identity::PublicOkpJwk
 pub anp_identity::PublicOkpJwk::crv: alloc::string::String
 pub anp_identity::PublicOkpJwk::kty: alloc::string::String
 pub anp_identity::PublicOkpJwk::x: alloc::string::String
+pub struct anp_identity::RequestSigningEnrollmentSpec
+pub anp_identity::RequestSigningEnrollmentSpec::capabilities: anp_identity::Capabilities
+pub anp_identity::RequestSigningEnrollmentSpec::evidence: anp_identity::VerifiedDocumentEvidence
+pub anp_identity::RequestSigningEnrollmentSpec::fragment: alloc::string::String
+pub anp_identity::RequestSigningEnrollmentSpec::verified_document: serde_json::value::Value
 pub struct anp_identity::RequestSigningRotation
 pub anp_identity::RequestSigningRotation::new_fragment: alloc::string::String
 pub anp_identity::RequestSigningRotation::old_kid: alloc::string::String

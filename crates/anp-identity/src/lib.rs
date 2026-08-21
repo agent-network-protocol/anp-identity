@@ -22,7 +22,8 @@ mod store_lock;
 
 pub use adoption::{
     canonical_document_digest, AdoptDocumentOutcome, AdoptVerifiedDocumentSpec,
-    EnrollmentPublicKey, EnrollmentSpec, PreparedEnrollment, VerifiedDocumentEvidence,
+    EnrollmentPublicKey, EnrollmentSpec, PreparedEnrollment, PreparedRequestSigningEnrollment,
+    RequestSigningEnrollmentSpec, VerifiedDocumentEvidence,
 };
 pub use anp::authentication::HttpSignatureOptions;
 pub use crypto_ops::SharedSecret;

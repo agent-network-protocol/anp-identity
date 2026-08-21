@@ -65,6 +65,27 @@ pub struct PreparedEnrollment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct RequestSigningEnrollmentSpec {
+    pub verified_document: Value,
+    pub evidence: VerifiedDocumentEvidence,
+    pub fragment: String,
+    #[serde(default)]
+    pub capabilities: Capabilities,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedRequestSigningEnrollment {
+    pub enrollment_id: String,
+    pub identity_id: String,
+    pub did: String,
+    pub request_signing_key: EnrollmentPublicKey,
+    pub root_key_fingerprint: String,
+    pub checkpoint: DocumentCheckpoint,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AdoptVerifiedDocumentSpec {
     pub document: Value,
     pub evidence: VerifiedDocumentEvidence,
@@ -93,6 +114,14 @@ pub(crate) struct LocalAuthorizationRecord {
 pub(crate) struct PendingEnrollmentRecord {
     pub(crate) enrollment_id: String,
     pub(crate) local_authorization: LocalAuthorizationRecord,
+    pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PendingRequestSigningRecord {
+    pub(crate) enrollment_id: String,
+    pub(crate) request_signing_kid: String,
     pub(crate) created_at: String,
 }
 
@@ -274,6 +303,134 @@ impl DidStore {
             prepared,
         ))
     }
+
+    pub fn prepare_request_signing_enrollment(
+        &mut self,
+        spec: RequestSigningEnrollmentSpec,
+    ) -> DidResult<(DidIdentity, PreparedRequestSigningEnrollment)> {
+        validate_verified_document(&spec.verified_document, &spec.evidence)?;
+        validate_fragment(&spec.fragment)?;
+        let did = spec
+            .verified_document
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or(DidError::InvalidIdentity)?
+            .to_string();
+        let kid = canonicalize_kid(&did, &spec.fragment)?;
+        if find_verification_method(&spec.verified_document, &kid).is_some() {
+            return Err(DidError::DuplicateKid);
+        }
+        let guard = self.runtime.acquire_write()?;
+        let mut registry = read_registry(self.runtime.root())?;
+        if registry.generation != self.registry_generation {
+            return Err(DidError::Conflict);
+        }
+        if registry.identities.contains_key(&did) {
+            return Err(DidError::DuplicateIdentity);
+        }
+
+        let identity_id = crate::identity::random_id();
+        let enrollment_id = crate::identity::random_id();
+        let transaction_id = crate::identity::random_id();
+        let created_at = Utc::now().to_rfc3339();
+        let request_key = ManagedPrivateKey::generate(spec.fragment, KeyRole::RequestSigning);
+        let secret_ref = SecretRef {
+            identity_id: identity_id.clone(),
+            key_id: kid.clone(),
+            role: KeyRole::RequestSigning,
+            version: 1,
+        };
+        let journal = CreationJournal::new(
+            transaction_id.clone(),
+            identity_id.clone(),
+            did.clone(),
+            vec![secret_ref.clone()],
+            created_at.clone(),
+        );
+        write_journal(self.runtime.root(), &guard, &journal)?;
+        let sealed = self.runtime.key_store().seal_if_absent(
+            &guard,
+            self.runtime.root_key(),
+            secret_ref.clone(),
+            request_key.secret_bytes(),
+        )?;
+        if sealed == SealIfAbsent::AlreadyExists {
+            let persisted = self
+                .runtime
+                .key_store()
+                .open(self.runtime.root_key(), &secret_ref)?;
+            let actual = public_key_from_secret(KeyRole::RequestSigning, &persisted)?;
+            if !public_keys_equal(&actual, &request_key.public_key()) {
+                return Err(DidError::InvalidIdentity);
+            }
+        }
+        let root_metadata = key_metadata(
+            &spec.verified_document,
+            &root_kid(&spec.verified_document)?,
+            KeyRole::RootControl,
+            KeyOrigin::External,
+            &created_at,
+        )?;
+        let request_metadata = key_metadata_from_public(
+            &kid,
+            KeyRole::RequestSigning,
+            KeyOrigin::Managed,
+            KeyState::Pending,
+            &request_key.public_key(),
+            &created_at,
+        )?;
+        let checkpoint = checkpoint(&spec.evidence);
+        let root_fingerprint = root_key_fingerprint(&spec.verified_document)?;
+        let mut record = new_identity_record(NewIdentityRecord {
+            identity_id: identity_id.clone(),
+            did: did.clone(),
+            document: spec.verified_document,
+            keys: vec![root_metadata, request_metadata.clone()],
+            capabilities: spec.capabilities,
+            root_capability: RootCapabilityState::Absent,
+            root_key_fingerprint: root_fingerprint.clone(),
+            checkpoint: checkpoint.clone(),
+            local_authorization: None,
+            created_at: created_at.clone(),
+        });
+        record.state = IdentityState::Enrolling;
+        record.local_request_signing_kid = Some(kid.clone());
+        record.pending_request_signing = Some(PendingRequestSigningRecord {
+            enrollment_id: enrollment_id.clone(),
+            request_signing_kid: kid.clone(),
+            created_at,
+        });
+        write_identity(self.runtime.root(), &guard, &record)?;
+        let next_generation = registry
+            .generation
+            .checked_add(1)
+            .ok_or(DidError::Conflict)?;
+        registry.identities.insert(did.clone(), record.summary());
+        registry.generation = next_generation;
+        write_registry(self.runtime.root(), &guard, &registry)?;
+        crate::registry::remove_journal(self.runtime.root(), &guard, &transaction_id)?;
+        drop(guard);
+        self.registry_generation = next_generation;
+        let prepared = PreparedRequestSigningEnrollment {
+            enrollment_id,
+            identity_id,
+            did,
+            request_signing_key: EnrollmentPublicKey {
+                kid,
+                role: KeyRole::RequestSigning,
+                public_key_multibase: request_metadata.public_key_multibase,
+            },
+            root_key_fingerprint: root_fingerprint,
+            checkpoint,
+        };
+        Ok((
+            DidIdentity {
+                runtime: std::sync::Arc::clone(&self.runtime),
+                record,
+            },
+            prepared,
+        ))
+    }
 }
 
 impl DidIdentity {
@@ -315,14 +472,21 @@ impl DidIdentity {
                 && current.document_digest == spec.evidence.document_digest
         });
 
-        let local_authorized = record.local_authorization.as_ref().is_none_or(|local| {
+        let local_authorized = if let Some(local) = record.local_authorization.as_ref() {
             local_authorization_matches(&record, &spec.document, local).is_ok()
-        });
+        } else if let Some(kid) = record.local_request_signing_kid.as_deref() {
+            request_signing_authorization_matches(&record, &spec.document, kid).is_ok()
+        } else {
+            true
+        };
         let outcome =
             match record.state {
                 IdentityState::Creating => return Err(DidError::InvalidIdentity),
                 IdentityState::Enrolling => {
-                    if !local_authorized || record.pending_enrollment.is_none() {
+                    if !local_authorized
+                        || (record.pending_enrollment.is_none()
+                            && record.pending_request_signing.is_none())
+                    {
                         return Err(DidError::InvalidIdentity);
                     }
                     for key in &mut record.keys {
@@ -331,6 +495,7 @@ impl DidIdentity {
                         }
                     }
                     record.pending_enrollment = None;
+                    record.pending_request_signing = None;
                     record.state = IdentityState::Active;
                     AdoptDocumentOutcome::Activated
                 }
@@ -525,6 +690,24 @@ fn key_matches_document(document: &Value, metadata: &KeyMetadata) -> DidResult<(
     Ok(())
 }
 
+fn request_signing_authorization_matches(
+    record: &IdentityRecord,
+    document: &Value,
+    kid: &str,
+) -> DidResult<()> {
+    let metadata = record
+        .keys
+        .iter()
+        .find(|key| key.kid == kid && key.role == KeyRole::RequestSigning)
+        .ok_or(DidError::KeyNotFound)?;
+    key_matches_document(document, metadata)?;
+    if !is_authentication_authorized(document, kid) || is_assertion_method_authorized(document, kid)
+    {
+        return Err(DidError::KeyRoleViolation);
+    }
+    Ok(())
+}
+
 fn relationship_contains(document: &Value, name: &str, kid: &str) -> bool {
     document
         .get(name)
@@ -537,11 +720,17 @@ fn relationship_contains(document: &Value, name: &str, kid: &str) -> bool {
 }
 
 fn revoke_local_authorization(record: &mut IdentityRecord) {
-    let Some(local) = record.local_authorization.as_ref() else {
-        return;
-    };
+    let signing_kid = record
+        .local_authorization
+        .as_ref()
+        .map(|local| local.signing_kid.as_str())
+        .or(record.local_request_signing_kid.as_deref());
+    let e2ee_kid = record
+        .local_authorization
+        .as_ref()
+        .map(|local| local.e2ee_kid.as_str());
     for key in &mut record.keys {
-        if key.kid == local.signing_kid || key.kid == local.e2ee_kid {
+        if signing_kid == Some(key.kid.as_str()) || e2ee_kid == Some(key.kid.as_str()) {
             key.state = KeyState::Revoked;
         }
     }

@@ -230,6 +230,65 @@ fn adoption_rejects_a_local_pending_revision() {
 }
 
 #[test]
+fn request_signing_enrollment_is_authentication_only_and_revokes_on_relationship_drift() {
+    let bundle = create_did_wba_document(
+        "example.com",
+        DidDocumentOptions {
+            path_segments: vec!["daemons".to_string(), "alice".to_string()],
+            ..DidDocumentOptions::default()
+        },
+    )
+    .unwrap();
+    let current = bundle.did_document.clone();
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "daemon", [75_u8; 32]).unwrap();
+    let (mut identity, prepared) = store
+        .prepare_request_signing_enrollment(RequestSigningEnrollmentSpec {
+            verified_document: current.clone(),
+            evidence: evidence(&current, 1, 1),
+            fragment: "daemon-key-1".to_string(),
+            capabilities: Capabilities { did_wba: true },
+        })
+        .unwrap();
+    assert_eq!(identity.state(), IdentityState::Enrolling);
+    assert_eq!(identity.keys().len(), 2);
+    let accepted = signed_request_document(&bundle, &prepared, false);
+    assert_eq!(
+        identity
+            .adopt_verified_document(AdoptVerifiedDocumentSpec {
+                document: accepted.clone(),
+                evidence: evidence(&accepted, 2, 2),
+            })
+            .unwrap(),
+        AdoptDocumentOutcome::Activated
+    );
+    identity
+        .legacy_did_wba_header(&prepared.request_signing_key.kid, "api.example.com", "1.1")
+        .unwrap();
+    assert_eq!(
+        identity.sign_object_proof(
+            &prepared.request_signing_key.kid,
+            &json!({"operation": "forbidden"}),
+            identity.did(),
+            None,
+        ),
+        Err(DidError::KeyRoleViolation)
+    );
+
+    let drifted = signed_request_document(&bundle, &prepared, true);
+    assert_eq!(
+        identity
+            .adopt_verified_document(AdoptVerifiedDocumentSpec {
+                document: drifted.clone(),
+                evidence: evidence(&drifted, 3, 3),
+            })
+            .unwrap(),
+        AdoptDocumentOutcome::Revoked
+    );
+    assert_eq!(identity.state(), IdentityState::Revoked);
+}
+
+#[test]
 fn state_transition_journal_repairs_registry_after_identity_commit_crash() {
     let bundle = create_did_wba_document(
         "example.com",
@@ -338,6 +397,51 @@ fn signed_device_document(
             cryptosuite: Some(CRYPTOSUITE_EDDSA_JCS_2022.to_string()),
             domain: Some("example.com".to_string()),
             challenge: Some("adoption-test".to_string()),
+            ..ProofGenerationOptions::default()
+        },
+    )
+    .unwrap()
+}
+
+fn signed_request_document(
+    bundle: &anp::authentication::DidDocumentBundle,
+    prepared: &PreparedRequestSigningEnrollment,
+    include_assertion: bool,
+) -> Value {
+    let mut document = bundle.did_document.clone();
+    document.as_object_mut().unwrap().remove("proof");
+    document["verificationMethod"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id": prepared.request_signing_key.kid,
+            "type": "Multikey",
+            "controller": prepared.did,
+            "publicKeyMultibase": prepared.request_signing_key.public_key_multibase,
+        }));
+    document["authentication"]
+        .as_array_mut()
+        .unwrap()
+        .push(Value::String(prepared.request_signing_key.kid.clone()));
+    if include_assertion {
+        document["assertionMethod"]
+            .as_array_mut()
+            .unwrap()
+            .push(Value::String(prepared.request_signing_key.kid.clone()));
+    }
+    let root_kid = bundle.did_document["proof"]["verificationMethod"]
+        .as_str()
+        .unwrap();
+    generate_w3c_proof(
+        &document,
+        &bundle.load_private_key("key-1").unwrap(),
+        root_kid,
+        ProofGenerationOptions {
+            proof_purpose: Some("assertionMethod".to_string()),
+            proof_type: Some(PROOF_TYPE_DATA_INTEGRITY.to_string()),
+            cryptosuite: Some(CRYPTOSUITE_EDDSA_JCS_2022.to_string()),
+            domain: Some("example.com".to_string()),
+            challenge: Some("request-enrollment-test".to_string()),
             ..ProofGenerationOptions::default()
         },
     )
