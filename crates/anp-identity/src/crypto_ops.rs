@@ -174,7 +174,11 @@ impl DidIdentity {
     }
 
     fn require_operational(&self) -> DidResult<()> {
-        if self.state() != crate::IdentityState::Active {
+        let current = crate::registry::read_identity(self.runtime().root(), self.identity_id())?;
+        if current.generation != self.record().generation {
+            return Err(DidError::Conflict);
+        }
+        if current.state != crate::IdentityState::Active {
             return Err(DidError::KeyNotUsable);
         }
         Ok(())

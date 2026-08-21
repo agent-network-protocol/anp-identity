@@ -193,6 +193,8 @@ pub fn anp_identity::DidStore::open_keyring(impl core::convert::Into<std::path::
 pub fn anp_identity::DidStore::open_local_file(impl core::convert::Into<std::path::PathBuf>) -> anp_identity::DidResult<Self>
 pub fn anp_identity::DidStore::reload(&mut self) -> anp_identity::DidResult<()>
 impl anp_identity::DidStore
+pub fn anp_identity::DidStore::delete_identity_namespace(&mut self, &str, u64) -> anp_identity::DidResult<()>
+impl anp_identity::DidStore
 pub fn anp_identity::DidStore::prepare_enrollment(&mut self, anp_identity::EnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedEnrollment)>
 impl core::fmt::Debug for anp_identity::DidStore
 pub fn anp_identity::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

@@ -384,6 +384,22 @@ impl JsDidStore {
             .await?;
         Ok(JsDidIdentity::new(identity))
     }
+
+    #[napi]
+    pub async fn delete_identity_namespace(
+        &self,
+        did: String,
+        expected_generation: i64,
+    ) -> Result<()> {
+        let expected_generation =
+            u64::try_from(expected_generation).map_err(|_| overflow_error())?;
+        self.with_store(move |store| {
+            store
+                .delete_identity_namespace(&did, expected_generation)
+                .map_err(map_error)
+        })
+        .await
+    }
 }
 
 impl JsDidStore {

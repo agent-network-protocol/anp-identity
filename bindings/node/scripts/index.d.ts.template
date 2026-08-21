@@ -225,6 +225,7 @@ export class DidStore {
   listIdentities(): Promise<IdentitySummary[]>
   createIdentity(spec: DidCreateSpec): Promise<DidIdentity>
   openIdentity(did: string): Promise<DidIdentity>
+  deleteIdentityNamespace(did: string, expectedGeneration: number): Promise<void>
 }
 
 export class DidIdentity {

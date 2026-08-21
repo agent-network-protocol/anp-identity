@@ -40,6 +40,7 @@ export declare class DidStore {
   listIdentities(): Promise<Array<JsIdentitySummary>>
   createIdentity(spec: JsDidCreateSpec): Promise<JsDidIdentity>
   openIdentity(did: string): Promise<JsDidIdentity>
+  deleteIdentityNamespace(did: string, expectedGeneration: number): Promise<void>
 }
 export type JsDidStore = DidStore
 

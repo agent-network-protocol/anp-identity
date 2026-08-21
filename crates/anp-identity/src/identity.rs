@@ -478,6 +478,26 @@ fn recover(runtime: &Arc<StoreRuntime>) -> DidResult<IdentityRegistry> {
             remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
             continue;
         }
+        if journal.kind == CreationJournalKind::NamespaceDelete {
+            for secret_ref in &journal.secret_refs {
+                runtime.key_store().delete(&guard, secret_ref)?;
+            }
+            remove_identity(runtime.root(), &guard, &journal.identity_id)?;
+            if registry
+                .identities
+                .get(&journal.did)
+                .is_some_and(|summary| summary.identity_id == journal.identity_id)
+            {
+                registry.identities.remove(&journal.did);
+                registry.generation = registry
+                    .generation
+                    .checked_add(1)
+                    .ok_or(DidError::Conflict)?;
+                write_registry(runtime.root(), &guard, &registry)?;
+            }
+            remove_journal(runtime.root(), &guard, &journal.transaction_id)?;
+            continue;
+        }
         let committed = registry
             .identities
             .get(&journal.did)

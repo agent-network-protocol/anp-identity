@@ -79,6 +79,10 @@ class DidStore {
   async openIdentity(did) {
     return new DidIdentity(await call(this.#inner.openIdentity(did)))
   }
+
+  deleteIdentityNamespace(did, expectedGeneration) {
+    return call(this.#inner.deleteIdentityNamespace(did, expectedGeneration))
+  }
 }
 
 class DidIdentity {

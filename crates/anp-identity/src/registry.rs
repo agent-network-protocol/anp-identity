@@ -155,6 +155,7 @@ pub(crate) enum CreationJournalKind {
     Create,
     StateTransition,
     RootImport,
+    NamespaceDelete,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,6 +241,24 @@ impl CreationJournal {
         Self {
             schema_version: JOURNAL_SCHEMA_VERSION,
             kind: CreationJournalKind::RootImport,
+            transaction_id,
+            identity_id,
+            did,
+            secret_refs,
+            created_at,
+        }
+    }
+
+    pub(crate) fn new_namespace_delete(
+        transaction_id: String,
+        identity_id: String,
+        did: String,
+        secret_refs: Vec<SecretRef>,
+        created_at: String,
+    ) -> Self {
+        Self {
+            schema_version: JOURNAL_SCHEMA_VERSION,
+            kind: CreationJournalKind::NamespaceDelete,
             transaction_id,
             identity_id,
             did,

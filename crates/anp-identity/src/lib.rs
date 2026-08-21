@@ -12,6 +12,7 @@ mod key_import;
 mod keystore;
 mod lifecycle;
 mod manifest;
+mod namespace;
 mod platform;
 mod registry;
 mod root_transfer;

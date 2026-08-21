@@ -176,6 +176,12 @@ test('Node binding runs the complete E1 store and peer crypto flow', async (t) =
     key.kid.endsWith('#external'),
   )
   assert.equal(external.origin, 'external')
+  const publicJwkDid = (await publicJwkIdentity.snapshot()).did
+  await store.deleteIdentityNamespace(publicJwkDid, await store.generation())
+  await assert.rejects(
+    store.openIdentity(publicJwkDid),
+    (error) => error.code === 'identity_not_found',
+  )
 
   assert.deepEqual(Object.keys(binding).sort(), ['DidIdentity', 'DidStore'])
   const serialized = JSON.stringify(rotated)
