@@ -1,0 +1,13 @@
+impl anp_identity::DidStore
+impl anp_identity::ImportedPrivateKey
+pub anp_identity::IdentityImportSpec::capabilities: anp_identity::Capabilities
+pub anp_identity::IdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
+pub anp_identity::IdentityImportSpec::private_keys: alloc::vec::Vec<anp_identity::ImportedPrivateKey>
+pub anp_identity::IdentityImportSpec::verified_document: serde_json::value::Value
+pub anp_identity::PrivateKeyEncoding::Pkcs8Der
+pub anp_identity::PrivateKeyEncoding::Raw32
+pub enum anp_identity::PrivateKeyEncoding
+pub fn anp_identity::DidStore::import_identity(&mut self, anp_identity::IdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
+pub fn anp_identity::ImportedPrivateKey::new(impl core::convert::Into<alloc::string::String>, anp_identity::KeyRole, anp_identity::PrivateKeyEncoding, zeroize::Zeroizing<alloc::vec::Vec<u8>>) -> Self
+pub struct anp_identity::IdentityImportSpec
+pub struct anp_identity::ImportedPrivateKey

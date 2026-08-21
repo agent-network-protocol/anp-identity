@@ -421,7 +421,7 @@ fn validate_enrollment_spec(spec: &EnrollmentSpec) -> DidResult<()> {
     Ok(())
 }
 
-fn validate_verified_document(
+pub(crate) fn validate_verified_document(
     document: &Value,
     evidence: &VerifiedDocumentEvidence,
 ) -> DidResult<()> {

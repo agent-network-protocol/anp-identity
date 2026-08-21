@@ -7,6 +7,8 @@ mod error;
 mod fs_util;
 mod identity;
 mod input;
+#[cfg(feature = "key-import")]
+mod key_import;
 mod keystore;
 mod lifecycle;
 mod manifest;
@@ -29,6 +31,8 @@ pub use input::{
     DidProfile, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyRole, ManagedKeySpec,
     PublicOkpJwk, ServiceSpec,
 };
+#[cfg(feature = "key-import")]
+pub use key_import::{IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding};
 pub use lifecycle::{
     DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,
     PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
