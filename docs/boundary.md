@@ -2,9 +2,12 @@
 
 ## Security boundary
 
-Private keys never cross the public Rust API or FFI boundary. Public APIs may
+Private keys normally remain behind the Rust/FFI boundary. Public APIs may
 return DID documents, public keys, metadata, signatures, verification results,
-and ECDH results, but never private bytes, private PEM, or private JWK members.
+and ECDH results. The single plaintext egress exception is the public Rust
+root-key export used by an existing, user-confirmed `RootKeyEnvelopeV1`
+transfer. It does not apply to any other key role and is not exposed by the
+default Node binding.
 
 This is a logical API boundary, not process isolation. A Node native addon shares
 an address space with its host. A compromised host process, malicious native
@@ -49,26 +52,25 @@ written to a host DTO, journal, log, temporary file, or FFI value.
 
 No other plaintext private-key ingress is part of the boundary.
 
-## Wrapped root transfer and protocol compatibility
+## Root-key export and protocol compatibility
 
-`export_wrapped_root` is the only private-key egress exception. It returns
-recipient-bound, single-use ciphertext and public metadata, never root bytes.
-It is not a general export or backup mechanism. Encryption uses an ephemeral
-agreement key and a transcript that binds both identities, both devices, the
-recipient agreement KID, root KID, document/registry checkpoint, nonce, and
-expiry. The active root-control key signs the complete envelope. Decryption and
-root-key comparison remain inside the module.
+`export_root_private_key` is a public Rust API that returns the active managed
+root-control key as PKCS#8 DER in a zeroizing, non-serializable, non-`Debug`
+container. The host owns the mandatory user-confirmation interaction and must
+call the API only after that confirmation in the existing Root Transfer flow.
+The output is intended only for immediate construction of a canonical
+`RootKeyEnvelopeV1` inside an end-to-end encrypted P5 message. It must not be
+written to a DTO, pending journal, log, error, temporary file, or backup.
 
-New senders emit only the wrapped-root format. There is no negotiation flag,
-legacy-send option, or automatic downgrade. Consequently a new sender talking
-to an old receiver fails with an explicit upgrade requirement.
+Senders emit only `RootKeyEnvelopeV1`. There is no negotiation flag, wrapped
+send branch, or automatic fallback. New and old senders therefore use the same
+wire contract.
 
-New receivers support both explicitly typed formats: wrapped-root ciphertext
-and the legacy `RootKeyEnvelopeV1`. An old sender to a new receiver succeeds
-through the controlled legacy ingress above. Type dispatch is exact and
-disjoint: a damaged, unknown-version, or authentication-failing wrapped
-envelope is never reinterpreted as legacy input. Supporting the legacy reader
-does not authorize this module or its hosts to emit a legacy plaintext root.
+Receivers support `RootKeyEnvelopeV1` through the controlled legacy ingress
+above. The already implemented wrapped-root reader may remain for compatibility,
+but type dispatch is exact and disjoint: a damaged, unknown-version, or
+authentication-failing wrapped envelope is never reinterpreted as legacy input.
+`export_wrapped_root` also remains available, but AWiki's sender does not call it.
 
 ## Inputs and outputs
 
@@ -80,9 +82,10 @@ Managed root-control is exactly one key. Enabling DID-WBA requires at least one
 managed request-signing key. External root-control keys are forbidden.
 
 Outputs contain the DID document, public key metadata, KIDs, signatures,
-verification results, and ECDH results. An ECDH result is not a session key; the
-caller must immediately derive a scoped key through HKDF with domain separation.
-JavaScript Buffer copies are outside Rust zeroize coverage.
+verification results, ECDH results, and the explicit Rust-only root export
+described above. An ECDH result is not a session key; the caller must immediately
+derive a scoped key through HKDF with domain separation. JavaScript Buffer
+copies are outside Rust zeroize coverage.
 
 ## Ownership
 

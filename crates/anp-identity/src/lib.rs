@@ -1,4 +1,4 @@
-//! Stateful E1 DID identity primitives with a non-exportable private-key API boundary.
+//! Stateful E1 DID identity primitives with role-scoped private-key custody.
 
 mod adoption;
 mod crypto_ops;
@@ -51,9 +51,10 @@ pub use registry::{
     DocumentCheckpoint, IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState,
     RootCapabilityState,
 };
+pub use root_transfer::{
+    ExportedRootPrivateKey, RootPromotionSpec, RootTransferContext, RootTransferExportSpec,
+    RootTransferImportOutcome, WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE,
+    WRAPPED_ROOT_ENVELOPE_VERSION,
+};
 #[cfg(feature = "key-import")]
 pub use root_transfer::{LegacyRootTransferEvidence, LegacyRootTransferImportSpec};
-pub use root_transfer::{
-    RootPromotionSpec, RootTransferContext, RootTransferExportSpec, RootTransferImportOutcome,
-    WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE, WRAPPED_ROOT_ENVELOPE_VERSION,
-};

@@ -6,10 +6,12 @@
 
 Secure, vendor-neutral identity custody and lifecycle management for ANP E1 DIDs.
 
-`anp-identity` creates and manages DID documents while keeping managed private
-keys behind a non-exportable Rust/FFI API boundary. Applications ask for an
-operation by KID—sign, verify, derive a shared secret, or authenticate an HTTP
-request—without reading private key material.
+`anp-identity` creates and manages DID documents while keeping ordinary managed
+key operations behind a role-scoped Rust/FFI API boundary. Applications ask for
+an operation by KID—sign, verify, derive a shared secret, or authenticate an HTTP
+request—without reading private key material. The explicit exception is a
+Rust-only root-key export for the existing, user-confirmed
+`RootKeyEnvelopeV1` transfer flow.
 
 The project is available as a Rust crate with asynchronous Node.js/TypeScript
 bindings.
@@ -80,10 +82,10 @@ durable state, multi-identity isolation, recovery, and lifecycle policy.
 | Capability | What the module provides |
 |---|---|
 | DID creation | Root-bound ANP E1 DID documents from managed and external public keys |
-| Private-key custody | Encrypted records; no private-key export API |
+| Private-key custody | Encrypted records; only the Rust root-transfer export may return private bytes |
 | Device enrollment | Rootless pending device keys, public enrollment material, and verified activation |
 | Remote convergence | Monotonic verified-document adoption and local revocation fencing |
-| Root transfer | Target-bound wrapped-root ciphertext; strict receive-only legacy compatibility |
+| Root transfer | Public Rust root export for `RootKeyEnvelopeV1`; wrapped transfer remains available |
 | Multi-identity storage | `DidStore` → isolated `DidIdentity` handles |
 | Signing | Ed25519 signatures by explicit managed KID |
 | Verification | Managed or registered external public KIDs |

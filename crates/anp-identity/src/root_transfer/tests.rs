@@ -9,6 +9,44 @@ use crate::{
 };
 
 #[test]
+fn root_private_key_export_returns_zeroizing_pkcs8_for_active_root_only() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "source", [90_u8; 32]).unwrap();
+    let source = store.create_identity(source_spec()).unwrap();
+    let root_kid = source
+        .keys()
+        .iter()
+        .find(|key| key.role == KeyRole::RootControl)
+        .unwrap()
+        .kid
+        .clone();
+
+    let exported = source.export_root_private_key(&root_kid).unwrap();
+    assert_eq!(exported.as_pkcs8_der().len(), 48);
+    assert_eq!(
+        &exported.as_pkcs8_der()[..ED25519_PKCS8_PREFIX.len()],
+        &ED25519_PKCS8_PREFIX
+    );
+    let private = anp::PrivateKeyMaterial::from_pkcs8_der(exported.as_pkcs8_der()).unwrap();
+    let signature = private.sign_message(b"root transfer export").unwrap();
+    source
+        .verify(&root_kid, b"root transfer export", &signature)
+        .unwrap();
+
+    let e2ee_kid = source
+        .keys()
+        .iter()
+        .find(|key| key.role == KeyRole::E2eeAgreement)
+        .unwrap()
+        .kid
+        .clone();
+    assert!(matches!(
+        source.export_root_private_key(&e2ee_kid),
+        Err(DidError::RootCapabilityUnavailable)
+    ));
+}
+
+#[test]
 fn wrapped_root_roundtrip_is_target_bound_replay_safe_and_promotable() {
     let source_root = tempfile::tempdir().unwrap();
     let recipient_root = tempfile::tempdir().unwrap();

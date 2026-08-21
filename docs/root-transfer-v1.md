@@ -2,24 +2,17 @@
 
 ## Compatibility contract
 
-New senders emit only `anp.identity.root-transfer.wrapped` version `1`. They do
-not negotiate a plaintext format and never retry a failed wrapped transfer as a
-legacy transfer.
+This document specifies the optional
+`anp.identity.root-transfer.wrapped` version `1` API. It remains available for
+callers that explicitly choose it, but AWiki's default sender uses the existing
+`RootKeyEnvelopeV1` flow through `export_root_private_key`; it does not call
+`export_wrapped_root` or negotiate between formats.
 
-New receivers dispatch by an exact, disjoint type. They accept this wrapped
+Receivers dispatch by an exact, disjoint type. They may accept this wrapped
 format and may also accept an authenticated legacy `RootKeyEnvelopeV1` through
-the Rust-only controlled legacy ingress described in `boundary.md`. A malformed,
+the controlled legacy ingress described in `boundary.md`. A malformed,
 unknown-version, expired, or authentication-failing wrapped envelope is never
 reinterpreted as legacy input.
-
-Therefore the supported mixed-version behavior is:
-
-| Sender | Receiver | Result |
-|---|---|---|
-| new | new | wrapped transfer succeeds |
-| new | old | old receiver rejects the new type; the product requests an upgrade |
-| old | new | strict legacy reader imports into the same pending-root state |
-| old | old | historical behavior outside this module |
 
 ## Envelope
 

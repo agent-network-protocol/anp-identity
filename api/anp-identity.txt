@@ -171,6 +171,7 @@ pub fn anp_identity::DidIdentity::revision(&self) -> u64
 pub fn anp_identity::DidIdentity::state(&self) -> anp_identity::IdentityState
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::confirm_root_promotion(&mut self, anp_identity::RootPromotionSpec) -> anp_identity::DidResult<()>
+pub fn anp_identity::DidIdentity::export_root_private_key(&self, &str) -> anp_identity::DidResult<anp_identity::ExportedRootPrivateKey>
 pub fn anp_identity::DidIdentity::export_wrapped_root(&self, anp_identity::RootTransferExportSpec) -> anp_identity::DidResult<anp_identity::WrappedRootEnvelope>
 pub fn anp_identity::DidIdentity::import_wrapped_root(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
 impl anp_identity::DidIdentity
@@ -234,6 +235,9 @@ pub anp_identity::EnrollmentSpec::device_signing_fragment: alloc::string::String
 pub anp_identity::EnrollmentSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub anp_identity::EnrollmentSpec::profiles: alloc::vec::Vec<alloc::string::String>
 pub anp_identity::EnrollmentSpec::verified_document: serde_json::value::Value
+pub struct anp_identity::ExportedRootPrivateKey
+impl anp_identity::ExportedRootPrivateKey
+pub fn anp_identity::ExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
 pub struct anp_identity::ExternalPublicKeySpec
 pub anp_identity::ExternalPublicKeySpec::kid: alloc::string::String
 pub anp_identity::ExternalPublicKeySpec::material: anp_identity::ExternalPublicKeyMaterial

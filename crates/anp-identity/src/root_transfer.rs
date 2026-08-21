@@ -28,6 +28,9 @@ const MAX_REPLAY_RECORDS: usize = 256;
 const KDF_SALT_LABEL: &[u8] = b"anp-identity:root-transfer:salt:v1\0";
 const KDF_INFO_LABEL: &[u8] = b"anp-identity:root-transfer:aead:v1\0";
 const SIGNATURE_LABEL: &[u8] = b"anp-identity:root-transfer:signature:v1\0";
+const ED25519_PKCS8_PREFIX: [u8; 16] = [
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -65,6 +68,20 @@ pub struct RootTransferExportSpec {
     pub recipient_agreement_public: [u8; 32],
     pub root_kid: String,
     pub ttl_seconds: u32,
+}
+
+/// Zeroizing PKCS#8 DER returned only for a user-confirmed root transfer.
+///
+/// This value is intentionally non-serializable, non-cloneable, and does not
+/// implement `Debug`. Callers must not persist it or use it as a backup API.
+pub struct ExportedRootPrivateKey {
+    pkcs8_der: Zeroizing<Vec<u8>>,
+}
+
+impl ExportedRootPrivateKey {
+    pub fn as_pkcs8_der(&self) -> &[u8] {
+        self.pkcs8_der.as_slice()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -120,6 +137,33 @@ pub struct LegacyRootTransferImportSpec {
 }
 
 impl DidIdentity {
+    /// Exports the active managed root-control key for `RootKeyEnvelopeV1`.
+    ///
+    /// The host is responsible for enforcing its user-confirmation interaction
+    /// before calling this method and for immediately passing the returned DER
+    /// to an end-to-end encrypted root-transfer envelope.
+    pub fn export_root_private_key(&self, root_kid: &str) -> DidResult<ExportedRootPrivateKey> {
+        if self.state() != IdentityState::Active
+            || self.root_capability() != RootCapabilityState::Active
+        {
+            return Err(DidError::RootCapabilityUnavailable);
+        }
+        let root = self.managed_key_metadata(root_kid)?;
+        if root.role != KeyRole::RootControl || root.state != KeyState::Active {
+            return Err(DidError::RootCapabilityUnavailable);
+        }
+        let secret = self.load_managed_secret(root)?;
+        if secret.expose().len() != 32 {
+            return Err(DidError::InvalidIdentity);
+        }
+        let mut pkcs8_der = Zeroizing::new(Vec::with_capacity(
+            ED25519_PKCS8_PREFIX.len() + secret.expose().len(),
+        ));
+        pkcs8_der.extend_from_slice(&ED25519_PKCS8_PREFIX);
+        pkcs8_der.extend_from_slice(secret.expose());
+        Ok(ExportedRootPrivateKey { pkcs8_der })
+    }
+
     pub fn export_wrapped_root(
         &self,
         spec: RootTransferExportSpec,
