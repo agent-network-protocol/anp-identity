@@ -446,6 +446,40 @@ impl DidIdentity {
         self.record().checkpoint.as_ref()
     }
 
+    pub fn pending_enrollment(&self) -> Option<PreparedEnrollment> {
+        let pending = self.record().pending_enrollment.as_ref()?;
+        let local = self.record().local_authorization.as_ref()?;
+        let signing = self
+            .record()
+            .keys
+            .iter()
+            .find(|key| key.kid == local.signing_kid)?;
+        let e2ee = self
+            .record()
+            .keys
+            .iter()
+            .find(|key| key.kid == local.e2ee_kid)?;
+        Some(PreparedEnrollment {
+            enrollment_id: pending.enrollment_id.clone(),
+            identity_id: self.identity_id().to_owned(),
+            did: self.did().to_owned(),
+            device_id: local.device_id.clone(),
+            device_signing_key: EnrollmentPublicKey {
+                kid: signing.kid.clone(),
+                role: signing.role,
+                public_key_multibase: signing.public_key_multibase.clone(),
+            },
+            device_e2ee_key: EnrollmentPublicKey {
+                kid: e2ee.kid.clone(),
+                role: e2ee.role,
+                public_key_multibase: e2ee.public_key_multibase.clone(),
+            },
+            profiles: local.profiles.clone(),
+            root_key_fingerprint: self.record().root_key_fingerprint.clone(),
+            checkpoint: self.record().checkpoint.clone()?,
+        })
+    }
+
     pub fn adopt_verified_document(
         &mut self,
         spec: AdoptVerifiedDocumentSpec,

@@ -153,6 +153,7 @@ pub fn anp_identity::DidIdentity::reconcile_update(&mut self, &str, &serde_json:
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::adopt_verified_document(&mut self, anp_identity::AdoptVerifiedDocumentSpec) -> anp_identity::DidResult<anp_identity::AdoptDocumentOutcome>
 pub fn anp_identity::DidIdentity::checkpoint(&self) -> core::option::Option<&anp_identity::DocumentCheckpoint>
+pub fn anp_identity::DidIdentity::pending_enrollment(&self) -> core::option::Option<anp_identity::PreparedEnrollment>
 pub fn anp_identity::DidIdentity::root_capability(&self) -> anp_identity::RootCapabilityState
 pub fn anp_identity::DidIdentity::root_key_fingerprint(&self) -> &str
 impl anp_identity::DidIdentity
@@ -173,6 +174,7 @@ pub fn anp_identity::DidIdentity::export_wrapped_root(&self, anp_identity::RootT
 pub fn anp_identity::DidIdentity::import_wrapped_root(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::ecdh(&self, &str, &[u8]) -> anp_identity::DidResult<anp_identity::SharedSecret>
+pub fn anp_identity::DidIdentity::ecdh_pending_enrollment(&self, &str, &str, &[u8]) -> anp_identity::DidResult<anp_identity::SharedSecret>
 pub fn anp_identity::DidIdentity::http_signature_headers(&self, &str, &str, &str, core::option::Option<&alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>, core::option::Option<&[u8]>) -> anp_identity::DidResult<alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
 pub fn anp_identity::DidIdentity::http_signature_headers_with_options(&self, &str, &str, &str, core::option::Option<&alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>, core::option::Option<&[u8]>, anp::authentication::http_signatures::HttpSignatureOptions) -> anp_identity::DidResult<alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>>
 pub fn anp_identity::DidIdentity::legacy_did_wba_header(&self, &str, &str, &str) -> anp_identity::DidResult<alloc::string::String>
@@ -181,6 +183,7 @@ pub fn anp_identity::DidIdentity::sign_device_assertion(&self, &str, &[u8]) -> a
 pub fn anp_identity::DidIdentity::sign_document_proof(&self, &serde_json::value::Value, &str, anp::proof::ProofGenerationOptions) -> anp_identity::DidResult<serde_json::value::Value>
 pub fn anp_identity::DidIdentity::sign_object_proof(&self, &str, &serde_json::value::Value, &str, core::option::Option<alloc::string::String>) -> anp_identity::DidResult<serde_json::value::Value>
 pub fn anp_identity::DidIdentity::sign_origin_proof(&self, &str, &serde_json::value::Value, &serde_json::value::Value, &str, anp::proof::rfc9421_origin::Rfc9421OriginProofGenerationOptions) -> anp_identity::DidResult<anp::proof::rfc9421_origin::Rfc9421OriginProof>
+pub fn anp_identity::DidIdentity::sign_pending_enrollment(&self, &str, &str, &[u8]) -> anp_identity::DidResult<alloc::vec::Vec<u8>>
 pub fn anp_identity::DidIdentity::verify(&self, &str, &[u8], &[u8]) -> anp_identity::DidResult<()>
 impl core::fmt::Debug for anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

@@ -35,6 +35,76 @@ impl fmt::Debug for SharedSecret {
 }
 
 impl DidIdentity {
+    pub fn sign_pending_enrollment(
+        &self,
+        enrollment_id: &str,
+        kid: &str,
+        message: &[u8],
+    ) -> DidResult<Vec<u8>> {
+        let record = self.current_pending_enrollment(enrollment_id)?;
+        let local = record
+            .local_authorization
+            .as_ref()
+            .ok_or(DidError::InvalidIdentity)?;
+        let kid = crate::input::canonicalize_kid(&record.did, kid)?;
+        if kid != local.signing_kid {
+            return Err(DidError::KeyRoleViolation);
+        }
+        let metadata = record
+            .keys
+            .iter()
+            .find(|metadata| metadata.kid == kid)
+            .ok_or(DidError::KeyNotFound)?;
+        if metadata.role != KeyRole::DeviceSigning
+            || metadata.origin != crate::KeyOrigin::Managed
+            || metadata.state != KeyState::Pending
+            || metadata.material_erased
+        {
+            return Err(DidError::KeyNotUsable);
+        }
+        self.sign_prepared(metadata, message)
+    }
+
+    pub fn ecdh_pending_enrollment(
+        &self,
+        enrollment_id: &str,
+        kid: &str,
+        peer_public: &[u8],
+    ) -> DidResult<SharedSecret> {
+        let record = self.current_pending_enrollment(enrollment_id)?;
+        let local = record
+            .local_authorization
+            .as_ref()
+            .ok_or(DidError::InvalidIdentity)?;
+        let kid = crate::input::canonicalize_kid(&record.did, kid)?;
+        if kid != local.e2ee_kid {
+            return Err(DidError::KeyRoleViolation);
+        }
+        let metadata = record
+            .keys
+            .iter()
+            .find(|metadata| metadata.kid == kid)
+            .ok_or(DidError::KeyNotFound)?;
+        if metadata.role != KeyRole::E2eeAgreement
+            || metadata.origin != crate::KeyOrigin::Managed
+            || metadata.state != KeyState::Pending
+            || metadata.material_erased
+        {
+            return Err(DidError::KeyNotUsable);
+        }
+        let peer: [u8; 32] = peer_public
+            .try_into()
+            .map_err(|_| DidError::InvalidPeerKey)?;
+        let secret = self.load_managed_secret(metadata)?;
+        let private = x25519_private_key(&secret)?;
+        let shared = private.diffie_hellman(&x25519_dalek::PublicKey::from(peer));
+        let bytes = Zeroizing::new(shared.to_bytes());
+        if bytes.iter().all(|byte| *byte == 0) {
+            return Err(DidError::InvalidPeerKey);
+        }
+        Ok(SharedSecret { bytes })
+    }
+
     pub fn sign(&self, kid: &str, message: &[u8]) -> DidResult<Vec<u8>> {
         self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
@@ -260,6 +330,25 @@ impl DidIdentity {
             return Err(DidError::KeyNotUsable);
         }
         Ok(())
+    }
+
+    fn current_pending_enrollment(
+        &self,
+        enrollment_id: &str,
+    ) -> DidResult<crate::registry::IdentityRecord> {
+        let current = crate::registry::read_identity(self.runtime().root(), self.identity_id())?;
+        if current.generation != self.record().generation {
+            return Err(DidError::Conflict);
+        }
+        if current.state != crate::IdentityState::Enrolling
+            || current
+                .pending_enrollment
+                .as_ref()
+                .is_none_or(|pending| pending.enrollment_id != enrollment_id)
+        {
+            return Err(DidError::KeyNotUsable);
+        }
+        Ok(current)
     }
 }
 

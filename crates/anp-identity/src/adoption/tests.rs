@@ -41,12 +41,45 @@ fn enrollment_adopts_verified_device_then_revokes_when_remote_document_removes_i
         identity.root_key_fingerprint()
     );
     assert_eq!(prepared.checkpoint, *identity.checkpoint().unwrap());
+    assert_eq!(identity.pending_enrollment().as_ref(), Some(&prepared));
     let public_json = serde_json::to_string(&prepared).unwrap();
     for forbidden in ["private", "secret", "-----BEGIN", "\"d\""] {
         assert!(!public_json.contains(forbidden));
     }
     assert_eq!(
         identity.sign_device_assertion(&prepared.device_signing_key.kid, b"pending"),
+        Err(DidError::KeyNotUsable)
+    );
+    let pending_signature = identity
+        .sign_pending_enrollment(
+            &prepared.enrollment_id,
+            &prepared.device_signing_key.kid,
+            b"join request",
+        )
+        .unwrap();
+    let signing_method = json!({
+        "id": prepared.device_signing_key.kid,
+        "type": "Multikey",
+        "publicKeyMultibase": prepared.device_signing_key.public_key_multibase,
+    });
+    anp::authentication::extract_public_key(&signing_method)
+        .unwrap()
+        .verify_message(b"join request", &pending_signature)
+        .unwrap();
+    let pending_peer = x25519_dalek::StaticSecret::from([19_u8; 32]);
+    identity
+        .ecdh_pending_enrollment(
+            &prepared.enrollment_id,
+            &prepared.device_e2ee_key.kid,
+            &x25519_dalek::PublicKey::from(&pending_peer).to_bytes(),
+        )
+        .unwrap();
+    assert_eq!(
+        identity.sign_pending_enrollment(
+            "wrong-enrollment",
+            &prepared.device_signing_key.kid,
+            b"join request",
+        ),
         Err(DidError::KeyNotUsable)
     );
 
@@ -66,6 +99,15 @@ fn enrollment_adopts_verified_device_then_revokes_when_remote_document_removes_i
         AdoptDocumentOutcome::Activated
     );
     assert_eq!(identity.state(), IdentityState::Active);
+    assert!(identity.pending_enrollment().is_none());
+    assert_eq!(
+        identity.sign_pending_enrollment(
+            &prepared.enrollment_id,
+            &prepared.device_signing_key.kid,
+            b"late",
+        ),
+        Err(DidError::KeyNotUsable)
+    );
     identity
         .sign_device_assertion(&prepared.device_signing_key.kid, b"active")
         .unwrap();
