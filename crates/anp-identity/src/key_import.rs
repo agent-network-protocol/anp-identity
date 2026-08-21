@@ -62,7 +62,164 @@ pub struct RequestSigningIdentityImportSpec {
     pub private_key: ImportedPrivateKey,
 }
 
+pub struct DeviceIdentityImportSpec {
+    pub verified_document: Value,
+    pub evidence: VerifiedDocumentEvidence,
+    pub capabilities: Capabilities,
+    pub signing_key: ImportedPrivateKey,
+    pub e2ee_key: ImportedPrivateKey,
+}
+
 impl DidStore {
+    pub fn import_device_identity(
+        &mut self,
+        spec: DeviceIdentityImportSpec,
+    ) -> DidResult<DidIdentity> {
+        crate::adoption::validate_verified_document(&spec.verified_document, &spec.evidence)?;
+        let did = spec
+            .verified_document
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or(DidError::InvalidIdentity)?
+            .to_owned();
+        let imported = prepare_imported_keys(
+            &did,
+            &spec.verified_document,
+            vec![spec.signing_key, spec.e2ee_key],
+        )?;
+        let signing = imported
+            .iter()
+            .find(|key| key.role == KeyRole::DeviceSigning)
+            .ok_or(DidError::KeyRoleViolation)?;
+        let e2ee = imported
+            .iter()
+            .find(|key| key.role == KeyRole::E2eeAgreement)
+            .ok_or(DidError::KeyRoleViolation)?;
+        if imported.len() != 2
+            || signing.kid == e2ee.kid
+            || !anp::authentication::is_authentication_authorized(
+                &spec.verified_document,
+                &signing.kid,
+            )
+            || !anp::authentication::is_assertion_method_authorized(
+                &spec.verified_document,
+                &signing.kid,
+            )
+        {
+            return Err(DidError::KeyRoleViolation);
+        }
+        let root_kid = spec
+            .verified_document
+            .get("proof")
+            .and_then(Value::as_object)
+            .and_then(|proof| proof.get("verificationMethod"))
+            .and_then(Value::as_str)
+            .ok_or(DidError::InvalidIdentity)?
+            .to_owned();
+        let guard = self.runtime.acquire_write()?;
+        let mut registry = read_registry(self.runtime.root())?;
+        if registry.generation != self.registry_generation {
+            return Err(DidError::Conflict);
+        }
+        if registry.identities.contains_key(&did) {
+            return Err(DidError::DuplicateIdentity);
+        }
+        let identity_id = crate::identity::random_id();
+        let transaction_id = crate::identity::random_id();
+        let created_at = Utc::now().to_rfc3339();
+        let secret_refs = imported
+            .iter()
+            .map(|key| SecretRef {
+                identity_id: identity_id.clone(),
+                key_id: key.kid.clone(),
+                role: key.role,
+                version: 1,
+            })
+            .collect::<Vec<_>>();
+        let journal = CreationJournal::new(
+            transaction_id.clone(),
+            identity_id.clone(),
+            did.clone(),
+            secret_refs.clone(),
+            created_at.clone(),
+        );
+        write_journal(self.runtime.root(), &guard, &journal)?;
+        for (key, secret_ref) in imported.iter().zip(&secret_refs) {
+            let sealed = self.runtime.key_store().seal_if_absent(
+                &guard,
+                self.runtime.root_key(),
+                secret_ref.clone(),
+                SecretBytes::new(key.raw.to_vec()),
+            )?;
+            if sealed == SealIfAbsent::AlreadyExists {
+                let persisted = self
+                    .runtime
+                    .key_store()
+                    .open(self.runtime.root_key(), secret_ref)?;
+                let actual = public_key_from_secret(key.role, &persisted)?;
+                if !public_keys_equal(&actual, &key.public) {
+                    return Err(DidError::InvalidIdentity);
+                }
+            }
+        }
+        let root_metadata = key_metadata(
+            &spec.verified_document,
+            &root_kid,
+            KeyRole::RootControl,
+            KeyOrigin::External,
+            &created_at,
+        )?;
+        let mut metadata = imported
+            .iter()
+            .map(|key| {
+                key_metadata(
+                    &spec.verified_document,
+                    &key.kid,
+                    key.role,
+                    KeyOrigin::Managed,
+                    &created_at,
+                )
+            })
+            .collect::<DidResult<Vec<_>>>()?;
+        metadata.insert(0, root_metadata);
+        let local_authorization =
+            crate::adoption::infer_local_authorization(&spec.verified_document, &metadata)?
+                .ok_or(DidError::InvalidIdentity)?;
+        let root_fingerprint = root_key_fingerprint(&spec.verified_document)?;
+        let mut record = new_identity_record(NewIdentityRecord {
+            identity_id,
+            did: did.clone(),
+            document: spec.verified_document,
+            keys: metadata,
+            capabilities: spec.capabilities,
+            root_capability: RootCapabilityState::Absent,
+            root_key_fingerprint: root_fingerprint,
+            checkpoint: crate::DocumentCheckpoint {
+                document_version: spec.evidence.document_version,
+                registry_version: spec.evidence.registry_version,
+                document_digest: spec.evidence.document_digest,
+            },
+            local_authorization: Some(local_authorization),
+            created_at,
+        });
+        record.state = crate::IdentityState::Active;
+        write_identity(self.runtime.root(), &guard, &record)?;
+        let next_generation = registry
+            .generation
+            .checked_add(1)
+            .ok_or(DidError::Conflict)?;
+        registry.identities.insert(did, record.summary());
+        registry.generation = next_generation;
+        write_registry(self.runtime.root(), &guard, &registry)?;
+        crate::registry::remove_journal(self.runtime.root(), &guard, &transaction_id)?;
+        drop(guard);
+        self.registry_generation = next_generation;
+        Ok(DidIdentity {
+            runtime: std::sync::Arc::clone(&self.runtime),
+            record,
+        })
+    }
+
     pub fn import_request_signing_identity(
         &mut self,
         spec: RequestSigningIdentityImportSpec,

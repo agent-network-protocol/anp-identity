@@ -1,5 +1,10 @@
 impl anp_identity::DidStore
 impl anp_identity::ImportedPrivateKey
+pub anp_identity::DeviceIdentityImportSpec::capabilities: anp_identity::Capabilities
+pub anp_identity::DeviceIdentityImportSpec::e2ee_key: anp_identity::ImportedPrivateKey
+pub anp_identity::DeviceIdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
+pub anp_identity::DeviceIdentityImportSpec::signing_key: anp_identity::ImportedPrivateKey
+pub anp_identity::DeviceIdentityImportSpec::verified_document: serde_json::value::Value
 pub anp_identity::IdentityImportSpec::capabilities: anp_identity::Capabilities
 pub anp_identity::IdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub anp_identity::IdentityImportSpec::private_keys: alloc::vec::Vec<anp_identity::ImportedPrivateKey>
@@ -24,9 +29,11 @@ pub anp_identity::RequestSigningIdentityImportSpec::private_key: anp_identity::I
 pub anp_identity::RequestSigningIdentityImportSpec::verified_document: serde_json::value::Value
 pub enum anp_identity::PrivateKeyEncoding
 pub fn anp_identity::DidIdentity::import_legacy_root_transfer(&mut self, anp_identity::LegacyRootTransferImportSpec) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
+pub fn anp_identity::DidStore::import_device_identity(&mut self, anp_identity::DeviceIdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::DidStore::import_identity(&mut self, anp_identity::IdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::DidStore::import_request_signing_identity(&mut self, anp_identity::RequestSigningIdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::ImportedPrivateKey::new(impl core::convert::Into<alloc::string::String>, anp_identity::KeyRole, anp_identity::PrivateKeyEncoding, zeroize::Zeroizing<alloc::vec::Vec<u8>>) -> Self
+pub struct anp_identity::DeviceIdentityImportSpec
 pub struct anp_identity::IdentityImportSpec
 pub struct anp_identity::ImportedPrivateKey
 pub struct anp_identity::LegacyRootTransferEvidence

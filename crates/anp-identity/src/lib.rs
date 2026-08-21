@@ -36,7 +36,8 @@ pub use input::{
 };
 #[cfg(feature = "key-import")]
 pub use key_import::{
-    IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding, RequestSigningIdentityImportSpec,
+    DeviceIdentityImportSpec, IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding,
+    RequestSigningIdentityImportSpec,
 };
 pub use lifecycle::{
     DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,

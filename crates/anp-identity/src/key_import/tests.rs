@@ -163,6 +163,102 @@ fn request_signing_import_creates_an_active_rootless_daemon_identity() {
     );
 }
 
+#[test]
+fn device_import_creates_an_active_rootless_member_identity() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[85_u8; 32]);
+    let agreement_key = x25519_dalek::StaticSecret::from([86_u8; 32]);
+    let signing_multibase = crate::document::public_key_multibase(
+        &anp::PublicKeyMaterial::Ed25519(signing_key.verifying_key()),
+    )
+    .unwrap();
+    let agreement_multibase = crate::document::public_key_multibase(
+        &anp::PublicKeyMaterial::X25519(x25519_dalek::PublicKey::from(&agreement_key).to_bytes()),
+    )
+    .unwrap();
+    let source_root = tempfile::tempdir().unwrap();
+    let mut source_store =
+        DidStore::initialize_injected(source_root.path(), "source", [85_u8; 32]).unwrap();
+    let source = source_store
+        .create_identity(crate::DidCreateSpec {
+            profile: crate::DidProfile::E1,
+            domain: "example.com".to_owned(),
+            port: None,
+            path_segments: vec!["users".to_owned(), "device-import".to_owned()],
+            capabilities: Capabilities { did_wba: false },
+            managed_keys: vec![crate::ManagedKeySpec {
+                fragment: "key-1".to_owned(),
+                role: KeyRole::RootControl,
+            }],
+            external_keys: vec![
+                crate::ExternalPublicKeySpec {
+                    kid: "#device-signing".to_owned(),
+                    role: KeyRole::DeviceSigning,
+                    material: crate::ExternalPublicKeyMaterial::Multibase {
+                        value: signing_multibase,
+                    },
+                },
+                crate::ExternalPublicKeySpec {
+                    kid: "#device-e2ee".to_owned(),
+                    role: KeyRole::E2eeAgreement,
+                    material: crate::ExternalPublicKeyMaterial::Multibase {
+                        value: agreement_multibase,
+                    },
+                },
+            ],
+            services: Vec::new(),
+            agent_description_url: None,
+            extensions: vec![crate::DidExtensionSpec::DeviceManifest(
+                crate::DeviceManifestSpec {
+                    devices: vec![crate::DeviceManifestEntrySpec {
+                        device_id: "device-import".to_owned(),
+                        signing_key_id: "#device-signing".to_owned(),
+                        e2ee_key_id: "#device-e2ee".to_owned(),
+                        profiles: vec!["p5".to_owned(), "p6".to_owned()],
+                    }],
+                },
+            )],
+        })
+        .unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "device", [86_u8; 32]).unwrap();
+    let imported = store
+        .import_device_identity(DeviceIdentityImportSpec {
+            verified_document: source.document().clone(),
+            evidence: VerifiedDocumentEvidence {
+                document_version: 4,
+                registry_version: 5,
+                document_digest: crate::canonical_document_digest(source.document()).unwrap(),
+            },
+            capabilities: Capabilities { did_wba: true },
+            signing_key: ImportedPrivateKey::new(
+                "#device-signing",
+                KeyRole::DeviceSigning,
+                PrivateKeyEncoding::Raw32,
+                Zeroizing::new(signing_key.to_bytes().to_vec()),
+            ),
+            e2ee_key: ImportedPrivateKey::new(
+                "#device-e2ee",
+                KeyRole::E2eeAgreement,
+                PrivateKeyEncoding::Raw32,
+                Zeroizing::new(agreement_key.to_bytes().to_vec()),
+            ),
+        })
+        .unwrap();
+
+    assert_eq!(imported.state(), crate::IdentityState::Active);
+    assert_eq!(imported.root_capability(), RootCapabilityState::Absent);
+    imported
+        .sign_device_assertion("#device-signing", b"device assertion")
+        .unwrap();
+    let peer = x25519_dalek::StaticSecret::from([87_u8; 32]);
+    imported
+        .ecdh(
+            "#device-e2ee",
+            &x25519_dalek::PublicKey::from(&peer).to_bytes(),
+        )
+        .unwrap();
+}
+
 fn imported(
     bundle: &anp::authentication::DidDocumentBundle,
     fragment: &str,
