@@ -480,6 +480,27 @@ impl DidIdentity {
         })
     }
 
+    pub fn pending_request_signing_enrollment(&self) -> Option<PreparedRequestSigningEnrollment> {
+        let pending = self.record().pending_request_signing.as_ref()?;
+        let request = self
+            .record()
+            .keys
+            .iter()
+            .find(|key| key.kid == pending.request_signing_kid)?;
+        Some(PreparedRequestSigningEnrollment {
+            enrollment_id: pending.enrollment_id.clone(),
+            identity_id: self.identity_id().to_owned(),
+            did: self.did().to_owned(),
+            request_signing_key: EnrollmentPublicKey {
+                kid: request.kid.clone(),
+                role: request.role,
+                public_key_multibase: request.public_key_multibase.clone(),
+            },
+            root_key_fingerprint: self.record().root_key_fingerprint.clone(),
+            checkpoint: self.record().checkpoint.clone()?,
+        })
+    }
+
     pub fn adopt_verified_document(
         &mut self,
         spec: AdoptVerifiedDocumentSpec,

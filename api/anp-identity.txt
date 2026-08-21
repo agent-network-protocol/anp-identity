@@ -154,6 +154,7 @@ impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::adopt_verified_document(&mut self, anp_identity::AdoptVerifiedDocumentSpec) -> anp_identity::DidResult<anp_identity::AdoptDocumentOutcome>
 pub fn anp_identity::DidIdentity::checkpoint(&self) -> core::option::Option<&anp_identity::DocumentCheckpoint>
 pub fn anp_identity::DidIdentity::pending_enrollment(&self) -> core::option::Option<anp_identity::PreparedEnrollment>
+pub fn anp_identity::DidIdentity::pending_request_signing_enrollment(&self) -> core::option::Option<anp_identity::PreparedRequestSigningEnrollment>
 pub fn anp_identity::DidIdentity::root_capability(&self) -> anp_identity::RootCapabilityState
 pub fn anp_identity::DidIdentity::root_key_fingerprint(&self) -> &str
 impl anp_identity::DidIdentity

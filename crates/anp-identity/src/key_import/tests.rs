@@ -95,6 +95,74 @@ fn import_rejects_a_private_key_that_does_not_match_the_document() {
     assert!(store.list_identities().unwrap().is_empty());
 }
 
+#[test]
+fn request_signing_import_creates_an_active_rootless_daemon_identity() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+
+    let request_key = ed25519_dalek::SigningKey::from_bytes(&[83_u8; 32]);
+    let source_root = tempfile::tempdir().unwrap();
+    let mut source_store =
+        DidStore::initialize_injected(source_root.path(), "source", [83_u8; 32]).unwrap();
+    let source = source_store
+        .create_identity(crate::DidCreateSpec {
+            profile: crate::DidProfile::E1,
+            domain: "example.com".to_owned(),
+            port: None,
+            path_segments: vec!["users".to_owned(), "daemon-import".to_owned()],
+            capabilities: Capabilities { did_wba: false },
+            managed_keys: vec![crate::ManagedKeySpec {
+                fragment: "key-1".to_owned(),
+                role: KeyRole::RootControl,
+            }],
+            external_keys: vec![crate::ExternalPublicKeySpec {
+                kid: "#daemon-key-1".to_owned(),
+                role: KeyRole::RequestSigning,
+                material: crate::ExternalPublicKeyMaterial::Jwk {
+                    public_key_jwk: crate::PublicOkpJwk {
+                        kty: "OKP".to_owned(),
+                        crv: "Ed25519".to_owned(),
+                        x: URL_SAFE_NO_PAD.encode(request_key.verifying_key().to_bytes()),
+                    },
+                },
+            }],
+            services: Vec::new(),
+            agent_description_url: None,
+            extensions: Vec::new(),
+        })
+        .unwrap();
+    let evidence = VerifiedDocumentEvidence {
+        document_version: 1,
+        registry_version: 1,
+        document_digest: crate::canonical_document_digest(source.document()).unwrap(),
+    };
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "daemon", [84_u8; 32]).unwrap();
+    let imported = store
+        .import_request_signing_identity(RequestSigningIdentityImportSpec {
+            verified_document: source.document().clone(),
+            evidence,
+            capabilities: Capabilities { did_wba: true },
+            private_key: ImportedPrivateKey::new(
+                "#daemon-key-1",
+                KeyRole::RequestSigning,
+                PrivateKeyEncoding::Raw32,
+                Zeroizing::new(request_key.to_bytes().to_vec()),
+            ),
+        })
+        .unwrap();
+
+    assert_eq!(imported.state(), crate::IdentityState::Active);
+    assert_eq!(imported.root_capability(), RootCapabilityState::Absent);
+    let signature = imported.sign("#daemon-key-1", b"daemon").unwrap();
+    imported
+        .verify("#daemon-key-1", b"daemon", &signature)
+        .unwrap();
+    assert_eq!(
+        imported.sign_device_assertion("#daemon-key-1", b"assertion"),
+        Err(DidError::KeyRoleViolation)
+    );
+}
+
 fn imported(
     bundle: &anp::authentication::DidDocumentBundle,
     fragment: &str,

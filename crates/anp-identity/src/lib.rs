@@ -35,7 +35,9 @@ pub use input::{
     PublicOkpJwk, ServiceSpec,
 };
 #[cfg(feature = "key-import")]
-pub use key_import::{IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding};
+pub use key_import::{
+    IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding, RequestSigningIdentityImportSpec,
+};
 pub use lifecycle::{
     DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,
     PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
