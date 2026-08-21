@@ -5,6 +5,11 @@ use anp::authentication::{
     complete_http_signature_headers, complete_legacy_did_wba_auth_header, find_verification_method,
     prepare_http_signature_headers, prepare_legacy_did_wba_auth_header,
 };
+use anp::proof::{
+    complete_object_proof, complete_rfc9421_origin_proof, complete_w3c_proof, prepare_object_proof,
+    prepare_rfc9421_origin_proof, prepare_w3c_proof, ProofGenerationOptions, Rfc9421OriginProof,
+    Rfc9421OriginProofGenerationOptions,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::secret::SecretBytes;
@@ -54,6 +59,69 @@ impl DidIdentity {
             return Err(DidError::KeyRoleViolation);
         }
         self.sign_prepared(metadata, message)
+    }
+
+    pub fn sign_object_proof(
+        &self,
+        kid: &str,
+        document: &serde_json::Value,
+        issuer_did: &str,
+        created: Option<String>,
+    ) -> DidResult<serde_json::Value> {
+        let metadata = self.device_signing_metadata(kid)?;
+        let method = find_verification_method(self.document(), &metadata.kid)
+            .ok_or(DidError::InvalidIdentity)?;
+        let public = anp::authentication::extract_public_key(&method)
+            .map_err(|_| DidError::InvalidPublicKey)?;
+        let prepared = prepare_object_proof(document, &public, &metadata.kid, issuer_did, created)
+            .map_err(|_| DidError::Crypto)?;
+        let signature = self.sign_prepared(metadata, prepared.signing_input())?;
+        complete_object_proof(prepared, &signature).map_err(|_| DidError::Crypto)
+    }
+
+    pub fn sign_document_proof(
+        &self,
+        document: &serde_json::Value,
+        verification_method: &str,
+        options: ProofGenerationOptions,
+    ) -> DidResult<serde_json::Value> {
+        self.require_operational()?;
+        if self.root_capability() != crate::RootCapabilityState::Active {
+            return Err(DidError::RootCapabilityUnavailable);
+        }
+        let metadata = self.managed_key_metadata(verification_method)?;
+        require_active(metadata)?;
+        if metadata.role != KeyRole::RootControl {
+            return Err(DidError::KeyRoleViolation);
+        }
+        let method = find_verification_method(self.document(), &metadata.kid)
+            .ok_or(DidError::InvalidIdentity)?;
+        let public = anp::authentication::extract_public_key(&method)
+            .map_err(|_| DidError::InvalidPublicKey)?;
+        let prepared = prepare_w3c_proof(document, &public, &metadata.kid, options)
+            .map_err(|_| DidError::Crypto)?;
+        let signature = self.sign_prepared(metadata, prepared.signing_input())?;
+        complete_w3c_proof(prepared, &signature).map_err(|_| DidError::Crypto)
+    }
+
+    pub fn sign_origin_proof(
+        &self,
+        method: &str,
+        meta: &serde_json::Value,
+        body: &serde_json::Value,
+        kid: &str,
+        options: Rfc9421OriginProofGenerationOptions,
+    ) -> DidResult<Rfc9421OriginProof> {
+        let metadata = self.request_signing_metadata(kid)?;
+        let verification_method = find_verification_method(self.document(), &metadata.kid)
+            .ok_or(DidError::InvalidIdentity)?;
+        let public = anp::authentication::extract_public_key(&verification_method)
+            .map_err(|_| DidError::InvalidPublicKey)?;
+        let prepared =
+            prepare_rfc9421_origin_proof(method, meta, body, &public, &metadata.kid, options)
+                .map_err(|_| DidError::Crypto)?;
+        let signature = self.sign_prepared(metadata, prepared.signing_input())?;
+        complete_rfc9421_origin_proof(prepared, &signature).map_err(|_| DidError::Crypto)
     }
 
     pub fn verify(&self, kid: &str, message: &[u8], signature: &[u8]) -> DidResult<()> {
@@ -166,6 +234,16 @@ impl DidIdentity {
         Ok(metadata)
     }
 
+    fn device_signing_metadata(&self, kid: &str) -> DidResult<&KeyMetadata> {
+        self.require_operational()?;
+        let metadata = self.managed_key_metadata(kid)?;
+        require_active(metadata)?;
+        if metadata.role != KeyRole::DeviceSigning {
+            return Err(DidError::KeyRoleViolation);
+        }
+        Ok(metadata)
+    }
+
     fn sign_prepared(&self, metadata: &KeyMetadata, message: &[u8]) -> DidResult<Vec<u8>> {
         let secret = self.load_managed_secret(metadata)?;
         let signing_key = ed25519_signing_key(&secret)?;
@@ -243,6 +321,34 @@ mod tests {
             alice.sign_device_assertion("#e2ee-signing", message),
             Err(DidError::KeyRoleViolation)
         );
+        let object = serde_json::json!({"operation": "device.assertion"});
+        let signed_object = alice
+            .sign_object_proof("#device", &object, alice.did(), None)
+            .unwrap();
+        anp::proof::verify_object_proof(&signed_object, alice.did(), alice.document()).unwrap();
+        assert_eq!(
+            alice.sign_object_proof("#request", &object, alice.did(), None),
+            Err(DidError::KeyRoleViolation)
+        );
+        let mut unsigned_document = alice.document().clone();
+        unsigned_document.as_object_mut().unwrap().remove("proof");
+        let signed_document = alice
+            .sign_document_proof(
+                &unsigned_document,
+                &format!("{}#root", alice.did()),
+                ProofGenerationOptions {
+                    proof_purpose: Some("assertionMethod".to_string()),
+                    proof_type: Some(anp::proof::PROOF_TYPE_DATA_INTEGRITY.to_string()),
+                    cryptosuite: Some(anp::proof::CRYPTOSUITE_EDDSA_JCS_2022.to_string()),
+                    domain: Some("example.com".to_string()),
+                    ..ProofGenerationOptions::default()
+                },
+            )
+            .unwrap();
+        assert!(anp::authentication::validate_did_document_binding(
+            &signed_document,
+            true
+        ));
         assert_eq!(
             alice.verify("#request", b"tampered", &signature),
             Err(DidError::VerificationFailed)
