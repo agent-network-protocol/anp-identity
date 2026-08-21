@@ -24,6 +24,52 @@ Internally, private material uses fixed-size values or DER held in zeroizing
 containers. Private PEM is not stored in ordinary `String` values. Secret debug
 output and errors are redacted.
 
+## Controlled private-key ingress
+
+The no-export boundary does not prohibit one-way key import. The permanent
+`key-import` Cargo feature is default-off and is not included in the default
+Node binding. Its Rust API accepts owned zeroizing raw or DER bytes, never PEM
+in an ordinary `String`. Import inputs are not serializable or printable.
+
+General migration import is allowed only when the target identity does not yet
+exist. Every imported private key is derived to its public key and compared
+with the exact DID document verification method before any identity record is
+committed. A failure leaves no usable partial identity. Importing a key that was
+historically stored outside this module cannot retroactively remove that prior
+exposure; identities created natively by this module do not have that history.
+
+Legacy root-transfer reception is a separate, narrower ingress for an existing
+rootless identity. A Rust host may pass root bytes from a fully authenticated
+legacy `RootKeyEnvelopeV1` only with verified source, target, session, device,
+and document-checkpoint evidence. The identity must have no active or pending
+root, the derived public key must match its pinned root fingerprint and current
+document, and the operation enters the same pending promotion state used by a
+wrapped-root import. The plaintext is held only in zeroizing memory and is never
+written to a host DTO, journal, log, temporary file, or FFI value.
+
+No other plaintext private-key ingress is part of the boundary.
+
+## Wrapped root transfer and protocol compatibility
+
+`export_wrapped_root` is the only private-key egress exception. It returns
+recipient-bound, single-use ciphertext and public metadata, never root bytes.
+It is not a general export or backup mechanism. Encryption uses an ephemeral
+agreement key and a transcript that binds both identities, both devices, the
+recipient agreement KID, root KID, document/registry checkpoint, nonce, and
+expiry. The active root-control key signs the complete envelope. Decryption and
+root-key comparison remain inside the module.
+
+New senders emit only the wrapped-root format. There is no negotiation flag,
+legacy-send option, or automatic downgrade. Consequently a new sender talking
+to an old receiver fails with an explicit upgrade requirement.
+
+New receivers support both explicitly typed formats: wrapped-root ciphertext
+and the legacy `RootKeyEnvelopeV1`. An old sender to a new receiver succeeds
+through the controlled legacy ingress above. Type dispatch is exact and
+disjoint: a damaged, unknown-version, or authentication-failing wrapped
+envelope is never reinterpreted as legacy input. Supporting the legacy reader
+does not authorize this module or its hosts to emit a legacy plaintext root.
+
 ## Inputs and outputs
 
 Creation accepts an E1 domain, non-empty path segments, capabilities, typed
