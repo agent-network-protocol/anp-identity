@@ -35,6 +35,46 @@ impl fmt::Debug for SharedSecret {
 }
 
 impl DidIdentity {
+    pub fn sign_pending_root_object_proof(
+        &self,
+        kid: &str,
+        document: &serde_json::Value,
+        issuer_did: &str,
+        created: Option<String>,
+    ) -> DidResult<serde_json::Value> {
+        let current = crate::registry::read_identity(self.runtime().root(), self.identity_id())?;
+        if current.generation != self.record().generation {
+            return Err(DidError::Conflict);
+        }
+        if current.state != crate::IdentityState::Active
+            || current.root_capability != crate::RootCapabilityState::Pending
+            || current.pending_root_transfer.is_none()
+        {
+            return Err(DidError::RootCapabilityUnavailable);
+        }
+        let kid = crate::input::canonicalize_kid(&current.did, kid)?;
+        let metadata = current
+            .keys
+            .iter()
+            .find(|metadata| metadata.kid == kid)
+            .ok_or(DidError::KeyNotFound)?;
+        if metadata.role != KeyRole::RootControl
+            || metadata.origin != crate::KeyOrigin::Managed
+            || metadata.state != KeyState::Pending
+            || metadata.material_erased
+        {
+            return Err(DidError::RootCapabilityUnavailable);
+        }
+        let method = find_verification_method(self.document(), &metadata.kid)
+            .ok_or(DidError::InvalidIdentity)?;
+        let public = anp::authentication::extract_public_key(&method)
+            .map_err(|_| DidError::InvalidPublicKey)?;
+        let prepared = prepare_object_proof(document, &public, &metadata.kid, issuer_did, created)
+            .map_err(|_| DidError::Crypto)?;
+        let signature = self.sign_prepared(metadata, prepared.signing_input())?;
+        complete_object_proof(prepared, &signature).map_err(|_| DidError::Crypto)
+    }
+
     pub fn sign_pending_enrollment(
         &self,
         enrollment_id: &str,

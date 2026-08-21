@@ -109,6 +109,15 @@ fn wrapped_root_roundtrip_is_target_bound_replay_safe_and_promotable() {
         RootTransferImportOutcome::Pending
     );
     assert_eq!(recipient.root_capability(), RootCapabilityState::Pending);
+    let possession = recipient
+        .sign_pending_root_object_proof(
+            &root_kid,
+            &json!({"type": "root-possession"}),
+            recipient.did(),
+            None,
+        )
+        .unwrap();
+    anp::proof::verify_object_proof(&possession, recipient.did(), recipient.document()).unwrap();
     assert_eq!(
         recipient.import_wrapped_root(&envelope).unwrap(),
         RootTransferImportOutcome::Pending
@@ -138,6 +147,15 @@ fn wrapped_root_roundtrip_is_target_bound_replay_safe_and_promotable() {
         })
         .unwrap();
     assert_eq!(recipient.root_capability(), RootCapabilityState::Active);
+    assert_eq!(
+        recipient.sign_pending_root_object_proof(
+            &root_kid,
+            &json!({"type": "late"}),
+            recipient.did(),
+            None,
+        ),
+        Err(DidError::RootCapabilityUnavailable)
+    );
     assert_eq!(
         recipient.import_wrapped_root(&envelope).unwrap(),
         RootTransferImportOutcome::Active

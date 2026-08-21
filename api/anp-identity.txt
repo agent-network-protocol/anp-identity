@@ -184,6 +184,7 @@ pub fn anp_identity::DidIdentity::sign_document_proof(&self, &serde_json::value:
 pub fn anp_identity::DidIdentity::sign_object_proof(&self, &str, &serde_json::value::Value, &str, core::option::Option<alloc::string::String>) -> anp_identity::DidResult<serde_json::value::Value>
 pub fn anp_identity::DidIdentity::sign_origin_proof(&self, &str, &serde_json::value::Value, &serde_json::value::Value, &str, anp::proof::rfc9421_origin::Rfc9421OriginProofGenerationOptions) -> anp_identity::DidResult<anp::proof::rfc9421_origin::Rfc9421OriginProof>
 pub fn anp_identity::DidIdentity::sign_pending_enrollment(&self, &str, &str, &[u8]) -> anp_identity::DidResult<alloc::vec::Vec<u8>>
+pub fn anp_identity::DidIdentity::sign_pending_root_object_proof(&self, &str, &serde_json::value::Value, &str, core::option::Option<alloc::string::String>) -> anp_identity::DidResult<serde_json::value::Value>
 pub fn anp_identity::DidIdentity::verify(&self, &str, &[u8], &[u8]) -> anp_identity::DidResult<()>
 impl core::fmt::Debug for anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
