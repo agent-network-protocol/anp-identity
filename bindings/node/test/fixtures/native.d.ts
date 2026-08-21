@@ -214,6 +214,7 @@ export interface JsServiceSpec {
   id: string
   serviceType: string
   serviceEndpoint: string
+  serviceDid?: string
   profiles: Array<string>
   securityProfiles: Array<string>
 }

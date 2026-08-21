@@ -301,6 +301,7 @@ pub struct anp_identity::ServiceSpec
 pub anp_identity::ServiceSpec::id: alloc::string::String
 pub anp_identity::ServiceSpec::profiles: alloc::vec::Vec<alloc::string::String>
 pub anp_identity::ServiceSpec::security_profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::ServiceSpec::service_did: core::option::Option<alloc::string::String>
 pub anp_identity::ServiceSpec::service_endpoint: alloc::string::String
 pub anp_identity::ServiceSpec::service_type: alloc::string::String
 pub struct anp_identity::SharedSecret

@@ -33,6 +33,16 @@ fn identity_creation_persists_multiple_isolated_e1_documents() {
     assert_eq!(first.keys().len(), 4);
     assert!(validate_did_document_binding(first.document(), true));
     assert!(anp::authentication::validate_device_manifest(first.document()).is_ok());
+    let message_service = first.document()["service"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|service| service["type"] == "ANPMessageService")
+        .unwrap();
+    assert_eq!(
+        message_service["serviceDid"],
+        serde_json::json!("did:wba:example.com")
+    );
     assert_eq!(store.list_identities().unwrap().len(), 2);
     assert_eq!(store.generation(), 2);
     assert_eq!(
@@ -365,6 +375,7 @@ fn base_spec(name: &str) -> DidCreateSpec {
             id: "message".to_string(),
             service_type: "ANPMessageService".to_string(),
             service_endpoint: "https://example.com/im".to_string(),
+            service_did: Some("did:wba:example.com".to_string()),
             profiles: vec!["anp.core.binding.v1".to_string()],
             security_profiles: vec!["transport-protected".to_string()],
         }],

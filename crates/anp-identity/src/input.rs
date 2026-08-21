@@ -72,6 +72,7 @@ pub struct ServiceSpec {
     pub id: String,
     pub service_type: String,
     pub service_endpoint: String,
+    pub service_did: Option<String>,
     #[serde(default)]
     pub profiles: Vec<String>,
     #[serde(default)]
@@ -232,6 +233,11 @@ impl ServiceSpec {
             || self.service_type.len() > MAX_SERVICE_VALUE_LEN
             || self.service_endpoint.len() > MAX_SERVICE_VALUE_LEN
         {
+            return Err(DidError::InvalidService);
+        }
+        if self.service_did.as_ref().is_some_and(|value| {
+            value.trim().is_empty() || value.trim() != value || value.len() > MAX_SERVICE_VALUE_LEN
+        }) {
             return Err(DidError::InvalidService);
         }
         Ok(())

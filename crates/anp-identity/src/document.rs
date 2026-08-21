@@ -380,6 +380,9 @@ pub(crate) fn service_json(service: &ServiceSpec) -> Value {
         "type": service.service_type,
         "serviceEndpoint": service.service_endpoint,
     });
+    if let Some(service_did) = &service.service_did {
+        value["serviceDid"] = json!(service_did);
+    }
     if !service.profiles.is_empty() {
         value["profiles"] = json!(service.profiles);
     }

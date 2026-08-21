@@ -38,6 +38,7 @@ export interface ServiceSpec {
   id: string
   serviceType: string
   serviceEndpoint: string
+  serviceDid?: string
   profiles: string[]
   securityProfiles: string[]
 }

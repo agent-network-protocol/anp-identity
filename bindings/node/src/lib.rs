@@ -49,6 +49,7 @@ pub struct JsServiceSpec {
     pub id: String,
     pub service_type: String,
     pub service_endpoint: String,
+    pub service_did: Option<String>,
     pub profiles: Vec<String>,
     pub security_profiles: Vec<String>,
 }
@@ -910,6 +911,7 @@ fn service_spec(service: JsServiceSpec) -> ServiceSpec {
         id: service.id,
         service_type: service.service_type,
         service_endpoint: service.service_endpoint,
+        service_did: service.service_did,
         profiles: service.profiles,
         security_profiles: service.security_profiles,
     }
