@@ -38,6 +38,20 @@ pub struct RequestSigningRotation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+pub struct RequestSigningPublicKeySpec {
+    pub kid: String,
+    pub public_key_multibase: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum RequestSigningMutationSpec {
+    Add { key: RequestSigningPublicKeySpec },
+    Remove { kid: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct DevicePublicKeySpec {
     pub kid: String,
     pub public_key_multibase: String,
@@ -64,6 +78,8 @@ pub enum DeviceMutationSpec {
 pub struct DocumentUpdateSpec {
     #[serde(default)]
     pub request_signing_rotation: Option<RequestSigningRotation>,
+    #[serde(default)]
+    pub request_signing_mutations: Vec<RequestSigningMutationSpec>,
     #[serde(default)]
     pub device_mutations: Vec<DeviceMutationSpec>,
     pub services: Option<Vec<ServiceSpec>>,
@@ -266,6 +282,7 @@ impl DidIdentity {
         failure: Option<LifecycleFailurePoint>,
     ) -> DidResult<PreparedUpdate> {
         if spec.request_signing_rotation.is_none()
+            && spec.request_signing_mutations.is_empty()
             && spec.device_mutations.is_empty()
             && spec.services.is_none()
         {
@@ -292,6 +309,7 @@ impl DidIdentity {
             self,
             &record,
             rotation.as_ref(),
+            &spec.request_signing_mutations,
             &spec.device_mutations,
             spec.services.as_deref(),
         )?;
@@ -593,6 +611,7 @@ fn build_candidate_document(
     identity: &DidIdentity,
     record: &IdentityRecord,
     rotation: Option<&PreparedRotation>,
+    request_signing_mutations: &[RequestSigningMutationSpec],
     device_mutations: &[DeviceMutationSpec],
     services: Option<&[ServiceSpec]>,
 ) -> DidResult<CandidateChanges> {
@@ -622,6 +641,8 @@ fn build_candidate_document(
         authentication.retain(|entry| entry.as_str() != Some(&rotation.old_kid));
         authentication.push(Value::String(rotation.new_kid.clone()));
     }
+    let request_signing_changes =
+        apply_request_signing_mutations(object, record, request_signing_mutations)?;
     let device_changes = apply_device_mutations(object, record, device_mutations)?;
     if let Some(services) = services {
         let mut output = object
@@ -658,9 +679,85 @@ fn build_candidate_document(
     validate_device_manifest(&signed).map_err(|_| DidError::InvalidExtension)?;
     Ok(CandidateChanges {
         document: signed,
-        added_keys: device_changes.added_keys,
-        retired_kids: device_changes.retired_kids,
+        added_keys: request_signing_changes
+            .added_keys
+            .into_iter()
+            .chain(device_changes.added_keys)
+            .collect(),
+        retired_kids: request_signing_changes
+            .retired_kids
+            .into_iter()
+            .chain(device_changes.retired_kids)
+            .collect(),
     })
+}
+
+fn apply_request_signing_mutations(
+    object: &mut serde_json::Map<String, Value>,
+    record: &IdentityRecord,
+    mutations: &[RequestSigningMutationSpec],
+) -> DidResult<DeviceChanges> {
+    let mut added_keys = Vec::new();
+    let mut retired_kids = Vec::new();
+    for mutation in mutations {
+        match mutation {
+            RequestSigningMutationSpec::Add { key } => {
+                let kid = canonicalize_kid(&record.did, &key.kid)?;
+                if record.keys.iter().any(|metadata| metadata.kid == kid)
+                    || method_exists(object, &kid)
+                {
+                    return Err(DidError::DuplicateKid);
+                }
+                validate_request_signing_public_key(&kid, &key.public_key_multibase)?;
+                methods_mut(object)?.push(json!({
+                    "id": kid,
+                    "type": "Multikey",
+                    "controller": record.did,
+                    "publicKeyMultibase": key.public_key_multibase,
+                }));
+                relationship_mut(object, "authentication")?.push(Value::String(kid.clone()));
+                added_keys.push((kid, KeyRole::RequestSigning));
+            }
+            RequestSigningMutationSpec::Remove { kid } => {
+                let kid = canonicalize_kid(&record.did, kid)?;
+                let metadata = record
+                    .keys
+                    .iter()
+                    .find(|metadata| metadata.kid == kid)
+                    .ok_or(DidError::KeyNotFound)?;
+                if metadata.role != KeyRole::RequestSigning {
+                    return Err(DidError::KeyRoleViolation);
+                }
+                if metadata.origin != KeyOrigin::External {
+                    return Err(DidError::UnsupportedOperation);
+                }
+                methods_mut(object)?.retain(|method| {
+                    method.get("id").and_then(Value::as_str) != Some(kid.as_str())
+                });
+                relationship_mut(object, "authentication")?
+                    .retain(|entry| entry.as_str() != Some(kid.as_str()));
+                retired_kids.push(kid);
+            }
+        }
+    }
+    Ok(DeviceChanges {
+        added_keys,
+        retired_kids,
+    })
+}
+
+fn validate_request_signing_public_key(kid: &str, multibase: &str) -> DidResult<()> {
+    let method = json!({
+        "id": kid,
+        "type": "Multikey",
+        "publicKeyMultibase": multibase,
+    });
+    match anp::authentication::extract_public_key(&method)
+        .map_err(|_| DidError::InvalidPublicKey)?
+    {
+        anp::PublicKeyMaterial::Ed25519(_) => Ok(()),
+        _ => Err(DidError::InvalidPublicKey),
+    }
 }
 
 fn apply_device_mutations(

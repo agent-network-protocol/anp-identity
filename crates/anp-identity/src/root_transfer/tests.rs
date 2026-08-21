@@ -32,6 +32,7 @@ fn wrapped_root_roundtrip_is_target_bound_replay_safe_and_promotable() {
     let update = source
         .prepare_update(crate::DocumentUpdateSpec {
             request_signing_rotation: None,
+            request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Add {
                 device: DeviceAddSpec {
                     device_id: prepared.device_id.clone(),
@@ -235,6 +236,7 @@ fn authenticated_legacy_root_ingress_is_receive_only_and_uses_the_same_pending_s
     let update = source
         .prepare_update(crate::DocumentUpdateSpec {
             request_signing_rotation: None,
+            request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Add {
                 device: DeviceAddSpec {
                     device_id: prepared.device_id.clone(),

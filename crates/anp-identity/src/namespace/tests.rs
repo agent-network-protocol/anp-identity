@@ -101,6 +101,7 @@ fn namespace_delete_rejects_pending_document_and_root_state() {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-next".to_string(),
             }),
+            request_signing_mutations: Vec::new(),
             device_mutations: Vec::new(),
             services: None,
         })

@@ -130,6 +130,7 @@ fn identity_reload_recovers_a_stale_identity_handle() {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-v2".to_string(),
             }),
+            request_signing_mutations: Vec::new(),
             device_mutations: Vec::new(),
             services: None,
         })
@@ -141,6 +142,7 @@ fn identity_reload_recovers_a_stale_identity_handle() {
                     old_kid: "#request".to_string(),
                     new_fragment: "stale-request".to_string(),
                 }),
+                request_signing_mutations: Vec::new(),
                 device_mutations: Vec::new(),
                 services: None,
             })
@@ -155,6 +157,7 @@ fn identity_reload_recovers_a_stale_identity_handle() {
                 old_kid: "#request".to_string(),
                 new_fragment: "reloaded-request".to_string(),
             }),
+            request_signing_mutations: Vec::new(),
             device_mutations: Vec::new(),
             services: None,
         })

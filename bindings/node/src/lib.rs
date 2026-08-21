@@ -929,6 +929,7 @@ fn document_update_spec(spec: JsDocumentUpdateSpec) -> Result<DocumentUpdateSpec
                 new_fragment: rotation.new_fragment,
             }
         }),
+        request_signing_mutations: Vec::new(),
         device_mutations: spec
             .device_mutations
             .unwrap_or_default()

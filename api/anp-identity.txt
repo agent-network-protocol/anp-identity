@@ -86,6 +86,11 @@ pub anp_identity::PublicationState::Published
 pub enum anp_identity::ReconcileOutcome
 pub anp_identity::ReconcileOutcome::Committed
 pub anp_identity::ReconcileOutcome::RemoteOld
+pub enum anp_identity::RequestSigningMutationSpec
+pub anp_identity::RequestSigningMutationSpec::Add
+pub anp_identity::RequestSigningMutationSpec::Add::key: anp_identity::RequestSigningPublicKeySpec
+pub anp_identity::RequestSigningMutationSpec::Remove
+pub anp_identity::RequestSigningMutationSpec::Remove::kid: alloc::string::String
 pub enum anp_identity::RootCapabilityState
 pub anp_identity::RootCapabilityState::Absent
 pub anp_identity::RootCapabilityState::Active
@@ -208,6 +213,7 @@ pub anp_identity::DocumentCheckpoint::document_version: u64
 pub anp_identity::DocumentCheckpoint::registry_version: u64
 pub struct anp_identity::DocumentUpdateSpec
 pub anp_identity::DocumentUpdateSpec::device_mutations: alloc::vec::Vec<anp_identity::DeviceMutationSpec>
+pub anp_identity::DocumentUpdateSpec::request_signing_mutations: alloc::vec::Vec<anp_identity::RequestSigningMutationSpec>
 pub anp_identity::DocumentUpdateSpec::request_signing_rotation: core::option::Option<anp_identity::RequestSigningRotation>
 pub anp_identity::DocumentUpdateSpec::services: core::option::Option<alloc::vec::Vec<anp_identity::ServiceSpec>>
 pub struct anp_identity::EnrollmentPublicKey
@@ -282,6 +288,9 @@ pub anp_identity::RequestSigningEnrollmentSpec::capabilities: anp_identity::Capa
 pub anp_identity::RequestSigningEnrollmentSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub anp_identity::RequestSigningEnrollmentSpec::fragment: alloc::string::String
 pub anp_identity::RequestSigningEnrollmentSpec::verified_document: serde_json::value::Value
+pub struct anp_identity::RequestSigningPublicKeySpec
+pub anp_identity::RequestSigningPublicKeySpec::kid: alloc::string::String
+pub anp_identity::RequestSigningPublicKeySpec::public_key_multibase: alloc::string::String
 pub struct anp_identity::RequestSigningRotation
 pub anp_identity::RequestSigningRotation::new_fragment: alloc::string::String
 pub anp_identity::RequestSigningRotation::old_kid: alloc::string::String

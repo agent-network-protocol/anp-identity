@@ -214,6 +214,7 @@ fn adoption_rejects_a_local_pending_revision() {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-next".to_string(),
             }),
+            request_signing_mutations: Vec::new(),
             device_mutations: Vec::new(),
             services: None,
         })

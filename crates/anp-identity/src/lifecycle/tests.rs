@@ -213,6 +213,7 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
                     old_kid: "#root".to_string(),
                     new_fragment: "new-root".to_string(),
                 }),
+                request_signing_mutations: Vec::new(),
                 device_mutations: Vec::new(),
                 services: None,
             })
@@ -226,6 +227,7 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
                     old_kid: "#e2ee-signing".to_string(),
                     new_fragment: "wrong-role".to_string(),
                 }),
+                request_signing_mutations: Vec::new(),
                 device_mutations: Vec::new(),
                 services: None,
             })
@@ -256,6 +258,7 @@ fn lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
     let added = identity
         .prepare_update(DocumentUpdateSpec {
             request_signing_rotation: None,
+            request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Add {
                 device: DeviceAddSpec {
                     device_id: "peer-device".to_string(),
@@ -307,6 +310,7 @@ fn lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
     let removed = identity
         .prepare_update(DocumentUpdateSpec {
             request_signing_rotation: None,
+            request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Remove {
                 device_id: "peer-device".to_string(),
             }],
@@ -327,6 +331,71 @@ fn lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
     );
     assert_eq!(
         identity.key_metadata(&e2ee_kid).unwrap().state,
+        KeyState::Retired
+    );
+}
+
+#[test]
+fn lifecycle_adds_and_removes_external_request_signing_authority() {
+    let root = tempfile::tempdir().unwrap();
+    let mut store = DidStore::initialize_injected(root.path(), "host", [37_u8; 32]).unwrap();
+    let mut identity = store.create_identity(spec("external-request")).unwrap();
+    let daemon = ManagedPrivateKey::generate("daemon-key-1".to_string(), KeyRole::RequestSigning);
+    let daemon_kid = format!("{}#daemon-key-1", identity.did());
+    let daemon_public = crate::document::public_key_multibase(&daemon.public_key()).unwrap();
+
+    let added = identity
+        .prepare_update(DocumentUpdateSpec {
+            request_signing_rotation: None,
+            request_signing_mutations: vec![RequestSigningMutationSpec::Add {
+                key: RequestSigningPublicKeySpec {
+                    kid: daemon_kid.clone(),
+                    public_key_multibase: daemon_public,
+                },
+            }],
+            device_mutations: Vec::new(),
+            services: None,
+        })
+        .unwrap();
+    assert!(anp::authentication::is_authentication_authorized(
+        &added.candidate_document,
+        &daemon_kid,
+    ));
+    assert!(!anp::authentication::is_assertion_method_authorized(
+        &added.candidate_document,
+        &daemon_kid,
+    ));
+    identity.begin_publication(&added.revision_id).unwrap();
+    identity.mark_published(&added.revision_id).unwrap();
+    identity.commit_update(&added.revision_id).unwrap();
+    assert_eq!(
+        identity.key_metadata(&daemon_kid).unwrap().origin,
+        KeyOrigin::External
+    );
+    assert_eq!(
+        identity.sign(&daemon_kid, b"external"),
+        Err(DidError::ExternalKeyOperation)
+    );
+
+    let removed = identity
+        .prepare_update(DocumentUpdateSpec {
+            request_signing_rotation: None,
+            request_signing_mutations: vec![RequestSigningMutationSpec::Remove {
+                kid: daemon_kid.clone(),
+            }],
+            device_mutations: Vec::new(),
+            services: None,
+        })
+        .unwrap();
+    assert!(!anp::authentication::is_authentication_authorized(
+        &removed.candidate_document,
+        &daemon_kid,
+    ));
+    identity.begin_publication(&removed.revision_id).unwrap();
+    identity.mark_published(&removed.revision_id).unwrap();
+    identity.commit_update(&removed.revision_id).unwrap();
+    assert_eq!(
+        identity.key_metadata(&daemon_kid).unwrap().state,
         KeyState::Retired
     );
 }
@@ -447,6 +516,7 @@ fn update(new_fragment: &str) -> DocumentUpdateSpec {
             old_kid: "#request".to_string(),
             new_fragment: new_fragment.to_string(),
         }),
+        request_signing_mutations: Vec::new(),
         device_mutations: Vec::new(),
         services: Some(vec![ServiceSpec {
             id: "message-v2".to_string(),

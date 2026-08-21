@@ -39,7 +39,7 @@ pub use key_import::{IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding}
 pub use lifecycle::{
     DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,
     PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
-    RequestSigningRotation,
+    RequestSigningMutationSpec, RequestSigningPublicKeySpec, RequestSigningRotation,
 };
 pub use manifest::{
     RootKeyProviderBinding, RootKeyProviderKind, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION,
