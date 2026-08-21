@@ -114,6 +114,57 @@ fn namespace_delete_rejects_pending_document_and_root_state() {
     assert_eq!(identity.root_capability(), RootCapabilityState::Active);
 }
 
+#[test]
+fn unpublished_rootless_enrollment_can_be_discarded_but_active_identity_cannot() {
+    let source_root = tempfile::tempdir().unwrap();
+    let mut source_store =
+        DidStore::initialize_injected(source_root.path(), "source", [121_u8; 32]).unwrap();
+    let source = source_store.create_identity(spec("controller")).unwrap();
+    let checkpoint = source.checkpoint().unwrap();
+    let enrollment_root = tempfile::tempdir().unwrap();
+    let mut enrollment_store =
+        DidStore::initialize_injected(enrollment_root.path(), "daemon", [122_u8; 32]).unwrap();
+    let (enrolling, _) = enrollment_store
+        .prepare_request_signing_enrollment(crate::RequestSigningEnrollmentSpec {
+            verified_document: source.document().clone(),
+            evidence: crate::VerifiedDocumentEvidence {
+                document_version: checkpoint.document_version,
+                registry_version: checkpoint.registry_version,
+                document_digest: checkpoint.document_digest.clone(),
+            },
+            fragment: "daemon-key-1".to_owned(),
+            capabilities: Capabilities { did_wba: true },
+        })
+        .unwrap();
+    let did = enrolling.did().to_owned();
+    let identity_id = enrolling.identity_id().to_owned();
+    let generation = enrollment_store.generation();
+
+    assert_eq!(
+        enrollment_store.discard_unpublished_enrollment(&did, "wrong", generation),
+        Err(DidError::InvalidPublicationState)
+    );
+    enrollment_store
+        .discard_unpublished_enrollment(&did, &identity_id, generation)
+        .unwrap();
+    assert_eq!(
+        enrollment_store.open_identity(&did).err(),
+        Some(DidError::IdentityNotFound)
+    );
+    assert_eq!(
+        enrolling.sign("#daemon-key-1", b"stale").err(),
+        Some(DidError::IdentityNotFound)
+    );
+    assert_eq!(
+        source_store.discard_unpublished_enrollment(
+            source.did(),
+            source.identity_id(),
+            source_store.generation(),
+        ),
+        Err(DidError::InvalidPublicationState)
+    );
+}
+
 fn spec(name: &str) -> DidCreateSpec {
     DidCreateSpec {
         profile: DidProfile::E1,

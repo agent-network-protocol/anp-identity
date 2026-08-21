@@ -16,6 +16,73 @@ impl DidStore {
         self.delete_identity_namespace_inner(did, expected_generation, None)
     }
 
+    pub fn discard_unpublished_enrollment(
+        &mut self,
+        did: &str,
+        expected_identity_id: &str,
+        expected_generation: u64,
+    ) -> DidResult<()> {
+        let guard = self.runtime.acquire_write()?;
+        let mut registry = read_registry(self.runtime.root())?;
+        if expected_generation != self.registry_generation
+            || registry.generation != expected_generation
+        {
+            return Err(DidError::Conflict);
+        }
+        let summary = registry
+            .identities
+            .get(did)
+            .cloned()
+            .ok_or(DidError::IdentityNotFound)?;
+        let record = read_identity(self.runtime.root(), &summary.identity_id)?;
+        let has_one_pending_enrollment =
+            record.pending_enrollment.is_some() ^ record.pending_request_signing.is_some();
+        if record.identity_id != expected_identity_id
+            || record.did != did
+            || record.state != IdentityState::Enrolling
+            || !has_one_pending_enrollment
+            || record.pending_revision.is_some()
+            || record.pending_root_transfer.is_some()
+            || record.root_capability != crate::RootCapabilityState::Absent
+        {
+            return Err(DidError::InvalidPublicationState);
+        }
+        let secret_refs = record
+            .keys
+            .iter()
+            .filter(|key| key.origin == KeyOrigin::Managed && !key.material_erased)
+            .map(|key| SecretRef {
+                identity_id: record.identity_id.clone(),
+                key_id: key.kid.clone(),
+                role: key.role,
+                version: key.version,
+            })
+            .collect::<Vec<_>>();
+        let transaction_id = crate::identity::random_id();
+        let journal = CreationJournal::new_namespace_delete(
+            transaction_id.clone(),
+            record.identity_id.clone(),
+            record.did.clone(),
+            secret_refs.clone(),
+            Utc::now().to_rfc3339(),
+        );
+        write_journal(self.runtime.root(), &guard, &journal)?;
+        for secret_ref in &secret_refs {
+            self.runtime.key_store().delete(&guard, secret_ref)?;
+        }
+        remove_identity(self.runtime.root(), &guard, &record.identity_id)?;
+        registry.identities.remove(did);
+        registry.generation = registry
+            .generation
+            .checked_add(1)
+            .ok_or(DidError::Conflict)?;
+        write_registry(self.runtime.root(), &guard, &registry)?;
+        remove_journal(self.runtime.root(), &guard, &transaction_id)?;
+        drop(guard);
+        self.registry_generation = registry.generation;
+        Ok(())
+    }
+
     fn delete_identity_namespace_inner(
         &mut self,
         did: &str,

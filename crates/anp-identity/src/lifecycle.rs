@@ -105,6 +105,7 @@ pub enum ReconcileOutcome {
 pub struct PendingRevisionSummary {
     pub revision_id: String,
     pub parent_revision: u64,
+    pub candidate_document: Value,
     pub candidate_digest: String,
     pub candidate_kids: Vec<String>,
     pub state: PublicationState,
@@ -133,6 +134,7 @@ impl PendingRevisionRecord {
         PendingRevisionSummary {
             revision_id: self.revision_id.clone(),
             parent_revision: self.parent_revision,
+            candidate_document: self.candidate_document.clone(),
             candidate_digest: self.candidate_digest.clone(),
             candidate_kids: self.candidate_kids.clone(),
             state: self.state,

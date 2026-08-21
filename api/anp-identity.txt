@@ -202,6 +202,7 @@ pub fn anp_identity::DidStore::open_local_file(impl core::convert::Into<std::pat
 pub fn anp_identity::DidStore::reload(&mut self) -> anp_identity::DidResult<()>
 impl anp_identity::DidStore
 pub fn anp_identity::DidStore::delete_identity_namespace(&mut self, &str, u64) -> anp_identity::DidResult<()>
+pub fn anp_identity::DidStore::discard_unpublished_enrollment(&mut self, &str, &str, u64) -> anp_identity::DidResult<()>
 impl anp_identity::DidStore
 pub fn anp_identity::DidStore::prepare_enrollment(&mut self, anp_identity::EnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedEnrollment)>
 pub fn anp_identity::DidStore::prepare_request_signing_enrollment(&mut self, anp_identity::RequestSigningEnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedRequestSigningEnrollment)>
@@ -252,6 +253,7 @@ pub anp_identity::ManagedKeySpec::fragment: alloc::string::String
 pub anp_identity::ManagedKeySpec::role: anp_identity::KeyRole
 pub struct anp_identity::PendingRevisionSummary
 pub anp_identity::PendingRevisionSummary::candidate_digest: alloc::string::String
+pub anp_identity::PendingRevisionSummary::candidate_document: serde_json::value::Value
 pub anp_identity::PendingRevisionSummary::candidate_kids: alloc::vec::Vec<alloc::string::String>
 pub anp_identity::PendingRevisionSummary::created_at: alloc::string::String
 pub anp_identity::PendingRevisionSummary::generation: u64
