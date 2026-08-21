@@ -28,6 +28,7 @@ const MAX_REPLAY_RECORDS: usize = 256;
 const KDF_SALT_LABEL: &[u8] = b"anp-identity:root-transfer:salt:v1\0";
 const KDF_INFO_LABEL: &[u8] = b"anp-identity:root-transfer:aead:v1\0";
 const SIGNATURE_LABEL: &[u8] = b"anp-identity:root-transfer:signature:v1\0";
+#[cfg(feature = "root-export")]
 const ED25519_PKCS8_PREFIX: [u8; 16] = [
     0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
 ];
@@ -74,10 +75,12 @@ pub struct RootTransferExportSpec {
 ///
 /// This value is intentionally non-serializable, non-cloneable, and does not
 /// implement `Debug`. Callers must not persist it or use it as a backup API.
+#[cfg(feature = "root-export")]
 pub struct ExportedRootPrivateKey {
     pkcs8_der: Zeroizing<Vec<u8>>,
 }
 
+#[cfg(feature = "root-export")]
 impl ExportedRootPrivateKey {
     pub fn as_pkcs8_der(&self) -> &[u8] {
         self.pkcs8_der.as_slice()
@@ -142,6 +145,7 @@ impl DidIdentity {
     /// The host is responsible for enforcing its user-confirmation interaction
     /// before calling this method and for immediately passing the returned DER
     /// to an end-to-end encrypted root-transfer envelope.
+    #[cfg(feature = "root-export")]
     pub fn export_root_private_key(&self, root_kid: &str) -> DidResult<ExportedRootPrivateKey> {
         if self.state() != IdentityState::Active
             || self.root_capability() != RootCapabilityState::Active

@@ -9,8 +9,8 @@ Secure, vendor-neutral identity custody and lifecycle management for ANP E1 DIDs
 `anp-identity` creates and manages DID documents while keeping ordinary managed
 key operations behind a role-scoped Rust/FFI API boundary. Applications ask for
 an operation by KID—sign, verify, derive a shared secret, or authenticate an HTTP
-request—without reading private key material. The explicit exception is a
-Rust-only root-key export for the existing, user-confirmed
+request—without reading private key material. The explicit exception is the
+default-off Rust `root-export` feature for the existing, user-confirmed
 `RootKeyEnvelopeV1` transfer flow.
 
 The project is available as a Rust crate with asynchronous Node.js/TypeScript
@@ -85,7 +85,7 @@ durable state, multi-identity isolation, recovery, and lifecycle policy.
 | Private-key custody | Encrypted records; only the Rust root-transfer export may return private bytes |
 | Device enrollment | Rootless pending device keys, public enrollment material, and verified activation |
 | Remote convergence | Monotonic verified-document adoption and local revocation fencing |
-| Root transfer | Public Rust root export for `RootKeyEnvelopeV1`; wrapped transfer remains available |
+| Root transfer | Default-off Rust `root-export` for `RootKeyEnvelopeV1`; wrapped transfer remains available |
 | Multi-identity storage | `DidStore` → isolated `DidIdentity` handles |
 | Signing | Ed25519 signatures by explicit managed KID |
 | Verification | Managed or registered external public KIDs |
@@ -268,8 +268,9 @@ main().catch(console.error)
 The JavaScript API exports only `DidStore` and `DidIdentity`. Private DID keys
 never appear in a Node value, serialized DTO, TypeScript declaration, or public
 API output. The Rust-only, default-off `key-import` feature accepts zeroizing
-raw/DER private bytes as a one-way migration input and is deliberately absent
-from the default Node build.
+raw/DER private bytes as a one-way migration input. The separate default-off
+`root-export` feature permits only the user-confirmed `RootKeyEnvelopeV1`
+egress. Both features are deliberately absent from the default Node build.
 
 ## Sign an outbound HTTP request
 
@@ -421,7 +422,8 @@ Version 0.1 supports the ANP **E1** DID profile only.
 
 Out of scope for v1:
 
-- private-key export or backup;
+- general-purpose private-key export or backup outside the controlled
+  `root-export` Root Transfer exception;
 - root-provider rekey;
 - root-control rotation;
 - K1, PlainLegacy, or P-256 legacy E2EE identities;

@@ -9,6 +9,7 @@ use crate::{
 };
 
 #[test]
+#[cfg(feature = "root-export")]
 fn root_private_key_export_returns_zeroizing_pkcs8_for_active_root_only() {
     let root = tempfile::tempdir().unwrap();
     let mut store = DidStore::initialize_injected(root.path(), "source", [90_u8; 32]).unwrap();

@@ -51,10 +51,11 @@ pub use registry::{
     DocumentCheckpoint, IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState,
     RootCapabilityState,
 };
-pub use root_transfer::{
-    ExportedRootPrivateKey, RootPromotionSpec, RootTransferContext, RootTransferExportSpec,
-    RootTransferImportOutcome, WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE,
-    WRAPPED_ROOT_ENVELOPE_VERSION,
-};
+#[cfg(feature = "root-export")]
+pub use root_transfer::ExportedRootPrivateKey;
 #[cfg(feature = "key-import")]
 pub use root_transfer::{LegacyRootTransferEvidence, LegacyRootTransferImportSpec};
+pub use root_transfer::{
+    RootPromotionSpec, RootTransferContext, RootTransferExportSpec, RootTransferImportOutcome,
+    WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE, WRAPPED_ROOT_ENVELOPE_VERSION,
+};

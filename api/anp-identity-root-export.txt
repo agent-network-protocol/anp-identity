@@ -1,0 +1,4 @@
+impl anp_identity::ExportedRootPrivateKey
+pub fn anp_identity::DidIdentity::export_root_private_key(&self, &str) -> anp_identity::DidResult<anp_identity::ExportedRootPrivateKey>
+pub fn anp_identity::ExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
+pub struct anp_identity::ExportedRootPrivateKey

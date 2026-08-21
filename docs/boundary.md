@@ -4,10 +4,10 @@
 
 Private keys normally remain behind the Rust/FFI boundary. Public APIs may
 return DID documents, public keys, metadata, signatures, verification results,
-and ECDH results. The single plaintext egress exception is the public Rust
-root-key export used by an existing, user-confirmed `RootKeyEnvelopeV1`
-transfer. It does not apply to any other key role and is not exposed by the
-default Node binding.
+and ECDH results. The single plaintext egress exception is the default-off
+`root-export` Rust API used by an existing, user-confirmed
+`RootKeyEnvelopeV1` transfer. It does not apply to any other key role and is
+not exposed by the default Node binding.
 
 This is a logical API boundary, not process isolation. A Node native addon shares
 an address space with its host. A compromised host process, malicious native
@@ -54,13 +54,14 @@ No other plaintext private-key ingress is part of the boundary.
 
 ## Root-key export and protocol compatibility
 
-`export_root_private_key` is a public Rust API that returns the active managed
-root-control key as PKCS#8 DER in a zeroizing, non-serializable, non-`Debug`
-container. The host owns the mandatory user-confirmation interaction and must
-call the API only after that confirmation in the existing Root Transfer flow.
-The output is intended only for immediate construction of a canonical
-`RootKeyEnvelopeV1` inside an end-to-end encrypted P5 message. It must not be
-written to a DTO, pending journal, log, error, temporary file, or backup.
+The default-off `root-export` feature exposes `export_root_private_key` to Rust
+hosts. It returns the active managed root-control key as PKCS#8 DER in a
+zeroizing, non-serializable, non-`Debug` container. The host owns the mandatory
+user-confirmation interaction and must call the API only after that confirmation
+in the existing Root Transfer flow. The output is intended only for immediate
+construction of a canonical `RootKeyEnvelopeV1` inside an end-to-end encrypted
+P5 message. It must not be written to a DTO, pending journal, log, error,
+temporary file, or backup.
 
 Senders emit only `RootKeyEnvelopeV1`. There is no negotiation flag, wrapped
 send branch, or automatic fallback. New and old senders therefore use the same

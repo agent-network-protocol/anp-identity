@@ -4,7 +4,8 @@
 
 This document specifies the optional
 `anp.identity.root-transfer.wrapped` version `1` API. It remains available for
-callers that explicitly choose it, but AWiki's default sender uses the existing
+callers that explicitly choose it, but AWiki's default sender explicitly enables
+the default-off `root-export` Rust feature and uses the existing
 `RootKeyEnvelopeV1` flow through `export_root_private_key`; it does not call
 `export_wrapped_root` or negotiate between formats.
 
