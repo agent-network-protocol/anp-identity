@@ -63,9 +63,10 @@ The runtime combines five pieces:
 3. **Role-aware cryptography** — signing, verification, ECDH, DID-WBA, and HTTP
    Message Signatures require an explicit KID and enforce its role, origin, and
    lifecycle state.
-4. **Transactional persistence** — creation, recovery, rotation, retirement,
-   and crypto-erasure run under a cross-process exclusive store lock with
-   generation checks.
+4. **Transactional persistence** — creation, enrollment, verified document
+   adoption, root transfer, namespace deletion, recovery, rotation,
+   retirement, and crypto-erasure run under a cross-process exclusive store
+   lock with generation checks.
 5. **Publication reconciliation** — DID updates use a two-phase state machine,
    including an explicit `PublicationUncertain` state that can only be resolved
    by comparing a verified remote document with the old and candidate digests.
@@ -80,12 +81,18 @@ durable state, multi-identity isolation, recovery, and lifecycle policy.
 |---|---|
 | DID creation | Root-bound ANP E1 DID documents from managed and external public keys |
 | Private-key custody | Encrypted records; no private-key export API |
+| Device enrollment | Rootless pending device keys, public enrollment material, and verified activation |
+| Remote convergence | Monotonic verified-document adoption and local revocation fencing |
+| Root transfer | Target-bound wrapped-root ciphertext; strict receive-only legacy compatibility |
 | Multi-identity storage | `DidStore` → isolated `DidIdentity` handles |
 | Signing | Ed25519 signatures by explicit managed KID |
 | Verification | Managed or registered external public KIDs |
 | Key agreement | X25519 ECDH with invalid/low-order peer rejection |
 | HTTP authentication | Legacy DID-WBA and HTTP Message Signature headers |
 | DID updates | Prepare, publish, reconcile, commit, abort, and crash recovery |
+| Device document updates | Root-authorized add/remove mutations for exact manifest devices |
+| Controlled migration | Default-off Rust `key-import` feature for one-way raw/DER import |
+| Namespace retirement | Generation-checked, recoverable deletion without affecting sibling DIDs |
 | Key lifecycle | Active, retired, revoked, and explicit local crypto-erasure |
 | Concurrency | Cross-process locking plus optimistic generation conflicts |
 | Language support | Rust and asynchronous Node.js/TypeScript bindings |
@@ -97,14 +104,16 @@ The v1 E1 profile uses a deliberately small key matrix:
 | Role | Algorithm | Managed private-key use | DID relationship |
 |---|---|---|---|
 | `root_control` | Ed25519 | Internal DID document proof only | `authentication`, `assertionMethod` |
+| `device_signing` | Ed25519 | Device assertions, generic device signing, DID-WBA, and HTTP signing | `authentication`, `assertionMethod` |
 | `request_signing` | Ed25519 | Generic signing, DID-WBA, and HTTP request signing | `authentication` |
 | `e2ee_signing` | Ed25519 | Generic application payload signing | `assertionMethod` |
 | `e2ee_agreement` | X25519 | ECDH | `keyAgreement` |
 
-Every identity has exactly one managed `root_control` key. Enabling DID-WBA
-requires at least one managed `request_signing` key. E2EE signing and agreement
-keys may also be registered as external public keys, but external keys do not
-grant the module access to a private-key operation.
+Every natively created identity has exactly one managed `root_control` key.
+An enrolled device or daemon can instead hold a rootless identity view with the
+same pinned root public-key fingerprint; root-only operations then fail closed.
+Enabling DID-WBA requires a managed `device_signing` or `request_signing` key.
+External public keys do not grant the module access to a private-key operation.
 
 ## Installation
 
@@ -255,13 +264,17 @@ main().catch(console.error)
 ```
 
 The JavaScript API exports only `DidStore` and `DidIdentity`. Private DID keys
-are not represented by a public Rust type, napi object, serialized DTO, or
-TypeScript declaration.
+never appear in a Node value, serialized DTO, TypeScript declaration, or public
+API output. The Rust-only, default-off `key-import` feature accepts zeroizing
+raw/DER private bytes as a one-way migration input and is deliberately absent
+from the default Node build.
 
 ## Sign an outbound HTTP request
 
 `http_signature_headers` signs the exact request method, URL, selected headers,
-and optional body with an active managed `request_signing` key.
+and optional body with an active managed `device_signing` or
+`request_signing` key. `http_signature_headers_with_options` additionally
+accepts a server nonce, fixed creation/expiry values, and covered components.
 
 ```rust
 use std::collections::BTreeMap;
