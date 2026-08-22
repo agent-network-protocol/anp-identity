@@ -49,6 +49,10 @@ pub use sealed_handoff::{
     sealed_key_agreement_binding, SealedKeyAgreementPort, SealedKeyAgreementRequest,
     SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_PROTOCOL,
 };
+#[cfg(feature = "root-export")]
+pub use sealed_handoff::{
+    sealed_root_export_binding, SealedRootExportPort, SealedRootExportRequest,
+};
 pub use status::{
     HostDocumentCheckpoint, HostRootCapability, IdentityHostStatus, IdentityStatusPort,
 };

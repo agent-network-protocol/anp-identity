@@ -15,6 +15,8 @@ use crate::{IdentityError, IdentityRef, KeySelector, ManagedIdentity};
 pub const SEALED_SECRET_PROTOCOL: &str = "anp-sealed-secret/1";
 const SEALED_SECRET_INFO: &[u8] = b"anp.identity.sealed-secret.v1";
 const ECDH_SEALED_OPERATION: &str = "ecdh_sealed";
+#[cfg(feature = "root-export")]
+const ROOT_EXPORT_SEALED_OPERATION: &str = "export_root_key_sealed";
 
 /// HPKE ciphertext safe to carry across the TypeScript bridge.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +65,30 @@ pub struct SealedKeyAgreementRequest {
     pub token: OneTimeCapabilityToken,
 }
 
+/// Exact, user-confirmed request for the legacy AWiki Root Transfer sender.
+#[cfg(feature = "root-export")]
+pub struct SealedRootExportRequest {
+    pub identity: IdentityRef,
+    pub kid: String,
+    pub recipient_public_key: [u8; 32],
+    pub request_id: String,
+    pub user_presence_confirmed: bool,
+    pub token: OneTimeCapabilityToken,
+}
+
+#[cfg(feature = "root-export")]
+impl SealedRootExportRequest {
+    pub fn operation_binding(&self) -> Result<OneTimeOperationBinding, SealedProviderError> {
+        sealed_root_export_binding(
+            &self.identity,
+            &self.kid,
+            &self.recipient_public_key,
+            &self.request_id,
+            self.user_presence_confirmed,
+        )
+    }
+}
+
 impl SealedKeyAgreementRequest {
     pub fn operation_binding(&self) -> Result<OneTimeOperationBinding, SealedProviderError> {
         sealed_key_agreement_binding(
@@ -109,6 +135,15 @@ pub trait SealedKeyAgreementPort {
     ) -> Result<SealedSecretEnvelope, SealedProviderError>;
 }
 
+#[cfg(feature = "root-export")]
+pub trait SealedRootExportPort {
+    fn export_root_key_sealed(
+        &self,
+        authorization: &ProviderAuthorization,
+        request: SealedRootExportRequest,
+    ) -> Result<SealedSecretEnvelope, SealedProviderError>;
+}
+
 impl SealedKeyAgreementPort for ManagedIdentity {
     fn derive_shared_secret_sealed(
         &self,
@@ -123,6 +158,7 @@ impl SealedKeyAgreementPort for ManagedIdentity {
             peer_public: request.peer_public,
         })?;
         let aad = sealed_aad(
+            ECDH_SEALED_OPERATION,
             &request.identity,
             &request.kid,
             &request.request_id,
@@ -135,6 +171,42 @@ impl SealedKeyAgreementPort for ManagedIdentity {
             SEALED_SECRET_INFO,
             &aad,
             shared.as_bytes(),
+        )
+        .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        Ok(SealedSecretEnvelope::from_handoff(&sealed))
+    }
+}
+
+#[cfg(feature = "root-export")]
+impl SealedRootExportPort for ManagedIdentity {
+    fn export_root_key_sealed(
+        &self,
+        authorization: &ProviderAuthorization,
+        request: SealedRootExportRequest,
+    ) -> Result<SealedSecretEnvelope, SealedProviderError> {
+        use super::{RootExportPort, UserConfirmedRootExportRequest};
+
+        let binding = request.operation_binding()?;
+        let consumed = authorization.consume_for_operation(&request.token, &binding)?;
+        validate_identity_binding(&self.reference(), &request.identity, &consumed)?;
+        let exported = self.export_root_for_legacy_envelope(UserConfirmedRootExportRequest {
+            key: KeySelector::Kid(request.kid.clone()),
+            user_presence_confirmed: request.user_presence_confirmed,
+        })?;
+        let aad = sealed_aad(
+            ROOT_EXPORT_SEALED_OPERATION,
+            &request.identity,
+            &request.kid,
+            &request.request_id,
+            &binding.operation_input_digest,
+            &request.recipient_public_key,
+            &consumed,
+        )?;
+        let sealed = anp::sealed_handoff::SealedHandoff::seal(
+            &request.recipient_public_key,
+            SEALED_SECRET_INFO,
+            &aad,
+            exported.as_pkcs8_der(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
         Ok(SealedSecretEnvelope::from_handoff(&sealed))
@@ -185,6 +257,52 @@ pub fn sealed_key_agreement_binding(
     })
 }
 
+#[cfg(feature = "root-export")]
+pub fn sealed_root_export_binding(
+    identity: &IdentityRef,
+    kid: &str,
+    recipient_public_key: &[u8; 32],
+    request_id: &str,
+    user_presence_confirmed: bool,
+) -> Result<OneTimeOperationBinding, SealedProviderError> {
+    validate_request(identity, kid, request_id)?;
+    if !user_presence_confirmed {
+        return Err(SealedProviderError::Authorization);
+    }
+    #[derive(Serialize)]
+    struct DigestInput<'a> {
+        protocol: &'static str,
+        operation: &'static str,
+        store_id: &'a str,
+        identity_id: &'a str,
+        did: &'a str,
+        kid: &'a str,
+        recipient_public_key_digest: String,
+        request_id: &'a str,
+        user_presence_confirmed: bool,
+    }
+    let input = DigestInput {
+        protocol: SEALED_SECRET_PROTOCOL,
+        operation: ROOT_EXPORT_SEALED_OPERATION,
+        store_id: &identity.store_id,
+        identity_id: &identity.identity_id,
+        did: &identity.did,
+        kid,
+        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        request_id,
+        user_presence_confirmed,
+    };
+    Ok(OneTimeOperationBinding {
+        capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
+        identity_id: identity.identity_id.clone(),
+        operation: ROOT_EXPORT_SEALED_OPERATION.to_owned(),
+        kid: Some(kid.to_owned()),
+        request_id: request_id.to_owned(),
+        recipient_public_key: *recipient_public_key,
+        operation_input_digest: canonical_digest(&input)?,
+    })
+}
+
 fn validate_identity_binding(
     actual: &IdentityRef,
     requested: &IdentityRef,
@@ -197,6 +315,7 @@ fn validate_identity_binding(
 }
 
 fn sealed_aad(
+    operation: &'static str,
     identity: &IdentityRef,
     kid: &str,
     request_id: &str,
@@ -221,7 +340,7 @@ fn sealed_aad(
     }
     serde_json_canonicalizer::to_vec(&Aad {
         protocol_version: SEALED_SECRET_PROTOCOL,
-        operation: ECDH_SEALED_OPERATION,
+        operation,
         provider_instance_id: &consumed.provider_instance_id,
         parent_lease_id: &consumed.parent_lease_id,
         consumer: &consumed.consumer,
@@ -354,6 +473,7 @@ mod tests {
             store_id: reference.store_id.clone(),
         };
         let aad = sealed_aad(
+            ECDH_SEALED_OPERATION,
             &reference,
             &kid,
             "request-1",
@@ -416,5 +536,80 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error, SealedProviderError::Authorization);
+    }
+
+    #[cfg(feature = "root-export")]
+    #[test]
+    fn sealed_root_export_requires_confirmation_and_roundtrips_only_as_ciphertext() {
+        use ed25519_dalek::pkcs8::DecodePrivateKey;
+
+        let (_root, identity) = create_identity();
+        let reference = identity.reference();
+        let kid = format!("{}#root", reference.did);
+        let authority = ProviderAuthorization::new();
+        let lease = authority
+            .acquire_lease(
+                "dsh-awiki".to_owned(),
+                [capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned()],
+                reference.store_id.clone(),
+                600,
+            )
+            .unwrap();
+        let recipient = SealedHandoffRecipient::generate();
+        assert_eq!(
+            sealed_root_export_binding(
+                &reference,
+                &kid,
+                recipient.public_key(),
+                "root-transfer-1",
+                false,
+            )
+            .unwrap_err(),
+            SealedProviderError::Authorization
+        );
+        let binding = sealed_root_export_binding(
+            &reference,
+            &kid,
+            recipient.public_key(),
+            "root-transfer-1",
+            true,
+        )
+        .unwrap();
+        let token = authority.issue_one_time(&lease, &binding, 60).unwrap();
+        let envelope = identity
+            .export_root_key_sealed(
+                &authority,
+                SealedRootExportRequest {
+                    identity: reference.clone(),
+                    kid: kid.clone(),
+                    recipient_public_key: *recipient.public_key(),
+                    request_id: "root-transfer-1".to_owned(),
+                    user_presence_confirmed: true,
+                    token,
+                },
+            )
+            .unwrap();
+        assert!(!envelope.ciphertext_b64u.contains("PRIVATE"));
+        let consumed = ConsumedOneTimeAuthorization {
+            provider_instance_id: authority.provider_instance_id().to_owned(),
+            parent_lease_id: lease.lease_id().to_owned(),
+            consumer: "dsh-awiki".to_owned(),
+            capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
+            store_id: reference.store_id.clone(),
+        };
+        let aad = sealed_aad(
+            ROOT_EXPORT_SEALED_OPERATION,
+            &reference,
+            &kid,
+            "root-transfer-1",
+            &binding.operation_input_digest,
+            recipient.public_key(),
+            &consumed,
+        )
+        .unwrap();
+        let plaintext = recipient
+            .open(&envelope.to_handoff().unwrap(), SEALED_SECRET_INFO, &aad)
+            .unwrap();
+        ed25519_dalek::SigningKey::from_pkcs8_der(&plaintext).unwrap();
     }
 }
