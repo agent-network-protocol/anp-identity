@@ -346,6 +346,14 @@ impl DidStore {
     }
 
     pub fn import_identity(&mut self, spec: IdentityImportSpec) -> DidResult<DidIdentity> {
+        self.import_identity_with_id(spec, crate::identity::random_id())
+    }
+
+    pub(crate) fn import_identity_with_id(
+        &mut self,
+        spec: IdentityImportSpec,
+        identity_id: String,
+    ) -> DidResult<DidIdentity> {
         crate::adoption::validate_verified_document(&spec.verified_document, &spec.evidence)?;
         let did = spec
             .verified_document
@@ -364,7 +372,6 @@ impl DidStore {
         if registry.identities.contains_key(&did) {
             return Err(DidError::DuplicateIdentity);
         }
-        let identity_id = crate::identity::random_id();
         let transaction_id = crate::identity::random_id();
         let created_at = Utc::now().to_rfc3339();
         let secret_refs = imported

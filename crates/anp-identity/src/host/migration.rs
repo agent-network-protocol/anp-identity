@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::convergence::evidence;
@@ -7,13 +8,15 @@ use crate::{
     PrivateKeyEncoding, RequestSigningIdentityImportSpec,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum MigrationPrivateKeyEncoding {
     Raw32,
     Pkcs8Der,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum MigrationKeyPurpose {
     RootControl,
     Authentication,
@@ -112,6 +115,27 @@ impl MigrationPort for IdentityManager {
                 },
                 private_key: request.signing_key.into(),
             },
+        )?;
+        Ok(self.wrap(engine))
+    }
+}
+
+impl IdentityManager {
+    pub(crate) fn import_full_identity_with_id(
+        &mut self,
+        identity_id: String,
+        request: FullIdentityImportRequest,
+    ) -> IdentityResult<ManagedIdentity> {
+        let engine = self.engine_mut().import_identity_with_id(
+            IdentityImportSpec {
+                verified_document: request.remote.document.into_value(),
+                evidence: evidence(request.remote.evidence),
+                capabilities: Capabilities {
+                    did_wba: request.did_wba,
+                },
+                private_keys: request.private_keys.into_iter().map(Into::into).collect(),
+            },
+            identity_id,
         )?;
         Ok(self.wrap(engine))
     }

@@ -51,6 +51,13 @@ pub use root_transfer::{
     PendingRootObjectProofRequest, RootPromotionPort, RootPromotionRequest,
     WrappedRootImportOutcome, WrappedRootImportPort,
 };
+#[cfg(feature = "key-import")]
+pub use sealed_handoff::{
+    sealed_identity_material_import_binding, sealed_root_import_binding,
+    PreparedSealedIdentityMaterialImport, PreparedSealedRootImport,
+    SealedIdentityMaterialImportOffer, SealedIdentityMaterialImportPreparation,
+    SealedIdentityMaterialKeySpec, SealedImportOffer, SealedRootImportPreparation,
+};
 pub use sealed_handoff::{
     sealed_key_agreement_binding, sealed_operation_aad, SealedKeyAgreementPort,
     SealedKeyAgreementRequest, SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_INFO,
@@ -59,11 +66,6 @@ pub use sealed_handoff::{
 #[cfg(feature = "root-export")]
 pub use sealed_handoff::{
     sealed_root_export_binding, SealedRootExportPort, SealedRootExportRequest,
-};
-#[cfg(feature = "key-import")]
-pub use sealed_handoff::{
-    sealed_root_import_binding, PreparedSealedRootImport, SealedImportOffer,
-    SealedRootImportPreparation,
 };
 pub use status::{
     HostDocumentCheckpoint, HostRootCapability, IdentityHostStatus, IdentityStatusPort,
