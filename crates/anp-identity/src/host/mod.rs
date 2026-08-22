@@ -1,4 +1,5 @@
 mod convergence;
+mod document_change;
 mod enrollment;
 mod http_signing;
 mod key_agreement;
@@ -9,6 +10,7 @@ mod root_transfer;
 mod status;
 
 pub use convergence::{ConvergenceOutcome, ConvergenceWorkflow};
+pub use document_change::{DocumentChangeRecoveryPort, HostDocumentChangePhase};
 pub use enrollment::{
     DeviceEnrollmentRequest, EnrollmentCapabilities, EnrollmentProposal, EnrollmentProposalKind,
     EnrollmentPublicKey, EnrollmentSession, EnrollmentWorkflow, RequestSigningEnrollmentRequest,

@@ -1,5 +1,6 @@
 use super::*;
 use crate::facade::{IdentityManager, IdentityManagerConfig, InjectedStoreKey, RootKeySource};
+use crate::host::{DocumentChangeRecoveryPort, HostDocumentChangePhase};
 use crate::{Capabilities, DidCreateSpec, DidProfile, KeyRole, ManagedKeySpec};
 
 #[test]
@@ -48,13 +49,25 @@ fn uncertain_change_can_only_reconcile_remote_old_or_candidate() {
     let mut session = identity
         .prepare_document_change(rotation("request-v2"))
         .unwrap();
+    assert_eq!(
+        session.host_phase().unwrap(),
+        HostDocumentChangePhase::Prepared
+    );
     let candidate = session.candidate().clone();
     let attempt = session.begin_publication().unwrap();
+    assert_eq!(
+        session.host_phase().unwrap(),
+        HostDocumentChangePhase::PublicationInFlight
+    );
     assert_eq!(
         session
             .complete(attempt.clone(), PublicationResult::Unknown)
             .unwrap(),
         DocumentChangeOutcome::PublicationUncertain
+    );
+    assert_eq!(
+        session.host_phase().unwrap(),
+        HostDocumentChangePhase::PublicationUncertain
     );
     assert_eq!(
         session.begin_publication().err(),

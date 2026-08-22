@@ -193,6 +193,11 @@ impl DocumentChangeSession {
         &self.candidate
     }
 
+    pub(crate) fn publication_state(&self) -> IdentityResult<PublicationState> {
+        let engine = self.lock_engine()?;
+        Ok(self.required_pending(&engine)?.state)
+    }
+
     pub fn begin_publication(&mut self) -> IdentityResult<PublicationAttempt> {
         let mut engine = self.lock_engine()?;
         let pending = self.required_pending(&engine)?;
