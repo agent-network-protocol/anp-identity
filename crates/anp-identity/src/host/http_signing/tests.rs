@@ -88,6 +88,50 @@ fn managed_headers_duplicate_names_and_oversized_bodies_fail_before_signing() {
     );
 }
 
+#[test]
+fn device_authentication_key_remains_valid_for_http_signing() {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = IdentityManager::initialize(IdentityManagerConfig {
+        state_root: root.path().to_owned(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("http-device", [0x92; 32])),
+    })
+    .unwrap();
+    let identity = manager
+        .create(DidCreateSpec {
+            profile: DidProfile::E1,
+            domain: "example.com".to_owned(),
+            port: None,
+            path_segments: vec!["facade".to_owned(), "http-device".to_owned()],
+            capabilities: Capabilities { did_wba: true },
+            managed_keys: vec![
+                ManagedKeySpec {
+                    fragment: "root".to_owned(),
+                    role: KeyRole::RootControl,
+                },
+                ManagedKeySpec {
+                    fragment: "device".to_owned(),
+                    role: KeyRole::DeviceSigning,
+                },
+            ],
+            external_keys: Vec::new(),
+            services: Vec::new(),
+            agent_description_url: None,
+            extensions: Vec::new(),
+        })
+        .unwrap();
+    let attempt = identity
+        .prepare_http_signature(ExactHttpRequest {
+            key: KeySelector::Kid("#device".to_owned()),
+            url: "https://api.example.com/messages".to_owned(),
+            method: "POST".to_owned(),
+            headers: Vec::new(),
+            body: None,
+            options: HttpRequestSigningOptions::default(),
+        })
+        .unwrap();
+    assert!(attempt.kid.ends_with("#device"));
+}
+
 fn identity() -> (tempfile::TempDir, crate::ManagedIdentity) {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(IdentityManagerConfig {

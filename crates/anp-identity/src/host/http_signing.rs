@@ -4,8 +4,9 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::facade::signing::select_key;
-use crate::{IdentityError, IdentityResult, KeyRole, KeySelector, ManagedIdentity};
+use crate::{
+    IdentityError, IdentityResult, KeyOrigin, KeyRole, KeySelector, KeyState, ManagedIdentity,
+};
 
 pub const MAX_HTTP_SIGNING_BODY_BYTES: usize = 4 * 1024 * 1024;
 
@@ -85,7 +86,7 @@ impl HttpRequestSigningPort for ManagedIdentity {
             return Err(IdentityError::InvalidRequest);
         }
         let engine = self.lock_engine()?;
-        let metadata = select_key(&engine, &request.key, KeyRole::RequestSigning)?;
+        let metadata = select_authentication_key(&engine, &request.key)?;
         let binding_digest = request_binding_digest(&request, &normalized_headers)?;
         let patch = engine.http_signature_headers_with_options(
             &metadata.kid,
@@ -123,10 +124,51 @@ impl LegacyDidWbaPort for ManagedIdentity {
             return Err(IdentityError::InvalidRequest);
         }
         let engine = self.lock_engine()?;
-        let metadata = select_key(&engine, &key, KeyRole::RequestSigning)?;
+        let metadata = select_authentication_key(&engine, &key)?;
         engine
             .legacy_did_wba_header(&metadata.kid, service_domain, version)
             .map_err(Into::into)
+    }
+}
+
+fn select_authentication_key<'a>(
+    identity: &'a crate::DidIdentity,
+    selector: &KeySelector,
+) -> IdentityResult<&'a crate::KeyMetadata> {
+    let usable = |metadata: &&crate::KeyMetadata| {
+        matches!(
+            metadata.role,
+            KeyRole::DeviceSigning | KeyRole::RequestSigning
+        ) && metadata.origin == KeyOrigin::Managed
+            && metadata.state == KeyState::Active
+            && !metadata.material_erased
+            && anp::authentication::is_authentication_authorized(identity.document(), &metadata.kid)
+    };
+    match selector {
+        KeySelector::Kid(kid) => {
+            let metadata = identity.key_metadata(kid)?;
+            if !usable(&metadata) {
+                return Err(
+                    if matches!(
+                        metadata.role,
+                        KeyRole::DeviceSigning | KeyRole::RequestSigning
+                    ) {
+                        IdentityError::KeyUnavailable
+                    } else {
+                        IdentityError::KeyPurposeViolation
+                    },
+                );
+            }
+            Ok(metadata)
+        }
+        KeySelector::Default => {
+            let mut candidates = identity.keys().iter().filter(usable);
+            let selected = candidates.next().ok_or(IdentityError::KeyUnavailable)?;
+            if candidates.next().is_some() {
+                return Err(IdentityError::AmbiguousKey);
+            }
+            Ok(selected)
+        }
     }
 }
 
