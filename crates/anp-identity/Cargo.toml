@@ -5,8 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage = "https://github.com/agent-network-protocol/anp-identity"
+documentation = "https://docs.rs/anp-identity"
 description = "Secure E1 DID identity custody and lifecycle management for ANP"
 readme = "../../README.md"
+keywords = ["anp", "did", "identity", "did-wba"]
+categories = ["authentication", "cryptography"]
 
 [features]
 default = []

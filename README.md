@@ -1,6 +1,8 @@
 # anp-identity
 
 [![CI](https://github.com/agent-network-protocol/anp-identity/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-network-protocol/anp-identity/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/anp-identity.svg)](https://crates.io/crates/anp-identity)
+[![docs.rs](https://docs.rs/anp-identity/badge.svg)](https://docs.rs/anp-identity)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 
@@ -16,9 +18,10 @@ default-off Rust `root-export` feature for the existing, user-confirmed
 The project is available as a Rust crate with asynchronous Node.js/TypeScript
 bindings.
 
-> **Release status:** `0.1.0` is pre-release. Registry publication is waiting
-> for the coordinated `anp 0.9.4` release. The repository is fully buildable
-> from source today; see [Building from source](#building-from-source).
+> **Release status:** the Rust crate `anp-identity 0.1.0` is published on
+> [crates.io](https://crates.io/crates/anp-identity) and depends on `anp 0.9.4`.
+> The Node/TypeScript package is not published yet; see
+> [Building from source](#building-from-source) for the local binding.
 
 ## The problem
 
@@ -119,29 +122,25 @@ External public keys do not grant the module access to a private-key operation.
 
 ## Installation
 
-Registry artifacts are not published yet. After the coordinated release, the
-package names will be:
+The Rust crate is on crates.io:
 
 ```bash
 cargo add anp-identity
-npm install @agent-network-protocol/anp-identity
 ```
 
-Until then, build the repositories as siblings so the pinned development path
-can resolve `anp 0.9.4`:
+This crate depends on [`anp`](https://crates.io/crates/anp) `0.9.4` with
+`default-features = false`. Optional Rust features:
+
+- `key-import` — one-way raw/DER private-key import for migration
+- `root-export` — explicit `RootKeyEnvelopeV1` root-key export
+
+The Node/TypeScript package `@agent-network-protocol/anp-identity` is not
+published yet. Build it from this repository:
 
 ```bash
-mkdir anp-workspace
-cd anp-workspace
-git clone https://github.com/agent-network-protocol/anp.git anp
-git clone https://github.com/agent-network-protocol/anp-identity.git anp-identity
+git clone https://github.com/agent-network-protocol/anp-identity.git
 cd anp-identity
 cargo build --workspace --all-features
-```
-
-For the Node binding:
-
-```bash
 cd bindings/node
 npm ci
 npm run build
@@ -442,10 +441,11 @@ Prerequisites:
 
 - Rust 1.88 or newer;
 - Node.js 18 or newer for the Node binding;
-- the `anp` repository checked out as a sibling directory until `anp 0.9.4` is
-  available from crates.io.
+- `anp 0.9.4` from crates.io, or a sibling checkout of the `anp` repository for
+  local path-based development.
 
-Repository layout:
+Published crate consumers only need the crates.io dependency. Local workspace
+development can keep this layout so the pinned path dependency resolves:
 
 ```text
 anp-workspace/
