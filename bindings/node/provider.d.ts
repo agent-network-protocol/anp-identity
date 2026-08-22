@@ -1,14 +1,24 @@
 import type {
   CreateIdentityRequest,
+  DocumentChangeOutcome,
+  DocumentChangeRequest,
   IdentityDescriptor,
   IdentityManagerConfig,
   IdentityReference,
+  JsonValue,
   OriginProofRequest,
+  PreparedDocumentChange,
   PublicIdentity,
+  PublicationAttempt,
+  PublicationResult,
   SignRequest,
   Signature,
   SignedOriginProof,
+  StoreInfo,
+  VerifiedRemoteDocument,
   VerifiedPublicationEvidence,
+  VerifyRequest,
+  RecoveryReport,
 } from './index'
 
 export type ProviderCapability =
@@ -51,6 +61,44 @@ export interface PreparedHttpSignatureAttempt {
   bindingDigest: string
   kid: string
   headerPatch: HttpHeader[]
+}
+
+export interface IdentityHostStatus {
+  rootCapability: 'absent' | 'pending' | 'active'
+  rootKeyFingerprint: string
+  checkpoint?: HostDocumentCheckpoint
+}
+
+export interface HostDocumentCheckpoint {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
+}
+
+export interface ObjectProofRequest {
+  kid?: string
+  document: JsonValue
+  issuerDid: string
+  created?: string
+}
+
+export interface DocumentProofRequest {
+  kid?: string
+  document: JsonValue
+  options?: {
+    proofPurpose?: string
+    proofType?: string
+    cryptosuite?: string
+    created?: string
+    domain?: string
+    challenge?: string
+  }
+}
+
+export interface LegacyDidWbaRequest {
+  kid?: string
+  serviceDomain: string
+  version: string
 }
 
 export interface SealedSecretEnvelope {
@@ -166,6 +214,76 @@ export interface ProviderAdoptionReport {
   generation: number
 }
 
+export interface DeviceEnrollmentRequest {
+  remote: VerifiedRemoteDocument
+  deviceId: string
+  deviceSigningFragment: string
+  deviceAgreementFragment: string
+  profiles?: string[]
+  capabilities?: { didWba?: boolean }
+}
+
+export interface RequestSigningEnrollmentRequest {
+  remote: VerifiedRemoteDocument
+  fragment: string
+  capabilities?: { didWba?: boolean }
+}
+
+export interface EnrollmentPublicKey {
+  kid: string
+  publicKeyMultibase: string
+}
+
+export type EnrollmentProposalKind =
+  | {
+      kind: 'device'
+      deviceId: string
+      signingKey: EnrollmentPublicKey
+      agreementKey: EnrollmentPublicKey
+      profiles: string[]
+    }
+  | { kind: 'request_signing'; signingKey: EnrollmentPublicKey }
+
+export interface EnrollmentProposal {
+  enrollmentId: string
+  identity: IdentityReference
+  kind: EnrollmentProposalKind
+  rootKeyFingerprint: string
+  checkpoint: HostDocumentCheckpoint
+}
+
+export interface SealedEnrollmentKeyAgreementRequest {
+  peerPublic: Buffer
+  recipientPublicKey: Buffer
+  requestId: string
+}
+
+export interface RootTransferContext {
+  sourceDid: string
+  targetDid: string
+  senderDeviceId: string
+  recipientDeviceId: string
+  recipientAgreementKid: string
+  rootKid: string
+  checkpoint: HostDocumentCheckpoint
+  createdAt: string
+  expiresAt: string
+}
+
+export interface WrappedRootEnvelope {
+  type: 'anp.identity.root-transfer.wrapped'
+  version: 1
+  context: RootTransferContext
+  ephemeralPublic: string
+  nonce: string
+  ciphertext: string
+  signature: string
+}
+
+export interface RootPromotionRequest {
+  remote: VerifiedRemoteDocument
+}
+
 export class IdentityProvider {
   private constructor()
   static initialize(config: IdentityManagerConfig): Promise<IdentityProvider>
@@ -173,18 +291,51 @@ export class IdentityProvider {
   acquireLease(request: ProviderLeaseRequest): Promise<ProviderLease>
 }
 
-export class ProviderLease {
-  private constructor()
+export interface ProviderLease {
   dispose(): void
+  info(): Promise<StoreInfo>
+  recover(): Promise<RecoveryReport>
   list(): Promise<IdentityDescriptor[]>
   publicIdentity(reference: IdentityReference): Promise<PublicIdentity>
+  hostStatus(reference: IdentityReference): Promise<IdentityHostStatus>
+  recoverIdentity(reference: IdentityReference): Promise<void>
   create(request: CreateIdentityRequest): Promise<PublicIdentity>
+  delete(reference: IdentityReference): Promise<void>
   sign(reference: IdentityReference, request: SignRequest): Promise<Signature>
+  verify(reference: IdentityReference, request: VerifyRequest): Promise<'valid' | 'invalid'>
   signOriginProof(
     reference: IdentityReference,
     request: OriginProofRequest,
   ): Promise<SignedOriginProof>
+  signObjectProof(reference: IdentityReference, request: ObjectProofRequest): Promise<JsonValue>
+  signDocumentProof(reference: IdentityReference, request: DocumentProofRequest): Promise<JsonValue>
   prepareHttpSignature(request: ExactHttpSigningRequest): Promise<PreparedHttpSignatureAttempt>
+  prepareLegacyDidWba(reference: IdentityReference, request: LegacyDidWbaRequest): Promise<string>
+  prepareDocumentChange(
+    reference: IdentityReference,
+    request: DocumentChangeRequest,
+  ): Promise<ProviderDocumentChangeSession>
+  resumeDocumentChange(
+    reference: IdentityReference,
+  ): Promise<ProviderDocumentChangeSession | undefined>
+  adoptVerifiedDocument(
+    reference: IdentityReference,
+    remote: VerifiedRemoteDocument,
+  ): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>
+  beginDeviceEnrollment(request: DeviceEnrollmentRequest): Promise<ProviderEnrollmentSession>
+  beginRequestSigningEnrollment(
+    request: RequestSigningEnrollmentRequest,
+  ): Promise<ProviderEnrollmentSession>
+  resumeEnrollment(reference: IdentityReference): Promise<ProviderEnrollmentSession | undefined>
+  importWrappedRoot(
+    reference: IdentityReference,
+    envelope: WrappedRootEnvelope,
+  ): Promise<'pending' | 'active'>
+  confirmRootPromotion(reference: IdentityReference, request: RootPromotionRequest): Promise<void>
+  signPendingRootObjectProof(
+    reference: IdentityReference,
+    request: ObjectProofRequest,
+  ): Promise<JsonValue>
   ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretEnvelope>
   exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretEnvelope>
   prepareLegacyRootImport(request: SealedRootImportPreparation): Promise<PreparedRootImport>
@@ -196,20 +347,38 @@ export class ProviderLease {
   ): Promise<PreparedProviderAdoption>
 }
 
-export class PreparedRootImport {
-  private constructor()
+export interface ProviderDocumentChangeSession {
+  candidate(): Promise<PreparedDocumentChange>
+  hostPhase(): Promise<'prepared' | 'publication_in_flight' | 'publication_uncertain' | 'published'>
+  beginPublication(): Promise<PublicationAttempt>
+  complete(
+    attempt: PublicationAttempt,
+    result: PublicationResult,
+  ): Promise<DocumentChangeOutcome>
+  reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+}
+
+export interface ProviderEnrollmentSession {
+  proposal(): Promise<EnrollmentProposal>
+  signDeviceAssertion(payload: Buffer): Promise<Buffer>
+  deriveDeviceSharedSecretSealed(
+    request: SealedEnrollmentKeyAgreementRequest,
+  ): Promise<SealedSecretEnvelope>
+  activate(remote: VerifiedRemoteDocument): Promise<'activated'>
+  cancel(): Promise<void>
+}
+
+export interface PreparedRootImport {
   offer(): SealedImportOffer
   complete(token: string, envelope: SealedSecretEnvelope): Promise<'pending' | 'active'>
 }
 
-export class PreparedIdentityMaterialImport {
-  private constructor()
+export interface PreparedIdentityMaterialImport {
   offer(): SealedIdentityMaterialImportOffer
   complete(token: string, envelopes: SealedSecretEnvelope[]): Promise<PublicIdentity>
 }
 
-export class PreparedProviderAdoption {
-  private constructor()
+export interface PreparedProviderAdoption {
   offer(): SealedProviderAdoptionOffer
   complete(token: string, envelope: SealedSecretEnvelope): Promise<ProviderAdoptionReport>
 }

@@ -56,14 +56,50 @@ export declare class PreparedRootImport {
 }
 export type JsPreparedRootImport = PreparedRootImport
 
+export declare class ProviderDocumentChangeSession {
+  candidate(): Promise<any>
+  hostPhase(): Promise<any>
+  beginPublication(): Promise<any>
+  complete(attempt: any, result: any): Promise<any>
+  reconcile(observation: any): Promise<any>
+}
+export type JsProviderDocumentChangeSession = ProviderDocumentChangeSession
+
+export declare class ProviderEnrollmentSession {
+  proposal(): Promise<any>
+  signDeviceAssertion(payload: Buffer): Promise<Buffer>
+  deriveDeviceSharedSecretSealed(request: JsSealedEnrollmentKeyAgreementRequest): Promise<any>
+  activate(remote: any): Promise<any>
+  cancel(): Promise<void>
+}
+export type JsProviderEnrollmentSession = ProviderEnrollmentSession
+
 export declare class ProviderLease {
   dispose(): void
+  info(): Promise<any>
+  recover(): Promise<any>
   list(): Promise<any>
   publicIdentity(identity: JsIdentityRef): Promise<any>
+  hostStatus(identity: JsIdentityRef): Promise<any>
+  recoverIdentity(identity: JsIdentityRef): Promise<void>
   create(request: any): Promise<any>
+  delete(identity: JsIdentityRef): Promise<void>
+  verify(identity: JsIdentityRef, request: JsVerifyRequest): Promise<string>
   sign(identity: JsIdentityRef, request: JsSignRequest): Promise<JsSignature>
   signOriginProof(identity: JsIdentityRef, request: JsOriginProofRequest): Promise<any>
+  signObjectProof(identity: JsIdentityRef, request: any): Promise<any>
+  signDocumentProof(identity: JsIdentityRef, request: any): Promise<any>
   prepareHttpSignature(request: JsExactHttpSigningRequest): Promise<any>
+  prepareLegacyDidWba(identity: JsIdentityRef, kid: string | undefined | null, serviceDomain: string, version: string): Promise<string>
+  prepareDocumentChange(identity: JsIdentityRef, request: any): Promise<JsProviderDocumentChangeSession>
+  resumeDocumentChange(identity: JsIdentityRef): Promise<JsProviderDocumentChangeSession | null>
+  adoptVerifiedDocument(identity: JsIdentityRef, remote: any): Promise<any>
+  beginDeviceEnrollment(request: any): Promise<JsProviderEnrollmentSession>
+  beginRequestSigningEnrollment(request: any): Promise<JsProviderEnrollmentSession>
+  resumeEnrollment(identity: JsIdentityRef): Promise<JsProviderEnrollmentSession | null>
+  importWrappedRoot(identity: JsIdentityRef, envelope: any): Promise<any>
+  confirmRootPromotion(identity: JsIdentityRef, request: any): Promise<void>
+  signPendingRootObjectProof(identity: JsIdentityRef, request: any): Promise<any>
   ecdhSealed(request: JsSealedKeyAgreementRequest): Promise<any>
   exportRootKeySealed(request: JsSealedRootExportRequest): Promise<any>
   prepareLegacyRootImport(request: JsSealedRootImportPreparation): Promise<JsPreparedRootImport>
@@ -125,6 +161,12 @@ export interface JsProviderLeaseRequest {
   consumer: string
   capabilities: Array<string>
   ttlSeconds: number
+}
+
+export interface JsSealedEnrollmentKeyAgreementRequest {
+  peerPublic: Buffer
+  recipientPublicKey: Buffer
+  requestId: string
 }
 
 export interface JsSealedIdentityImportPreparation {

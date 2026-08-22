@@ -116,6 +116,13 @@ pub struct JsSealedKeyAgreementRequest {
 }
 
 #[napi(object)]
+pub struct JsSealedEnrollmentKeyAgreementRequest {
+    pub peer_public: Buffer,
+    pub recipient_public_key: Buffer,
+    pub request_id: String,
+}
+
+#[napi(object)]
 pub struct JsSealedRootExportRequest {
     pub identity: JsIdentityRef,
     pub kid: String,
@@ -509,6 +516,22 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn info(&self) -> Result<Value> {
+        self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |manager| {
+            to_value(manager.info().map_err(map_error)?)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn recover(&self) -> Result<Value> {
+        self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |manager| {
+            to_value(manager.recover().map_err(map_error)?)
+        })
+        .await
+    }
+
+    #[napi]
     pub async fn list(&self) -> Result<Value> {
         self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |manager| {
             to_value(manager.list().map_err(map_error)?)
@@ -534,6 +557,42 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn host_status(&self, identity: JsIdentityRef) -> Result<Value> {
+        use anp_identity::host::IdentityStatusPort as _;
+
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_READ,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.host_status())
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn recover_identity(&self, identity: JsIdentityRef) -> Result<()> {
+        use anp_identity::host::IdentityStatusPort as _;
+
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_READ,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.recover_identity())
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
     pub async fn create(&self, request: Value) -> Result<Value> {
         let request = serde_json::from_value(request).map_err(invalid_json)?;
         self.with_authorized(
@@ -541,6 +600,49 @@ impl JsProviderLease {
             move |manager| {
                 let identity = manager.create(request).map_err(map_error)?;
                 to_value(identity.public_identity().map_err(map_error)?)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn delete(&self, identity: JsIdentityRef) -> Result<()> {
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_DELETE,
+            move |manager| {
+                manager
+                    .delete(&reference, DeleteIdentityRequest::default())
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn verify(
+        &self,
+        identity: JsIdentityRef,
+        request: JsVerifyRequest,
+    ) -> Result<String> {
+        let reference = identity.into();
+        let request = VerifyRequest {
+            purpose: signing_purpose(&request.purpose, request.domain)?,
+            kid: request.kid,
+            payload: request.payload.to_vec(),
+            signature: request.signature.to_vec(),
+        };
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_READ,
+            move |manager| {
+                let outcome = manager
+                    .get(&reference)
+                    .and_then(|identity| identity.verify(request))
+                    .map_err(map_error)?;
+                Ok(match outcome {
+                    anp_identity::VerificationOutcome::Valid => "valid".to_owned(),
+                    anp_identity::VerificationOutcome::Invalid => "invalid".to_owned(),
+                })
             },
         )
         .await
@@ -613,6 +715,54 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn sign_object_proof(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::TypedProofPort as _;
+
+        let reference = identity.into();
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_SIGN,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.sign_object_proof(request))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn sign_document_proof(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::TypedProofPort as _;
+
+        let reference = identity.into();
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_SIGN,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.sign_document_proof(request))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
     pub async fn prepare_http_signature(
         &self,
         request: JsExactHttpSigningRequest,
@@ -647,6 +797,255 @@ impl JsProviderLease {
                     manager
                         .get(&reference)
                         .and_then(|identity| identity.prepare_http_signature(exact))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn prepare_legacy_did_wba(
+        &self,
+        identity: JsIdentityRef,
+        kid: Option<String>,
+        service_domain: String,
+        version: String,
+    ) -> Result<String> {
+        use anp_identity::host::LegacyDidWbaPort as _;
+
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_HTTP_SIGNATURE,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| {
+                        identity.prepare_legacy_did_wba(
+                            key_selector(kid),
+                            &service_domain,
+                            &version,
+                        )
+                    })
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn prepare_document_change(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<JsProviderDocumentChangeSession> {
+        let reference = identity.into();
+        let request: DocumentChangeRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+                move |manager| {
+                    let mut identity = manager.get(&reference).map_err(map_error)?;
+                    identity.prepare_document_change(request).map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(JsProviderDocumentChangeSession::new(
+            session,
+            Arc::clone(&self.authorization),
+            Arc::clone(&self.lease),
+        ))
+    }
+
+    #[napi]
+    pub async fn resume_document_change(
+        &self,
+        identity: JsIdentityRef,
+    ) -> Result<Option<JsProviderDocumentChangeSession>> {
+        let reference = identity.into();
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+                move |manager| {
+                    let mut identity = manager.get(&reference).map_err(map_error)?;
+                    identity.resume_document_change().map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(session.map(|session| {
+            JsProviderDocumentChangeSession::new(
+                session,
+                Arc::clone(&self.authorization),
+                Arc::clone(&self.lease),
+            )
+        }))
+    }
+
+    #[napi]
+    pub async fn adopt_verified_document(
+        &self,
+        identity: JsIdentityRef,
+        remote: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::ConvergenceWorkflow as _;
+
+        let reference = identity.into();
+        let remote: VerifiedRemoteDocument =
+            serde_json::from_value(remote).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+            move |manager| {
+                let mut identity = manager.get(&reference).map_err(map_error)?;
+                to_value(
+                    identity
+                        .adopt_verified_document(remote)
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn begin_device_enrollment(
+        &self,
+        request: Value,
+    ) -> Result<JsProviderEnrollmentSession> {
+        use anp_identity::host::EnrollmentWorkflow as _;
+
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_CREATE,
+                move |manager| manager.begin_device_enrollment(request).map_err(map_error),
+            )
+            .await?;
+        Ok(JsProviderEnrollmentSession::new(
+            session,
+            Arc::clone(&self.manager),
+            Arc::clone(&self.authorization),
+            Arc::clone(&self.lease),
+        ))
+    }
+
+    #[napi]
+    pub async fn begin_request_signing_enrollment(
+        &self,
+        request: Value,
+    ) -> Result<JsProviderEnrollmentSession> {
+        use anp_identity::host::EnrollmentWorkflow as _;
+
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_CREATE,
+                move |manager| {
+                    manager
+                        .begin_request_signing_enrollment(request)
+                        .map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(JsProviderEnrollmentSession::new(
+            session,
+            Arc::clone(&self.manager),
+            Arc::clone(&self.authorization),
+            Arc::clone(&self.lease),
+        ))
+    }
+
+    #[napi]
+    pub async fn resume_enrollment(
+        &self,
+        identity: JsIdentityRef,
+    ) -> Result<Option<JsProviderEnrollmentSession>> {
+        use anp_identity::host::EnrollmentWorkflow as _;
+
+        let reference = identity.into();
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_CREATE,
+                move |manager| manager.resume_enrollment(&reference).map_err(map_error),
+            )
+            .await?;
+        Ok(session.map(|session| {
+            JsProviderEnrollmentSession::new(
+                session,
+                Arc::clone(&self.manager),
+                Arc::clone(&self.authorization),
+                Arc::clone(&self.lease),
+            )
+        }))
+    }
+
+    #[napi]
+    pub async fn import_wrapped_root(
+        &self,
+        identity: JsIdentityRef,
+        envelope: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::WrappedRootImportPort as _;
+
+        let reference = identity.into();
+        let envelope = serde_json::from_value(envelope).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::AWIKI_LEGACY_ROOT_TRANSFER_V1,
+            move |manager| {
+                let mut identity = manager.get(&reference).map_err(map_error)?;
+                let outcome = identity
+                    .import_wrapped_root_envelope(&envelope)
+                    .map_err(map_error)?;
+                Ok(match outcome {
+                    anp_identity::host::WrappedRootImportOutcome::Pending => {
+                        Value::String("pending".to_owned())
+                    }
+                    anp_identity::host::WrappedRootImportOutcome::Active => {
+                        Value::String("active".to_owned())
+                    }
+                })
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn confirm_root_promotion(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<()> {
+        use anp_identity::host::RootPromotionPort as _;
+
+        let reference = identity.into();
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::AWIKI_LEGACY_ROOT_TRANSFER_V1,
+            move |manager| {
+                let mut identity = manager.get(&reference).map_err(map_error)?;
+                identity.confirm_root_promotion(request).map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn sign_pending_root_object_proof(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::RootPromotionPort as _;
+
+        let reference = identity.into();
+        let request = serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::AWIKI_LEGACY_ROOT_TRANSFER_V1,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.sign_pending_root_object_proof(request))
                         .map_err(map_error)?,
                 )
             },
@@ -843,6 +1242,248 @@ impl JsProviderLease {
     }
 }
 
+#[napi(js_name = "ProviderDocumentChangeSession")]
+pub struct JsProviderDocumentChangeSession {
+    inner: Arc<Mutex<CoreDocumentChangeSession>>,
+    authorization: Arc<anp_identity::host::ProviderAuthorization>,
+    lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+}
+
+#[napi]
+impl JsProviderDocumentChangeSession {
+    #[napi]
+    pub async fn candidate(&self) -> Result<Value> {
+        self.with_session(|session| to_value(session.candidate()))
+            .await
+    }
+
+    #[napi]
+    pub async fn host_phase(&self) -> Result<Value> {
+        use anp_identity::host::DocumentChangeRecoveryPort as _;
+
+        self.with_session(|session| to_value(session.host_phase().map_err(map_error)?))
+            .await
+    }
+
+    #[napi]
+    pub async fn begin_publication(&self) -> Result<Value> {
+        self.with_session(|session| to_value(session.begin_publication().map_err(map_error)?))
+            .await
+    }
+
+    #[napi]
+    pub async fn complete(&self, attempt: Value, result: Value) -> Result<Value> {
+        let attempt: PublicationAttempt = serde_json::from_value(attempt).map_err(invalid_json)?;
+        let result: PublicationResult = serde_json::from_value(result).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.complete(attempt, result).map_err(map_error)?)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn reconcile(&self, observation: Value) -> Result<Value> {
+        let observation: VerifiedRemoteDocument =
+            serde_json::from_value(observation).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.reconcile(observation).map_err(map_error)?)
+        })
+        .await
+    }
+}
+
+impl JsProviderDocumentChangeSession {
+    fn new(
+        session: CoreDocumentChangeSession,
+        authorization: Arc<anp_identity::host::ProviderAuthorization>,
+        lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(session)),
+            authorization,
+            lease,
+        }
+    }
+
+    async fn with_session<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreDocumentChangeSession) -> Result<T> + Send + 'static,
+    {
+        authorize_provider_lease(
+            &self.authorization,
+            &self.lease,
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+        )?;
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || operation(&mut inner.blocking_lock())).await
+    }
+}
+
+#[napi(js_name = "ProviderEnrollmentSession")]
+pub struct JsProviderEnrollmentSession {
+    inner: Arc<StdMutex<Option<anp_identity::host::EnrollmentSession>>>,
+    manager: Arc<Mutex<CoreIdentityManager>>,
+    authorization: Arc<anp_identity::host::ProviderAuthorization>,
+    lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+}
+
+#[napi]
+impl JsProviderEnrollmentSession {
+    #[napi]
+    pub async fn proposal(&self) -> Result<Value> {
+        self.with_session(anp_identity::host::capability::IDENTITY_READ, |session| {
+            to_value(session.proposal())
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn sign_device_assertion(&self, payload: Buffer) -> Result<Buffer> {
+        self.with_session(
+            anp_identity::host::capability::IDENTITY_SIGN,
+            move |session| {
+                session
+                    .sign_device_assertion(&payload)
+                    .map(Buffer::from)
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn derive_device_shared_secret_sealed(
+        &self,
+        request: JsSealedEnrollmentKeyAgreementRequest,
+    ) -> Result<Value> {
+        use anp_identity::host::SealedEnrollmentKeyAgreementPort as _;
+
+        let peer_public = fixed_public_key(request.peer_public, "peerPublic")?;
+        let recipient_public_key =
+            fixed_public_key(request.recipient_public_key, "recipientPublicKey")?;
+        let proposal = self
+            .with_session(
+                anp_identity::host::capability::IDENTITY_ECDH_SEALED,
+                |session| Ok(session.proposal().clone()),
+            )
+            .await?;
+        let anp_identity::host::EnrollmentProposalKind::Device { agreement_key, .. } =
+            &proposal.kind
+        else {
+            return Err(js_error(
+                "capability_unavailable",
+                "enrollment has no device agreement key",
+            ));
+        };
+        let binding = anp_identity::host::sealed_enrollment_key_agreement_binding(
+            &proposal.identity,
+            &proposal.enrollment_id,
+            &agreement_key.kid,
+            &peer_public,
+            &recipient_public_key,
+            &request.request_id,
+        )
+        .map_err(map_sealed_error)?;
+        let token = issue_provider_one_time(&self.authorization, &self.lease, &binding)?;
+        let authorization = Arc::clone(&self.authorization);
+        let kid = agreement_key.kid.clone();
+        let identity = proposal.identity;
+        let enrollment_id = proposal.enrollment_id;
+        let request_id = request.request_id;
+        self.with_session(
+            anp_identity::host::capability::IDENTITY_ECDH_SEALED,
+            move |session| {
+                to_value(
+                    session
+                        .derive_device_shared_secret_sealed(
+                            &authorization,
+                            anp_identity::host::SealedEnrollmentKeyAgreementRequest {
+                                identity,
+                                enrollment_id,
+                                kid,
+                                peer_public,
+                                recipient_public_key,
+                                request_id,
+                                token,
+                            },
+                        )
+                        .map_err(map_sealed_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn activate(&self, remote: Value) -> Result<Value> {
+        let remote = serde_json::from_value(remote).map_err(invalid_json)?;
+        self.with_session(
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+            move |session| to_value(session.activate(remote).map_err(map_error)?),
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn cancel(&self) -> Result<()> {
+        authorize_provider_lease(
+            &self.authorization,
+            &self.lease,
+            anp_identity::host::capability::IDENTITY_CREATE,
+        )?;
+        let manager = Arc::clone(&self.manager);
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || {
+            let mut manager = manager.blocking_lock();
+            let session = inner
+                .lock()
+                .map_err(|_| js_error("internal", "enrollment session state failed"))?
+                .take()
+                .ok_or_else(|| {
+                    js_error("invalid_state", "enrollment session was already consumed")
+                })?;
+            session.cancel(&mut manager).map_err(map_error)
+        })
+        .await
+    }
+}
+
+impl JsProviderEnrollmentSession {
+    fn new(
+        session: anp_identity::host::EnrollmentSession,
+        manager: Arc<Mutex<CoreIdentityManager>>,
+        authorization: Arc<anp_identity::host::ProviderAuthorization>,
+        lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(StdMutex::new(Some(session))),
+            manager,
+            authorization,
+            lease,
+        }
+    }
+
+    async fn with_session<T, F>(&self, capability: &'static str, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut anp_identity::host::EnrollmentSession) -> Result<T> + Send + 'static,
+    {
+        authorize_provider_lease(&self.authorization, &self.lease, capability)?;
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || {
+            let mut inner = inner
+                .lock()
+                .map_err(|_| js_error("internal", "enrollment session state failed"))?;
+            let session = inner.as_mut().ok_or_else(|| {
+                js_error("invalid_state", "enrollment session was already consumed")
+            })?;
+            operation(session)
+        })
+        .await
+    }
+}
+
 #[napi(js_name = "PreparedRootImport")]
 pub struct JsPreparedRootImport {
     manager: Arc<Mutex<CoreIdentityManager>>,
@@ -1007,6 +1648,38 @@ impl JsProviderLease {
         let manager = Arc::clone(&self.manager);
         run_blocking(move || operation(&mut manager.blocking_lock())).await
     }
+}
+
+fn authorize_provider_lease(
+    authorization: &anp_identity::host::ProviderAuthorization,
+    lease: &StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>,
+    capability: &str,
+) -> Result<()> {
+    let lease = lease
+        .lock()
+        .map_err(|_| js_error("internal", "provider lease state failed"))?;
+    let lease = lease
+        .as_ref()
+        .ok_or_else(|| js_error("provider_disposed", "provider lease is disposed"))?;
+    authorization
+        .authorize(lease, capability)
+        .map_err(map_authorization_error)
+}
+
+fn issue_provider_one_time(
+    authorization: &anp_identity::host::ProviderAuthorization,
+    lease: &StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>,
+    binding: &anp_identity::host::OneTimeOperationBinding,
+) -> Result<anp_identity::host::OneTimeCapabilityToken> {
+    let lease = lease
+        .lock()
+        .map_err(|_| js_error("internal", "provider lease state failed"))?;
+    let lease = lease
+        .as_ref()
+        .ok_or_else(|| js_error("provider_disposed", "provider lease is disposed"))?;
+    authorization
+        .issue_one_time(lease, binding, 60)
+        .map_err(map_authorization_error)
 }
 
 impl From<JsIdentityRef> for IdentityRef {

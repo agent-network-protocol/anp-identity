@@ -15,6 +15,7 @@ use crate::{IdentityError, IdentityRef, KeySelector, ManagedIdentity};
 pub const SEALED_SECRET_PROTOCOL: &str = "anp-sealed-secret/1";
 pub const SEALED_SECRET_INFO: &[u8] = b"anp.identity.sealed-secret.v1";
 const ECDH_SEALED_OPERATION: &str = "ecdh_sealed";
+const ENROLLMENT_ECDH_SEALED_OPERATION: &str = "enrollment_ecdh_sealed";
 #[cfg(feature = "root-export")]
 const ROOT_EXPORT_SEALED_OPERATION: &str = "export_root_key_sealed";
 #[cfg(feature = "key-import")]
@@ -63,6 +64,17 @@ impl SealedSecretEnvelope {
 /// Exact, token-bound request for External Provider ECDH.
 pub struct SealedKeyAgreementRequest {
     pub identity: IdentityRef,
+    pub kid: String,
+    pub peer_public: [u8; 32],
+    pub recipient_public_key: [u8; 32],
+    pub request_id: String,
+    pub token: OneTimeCapabilityToken,
+}
+
+/// Exact, token-bound request for ECDH with a pending device-enrollment key.
+pub struct SealedEnrollmentKeyAgreementRequest {
+    pub identity: IdentityRef,
+    pub enrollment_id: String,
     pub kid: String,
     pub peer_public: [u8; 32],
     pub recipient_public_key: [u8; 32],
@@ -459,6 +471,19 @@ impl SealedKeyAgreementRequest {
     }
 }
 
+impl SealedEnrollmentKeyAgreementRequest {
+    pub fn operation_binding(&self) -> Result<OneTimeOperationBinding, SealedProviderError> {
+        sealed_enrollment_key_agreement_binding(
+            &self.identity,
+            &self.enrollment_id,
+            &self.kid,
+            &self.peer_public,
+            &self.recipient_public_key,
+            &self.request_id,
+        )
+    }
+}
+
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum SealedProviderError {
     #[error("the provider authorization is invalid")]
@@ -493,6 +518,14 @@ pub trait SealedKeyAgreementPort {
     ) -> Result<SealedSecretEnvelope, SealedProviderError>;
 }
 
+pub trait SealedEnrollmentKeyAgreementPort {
+    fn derive_device_shared_secret_sealed(
+        &self,
+        authorization: &ProviderAuthorization,
+        request: SealedEnrollmentKeyAgreementRequest,
+    ) -> Result<SealedSecretEnvelope, SealedProviderError>;
+}
+
 #[cfg(feature = "root-export")]
 pub trait SealedRootExportPort {
     fn export_root_key_sealed(
@@ -517,6 +550,46 @@ impl SealedKeyAgreementPort for ManagedIdentity {
         })?;
         let aad = sealed_aad(
             ECDH_SEALED_OPERATION,
+            &request.identity,
+            &request.kid,
+            &request.request_id,
+            &binding.operation_input_digest,
+            &request.recipient_public_key,
+            &consumed,
+        )?;
+        let sealed = anp::sealed_handoff::SealedHandoff::seal(
+            &request.recipient_public_key,
+            SEALED_SECRET_INFO,
+            &aad,
+            shared.as_bytes(),
+        )
+        .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        Ok(SealedSecretEnvelope::from_handoff(&sealed))
+    }
+}
+
+impl SealedEnrollmentKeyAgreementPort for super::EnrollmentSession {
+    fn derive_device_shared_secret_sealed(
+        &self,
+        authorization: &ProviderAuthorization,
+        request: SealedEnrollmentKeyAgreementRequest,
+    ) -> Result<SealedSecretEnvelope, SealedProviderError> {
+        let binding = request.operation_binding()?;
+        let consumed = authorization.consume_for_operation(&request.token, &binding)?;
+        let proposal = self.proposal();
+        let super::EnrollmentProposalKind::Device { agreement_key, .. } = &proposal.kind else {
+            return Err(SealedProviderError::IdentityBinding);
+        };
+        if proposal.identity != request.identity
+            || proposal.enrollment_id != request.enrollment_id
+            || agreement_key.kid != request.kid
+        {
+            return Err(SealedProviderError::IdentityBinding);
+        }
+        validate_identity_binding(&proposal.identity, &request.identity, &consumed)?;
+        let shared = self.derive_device_shared_secret(request.peer_public)?;
+        let aad = sealed_aad(
+            ENROLLMENT_ECDH_SEALED_OPERATION,
             &request.identity,
             &request.kid,
             &request.request_id,
@@ -608,6 +681,56 @@ pub fn sealed_key_agreement_binding(
         capability: capability::IDENTITY_ECDH_SEALED.to_owned(),
         identity_id: identity.identity_id.clone(),
         operation: ECDH_SEALED_OPERATION.to_owned(),
+        kid: Some(kid.to_owned()),
+        request_id: request_id.to_owned(),
+        recipient_public_key: *recipient_public_key,
+        operation_input_digest: canonical_digest(&input)?,
+    })
+}
+
+pub fn sealed_enrollment_key_agreement_binding(
+    identity: &IdentityRef,
+    enrollment_id: &str,
+    kid: &str,
+    peer_public: &[u8; 32],
+    recipient_public_key: &[u8; 32],
+    request_id: &str,
+) -> Result<OneTimeOperationBinding, SealedProviderError> {
+    validate_request(identity, kid, request_id)?;
+    if enrollment_id.trim().is_empty() {
+        return Err(SealedProviderError::InvalidRequest);
+    }
+    #[derive(Serialize)]
+    struct DigestInput<'a> {
+        protocol: &'static str,
+        operation: &'static str,
+        store_id: &'a str,
+        identity_id: &'a str,
+        did: &'a str,
+        enrollment_id: &'a str,
+        kid: &'a str,
+        algorithm: &'static str,
+        peer_public_b64u: String,
+        recipient_public_key_digest: String,
+        request_id: &'a str,
+    }
+    let input = DigestInput {
+        protocol: SEALED_SECRET_PROTOCOL,
+        operation: ENROLLMENT_ECDH_SEALED_OPERATION,
+        store_id: &identity.store_id,
+        identity_id: &identity.identity_id,
+        did: &identity.did,
+        enrollment_id,
+        kid,
+        algorithm: "X25519",
+        peer_public_b64u: URL_SAFE_NO_PAD.encode(peer_public),
+        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        request_id,
+    };
+    Ok(OneTimeOperationBinding {
+        capability: capability::IDENTITY_ECDH_SEALED.to_owned(),
+        identity_id: identity.identity_id.clone(),
+        operation: ENROLLMENT_ECDH_SEALED_OPERATION.to_owned(),
         kid: Some(kid.to_owned()),
         request_id: request_id.to_owned(),
         recipient_public_key: *recipient_public_key,
