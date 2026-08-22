@@ -8,6 +8,7 @@ mod migration;
 mod proofs;
 mod provider_authorization;
 mod root_transfer;
+mod sealed_handoff;
 mod status;
 
 pub use convergence::{ConvergenceOutcome, ConvergenceWorkflow};
@@ -43,6 +44,10 @@ pub use root_transfer::{
 pub use root_transfer::{
     PendingRootObjectProofRequest, RootPromotionPort, RootPromotionRequest,
     WrappedRootImportOutcome, WrappedRootImportPort,
+};
+pub use sealed_handoff::{
+    sealed_key_agreement_binding, SealedKeyAgreementPort, SealedKeyAgreementRequest,
+    SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_PROTOCOL,
 };
 pub use status::{
     HostDocumentCheckpoint, HostRootCapability, IdentityHostStatus, IdentityStatusPort,

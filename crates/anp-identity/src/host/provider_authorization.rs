@@ -131,6 +131,14 @@ struct TokenClaims {
     expires_at: i64,
 }
 
+pub(super) struct ConsumedOneTimeAuthorization {
+    pub(super) provider_instance_id: String,
+    pub(super) parent_lease_id: String,
+    pub(super) consumer: String,
+    pub(super) capability: String,
+    pub(super) store_id: String,
+}
+
 impl ProviderAuthorization {
     pub fn new() -> Self {
         let mut hmac_key = [0_u8; 32];
@@ -191,7 +199,16 @@ impl ProviderAuthorization {
         token: &OneTimeCapabilityToken,
         expected: &OneTimeOperationBinding,
     ) -> Result<(), ProviderAuthorizationError> {
-        self.consume_one_time_at(token, expected, unix_now())
+        self.consume_for_operation_at(token, expected, unix_now())
+            .map(|_| ())
+    }
+
+    pub(super) fn consume_for_operation(
+        &self,
+        token: &OneTimeCapabilityToken,
+        expected: &OneTimeOperationBinding,
+    ) -> Result<ConsumedOneTimeAuthorization, ProviderAuthorizationError> {
+        self.consume_for_operation_at(token, expected, unix_now())
     }
 
     fn acquire_lease_at(
@@ -285,12 +302,12 @@ impl ProviderAuthorization {
         )))
     }
 
-    fn consume_one_time_at(
+    fn consume_for_operation_at(
         &self,
         token: &OneTimeCapabilityToken,
         expected: &OneTimeOperationBinding,
         now: i64,
-    ) -> Result<(), ProviderAuthorizationError> {
+    ) -> Result<ConsumedOneTimeAuthorization, ProviderAuthorizationError> {
         validate_binding(expected)?;
         if token.0.len() > MAX_TOKEN_BYTES {
             return Err(ProviderAuthorizationError::TokenInvalid);
@@ -344,7 +361,13 @@ impl ProviderAuthorization {
         if !state.consumed_tokens.insert(token_digest) {
             return Err(ProviderAuthorizationError::TokenConsumed);
         }
-        Ok(())
+        Ok(ConsumedOneTimeAuthorization {
+            provider_instance_id: claims.provider_instance_id,
+            parent_lease_id: claims.parent_lease_id,
+            consumer: claims.consumer,
+            capability: claims.capability,
+            store_id: claims.store_id,
+        })
     }
 
     fn sign(&self, payload: &[u8]) -> Result<[u8; 32], ProviderAuthorizationError> {
@@ -445,21 +468,29 @@ mod tests {
         let mut substituted = expected.clone();
         substituted.recipient_public_key = [0x42; 32];
         assert_eq!(
-            authority.consume_one_time_at(&token, &substituted, 1_001),
+            authority
+                .consume_for_operation_at(&token, &substituted, 1_001)
+                .map(|_| ()),
             Err(ProviderAuthorizationError::TokenInvalid)
         );
         let mut substituted = expected.clone();
         substituted.operation_input_digest = "sha256:request-2".to_owned();
         assert_eq!(
-            authority.consume_one_time_at(&token, &substituted, 1_001),
+            authority
+                .consume_for_operation_at(&token, &substituted, 1_001)
+                .map(|_| ()),
             Err(ProviderAuthorizationError::TokenInvalid)
         );
         assert_eq!(
-            authority.consume_one_time_at(&token, &expected, 1_001),
+            authority
+                .consume_for_operation_at(&token, &expected, 1_001)
+                .map(|_| ()),
             Ok(())
         );
         assert_eq!(
-            authority.consume_one_time_at(&token, &expected, 1_001),
+            authority
+                .consume_for_operation_at(&token, &expected, 1_001)
+                .map(|_| ()),
             Err(ProviderAuthorizationError::TokenConsumed)
         );
     }
@@ -481,12 +512,16 @@ mod tests {
             .issue_one_time_at(&lease, &expected, 10, 1_000)
             .unwrap();
         assert_eq!(
-            authority.consume_one_time_at(&token, &expected, 1_011),
+            authority
+                .consume_for_operation_at(&token, &expected, 1_011)
+                .map(|_| ()),
             Err(ProviderAuthorizationError::TokenExpired)
         );
         let other = ProviderAuthorization::new();
         assert_eq!(
-            other.consume_one_time_at(&token, &expected, 1_001),
+            other
+                .consume_for_operation_at(&token, &expected, 1_001)
+                .map(|_| ()),
             Err(ProviderAuthorizationError::TokenInvalid)
         );
 
