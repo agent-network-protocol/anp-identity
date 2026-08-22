@@ -133,13 +133,16 @@ impl RootExportPort for ManagedIdentity {
 }
 
 #[cfg(feature = "key-import")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum RootPrivateKeyEncoding {
     Raw32,
     Pkcs8Der,
 }
 
 #[cfg(feature = "key-import")]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct LegacyRootImportEvidence {
     pub transfer_id: String,
     pub source_did: String,

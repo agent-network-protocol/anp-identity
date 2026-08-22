@@ -13,10 +13,12 @@ use super::{
 use crate::{IdentityError, IdentityRef, KeySelector, ManagedIdentity};
 
 pub const SEALED_SECRET_PROTOCOL: &str = "anp-sealed-secret/1";
-const SEALED_SECRET_INFO: &[u8] = b"anp.identity.sealed-secret.v1";
+pub const SEALED_SECRET_INFO: &[u8] = b"anp.identity.sealed-secret.v1";
 const ECDH_SEALED_OPERATION: &str = "ecdh_sealed";
 #[cfg(feature = "root-export")]
 const ROOT_EXPORT_SEALED_OPERATION: &str = "export_root_key_sealed";
+#[cfg(feature = "key-import")]
+const ROOT_IMPORT_SEALED_OPERATION: &str = "import_legacy_root_transfer_sealed";
 
 /// HPKE ciphertext safe to carry across the TypeScript bridge.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,6 +76,100 @@ pub struct SealedRootExportRequest {
     pub request_id: String,
     pub user_presence_confirmed: bool,
     pub token: OneTimeCapabilityToken,
+}
+
+#[cfg(feature = "key-import")]
+pub struct SealedRootImportPreparation {
+    pub identity: IdentityRef,
+    pub evidence: super::LegacyRootImportEvidence,
+    pub encoding: super::RootPrivateKeyEncoding,
+    pub request_id: String,
+}
+
+/// Offer safe to cross TypeScript. The corresponding private recipient key stays in
+/// [`PreparedSealedRootImport`].
+#[cfg(feature = "key-import")]
+pub struct SealedImportOffer {
+    pub recipient_public_key: [u8; 32],
+    pub request_id: String,
+    pub token: OneTimeCapabilityToken,
+    pub authorization: IssuedAuthorizationContext,
+    pub aad_b64u: String,
+}
+
+#[cfg(feature = "key-import")]
+pub struct PreparedSealedRootImport {
+    recipient: anp::sealed_handoff::SealedHandoffRecipient,
+    preparation: SealedRootImportPreparation,
+    binding: OneTimeOperationBinding,
+    aad: Vec<u8>,
+}
+
+#[cfg(feature = "key-import")]
+impl PreparedSealedRootImport {
+    pub fn prepare(
+        authorization: &ProviderAuthorization,
+        lease: &super::ProviderCapabilityLease,
+        preparation: SealedRootImportPreparation,
+        ttl_seconds: i64,
+    ) -> Result<(Self, SealedImportOffer), SealedProviderError> {
+        let recipient = anp::sealed_handoff::SealedHandoffRecipient::generate();
+        let binding = sealed_root_import_binding(&preparation, recipient.public_key())?;
+        let issued = authorization.issue_one_time_with_context(lease, &binding, ttl_seconds)?;
+        let aad = sealed_operation_aad(&issued.context, &binding, &preparation.identity)?;
+        let offer = SealedImportOffer {
+            recipient_public_key: *recipient.public_key(),
+            request_id: preparation.request_id.clone(),
+            token: issued.token,
+            authorization: issued.context,
+            aad_b64u: URL_SAFE_NO_PAD.encode(&aad),
+        };
+        Ok((
+            Self {
+                recipient,
+                preparation,
+                binding,
+                aad,
+            },
+            offer,
+        ))
+    }
+
+    pub fn complete(
+        self,
+        identity: &mut ManagedIdentity,
+        authorization: &ProviderAuthorization,
+        token: OneTimeCapabilityToken,
+        envelope: &SealedSecretEnvelope,
+    ) -> Result<super::LegacyRootImportOutcome, SealedProviderError> {
+        use super::{LegacyRootImportRequest, RootImportPort};
+
+        let consumed = authorization.consume_for_operation(&token, &self.binding)?;
+        validate_identity_binding(&identity.reference(), &self.preparation.identity, &consumed)?;
+        let expected_aad = sealed_aad(
+            ROOT_IMPORT_SEALED_OPERATION,
+            &self.preparation.identity,
+            &self.preparation.evidence.root_kid,
+            &self.preparation.request_id,
+            &self.binding.operation_input_digest,
+            self.recipient.public_key(),
+            &consumed,
+        )?;
+        if expected_aad != self.aad {
+            return Err(SealedProviderError::Authorization);
+        }
+        let root_key = self
+            .recipient
+            .open(&envelope.to_handoff()?, SEALED_SECRET_INFO, &self.aad)
+            .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        identity
+            .import_legacy_root(LegacyRootImportRequest {
+                evidence: self.preparation.evidence,
+                encoding: self.preparation.encoding,
+                root_key,
+            })
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(feature = "root-export")]
@@ -298,6 +394,53 @@ pub fn sealed_root_export_binding(
         operation: ROOT_EXPORT_SEALED_OPERATION.to_owned(),
         kid: Some(kid.to_owned()),
         request_id: request_id.to_owned(),
+        recipient_public_key: *recipient_public_key,
+        operation_input_digest: canonical_digest(&input)?,
+    })
+}
+
+#[cfg(feature = "key-import")]
+pub fn sealed_root_import_binding(
+    preparation: &SealedRootImportPreparation,
+    recipient_public_key: &[u8; 32],
+) -> Result<OneTimeOperationBinding, SealedProviderError> {
+    validate_request(
+        &preparation.identity,
+        &preparation.evidence.root_kid,
+        &preparation.request_id,
+    )?;
+    if preparation.evidence.target_did != preparation.identity.did {
+        return Err(SealedProviderError::IdentityBinding);
+    }
+    #[derive(Serialize)]
+    struct DigestInput<'a> {
+        protocol: &'static str,
+        operation: &'static str,
+        store_id: &'a str,
+        identity_id: &'a str,
+        did: &'a str,
+        request_id: &'a str,
+        recipient_public_key_digest: String,
+        encoding: super::RootPrivateKeyEncoding,
+        evidence: &'a super::LegacyRootImportEvidence,
+    }
+    let input = DigestInput {
+        protocol: SEALED_SECRET_PROTOCOL,
+        operation: ROOT_IMPORT_SEALED_OPERATION,
+        store_id: &preparation.identity.store_id,
+        identity_id: &preparation.identity.identity_id,
+        did: &preparation.identity.did,
+        request_id: &preparation.request_id,
+        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        encoding: preparation.encoding,
+        evidence: &preparation.evidence,
+    };
+    Ok(OneTimeOperationBinding {
+        capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
+        identity_id: preparation.identity.identity_id.clone(),
+        operation: ROOT_IMPORT_SEALED_OPERATION.to_owned(),
+        kid: Some(preparation.evidence.root_kid.clone()),
+        request_id: preparation.request_id.clone(),
         recipient_public_key: *recipient_public_key,
         operation_input_digest: canonical_digest(&input)?,
     })
@@ -664,5 +807,211 @@ mod tests {
             .open(&envelope.to_handoff().unwrap(), SEALED_SECRET_INFO, &aad)
             .unwrap();
         ed25519_dalek::SigningKey::from_pkcs8_der(&plaintext).unwrap();
+    }
+
+    #[cfg(all(feature = "key-import", feature = "root-export"))]
+    #[test]
+    fn sealed_legacy_root_import_roundtrips_without_bridge_plaintext() {
+        use super::super::{
+            DeviceEnrollmentRequest, EnrollmentCapabilities, EnrollmentProposalKind,
+            EnrollmentWorkflow, IdentityStatusPort, RootExportPort, UserConfirmedRootExportRequest,
+        };
+
+        let source_root = tempfile::tempdir().unwrap();
+        let mut source_manager = crate::IdentityManager::initialize(crate::IdentityManagerConfig {
+            state_root: source_root.path().to_path_buf(),
+            root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                "source", [0x73; 32],
+            )),
+        })
+        .unwrap();
+        let mut source = source_manager.create(create_spec_for_import()).unwrap();
+        let source_public = source.public_identity().unwrap();
+        let source_status = source.host_status().unwrap();
+        let checkpoint = source_status.checkpoint.unwrap();
+        let root_kid = format!("{}#root", source.reference().did);
+        let exported = source
+            .export_root_for_legacy_envelope(UserConfirmedRootExportRequest {
+                key: KeySelector::Kid(root_kid.clone()),
+                user_presence_confirmed: true,
+            })
+            .unwrap();
+
+        let target_root = tempfile::tempdir().unwrap();
+        let mut target_manager = crate::IdentityManager::initialize(crate::IdentityManagerConfig {
+            state_root: target_root.path().to_path_buf(),
+            root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                "target", [0x74; 32],
+            )),
+        })
+        .unwrap();
+        let mut enrollment = target_manager
+            .begin_device_enrollment(DeviceEnrollmentRequest {
+                remote: crate::VerifiedRemoteDocument {
+                    document: source_public.document.clone(),
+                    evidence: crate::VerifiedPublicationEvidence {
+                        document_version: checkpoint.document_version,
+                        registry_version: checkpoint.registry_version,
+                        document_digest: checkpoint.document_digest.clone(),
+                    },
+                },
+                device_id: "target-device".to_owned(),
+                device_signing_fragment: "target-signing".to_owned(),
+                device_agreement_fragment: "target-agreement".to_owned(),
+                profiles: vec!["anp.core.binding.v1".to_owned()],
+                capabilities: EnrollmentCapabilities { did_wba: true },
+            })
+            .unwrap();
+        let proposal = enrollment.proposal().clone();
+        let EnrollmentProposalKind::Device {
+            signing_key,
+            agreement_key,
+            profiles,
+            ..
+        } = &proposal.kind
+        else {
+            panic!("device enrollment expected")
+        };
+        let mut change = source
+            .prepare_document_change(crate::DocumentChangeRequest {
+                changes: vec![crate::DocumentChange::AddDevice {
+                    device: crate::DeviceInput {
+                        device_id: "target-device".to_owned(),
+                        signing_key: crate::PublicKeyInput {
+                            kid: signing_key.kid.clone(),
+                            public_key_multibase: signing_key.public_key_multibase.clone(),
+                        },
+                        agreement_key: crate::PublicKeyInput {
+                            kid: agreement_key.kid.clone(),
+                            public_key_multibase: agreement_key.public_key_multibase.clone(),
+                        },
+                        profiles: profiles.clone(),
+                    },
+                }],
+            })
+            .unwrap();
+        let accepted = change.candidate().clone();
+        let attempt = change.begin_publication().unwrap();
+        let accepted_document = accepted.candidate_document;
+        let publication_evidence = crate::VerifiedPublicationEvidence {
+            document_version: checkpoint.document_version + 1,
+            registry_version: checkpoint.registry_version + 1,
+            document_digest: accepted.candidate_digest,
+        };
+        let accepted_remote = crate::VerifiedRemoteDocument {
+            document: accepted_document.clone(),
+            evidence: crate::VerifiedPublicationEvidence {
+                document_version: checkpoint.document_version + 1,
+                registry_version: checkpoint.registry_version + 1,
+                document_digest: crate::canonical_document_digest(accepted_document.as_value())
+                    .unwrap(),
+            },
+        };
+        change
+            .complete(
+                attempt,
+                crate::PublicationResult::Confirmed {
+                    evidence: publication_evidence,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            accepted_remote
+                .document
+                .as_value()
+                .get("id")
+                .and_then(serde_json::Value::as_str),
+            Some(proposal.identity.did.as_str())
+        );
+        assert!(anp::authentication::validate_did_document_binding(
+            accepted_remote.document.as_value(),
+            true,
+        ));
+        assert_eq!(
+            crate::canonical_document_digest(accepted_remote.document.as_value()).unwrap(),
+            accepted_remote.evidence.document_digest
+        );
+        enrollment.activate(accepted_remote).unwrap();
+        let mut target = target_manager.get(&proposal.identity).unwrap();
+        target.recover_identity().unwrap();
+        let target_checkpoint = target.host_status().unwrap().checkpoint.unwrap();
+        let preparation = SealedRootImportPreparation {
+            identity: proposal.identity.clone(),
+            evidence: super::super::LegacyRootImportEvidence {
+                transfer_id: "legacy-transfer-1".to_owned(),
+                source_did: proposal.identity.did.clone(),
+                target_did: proposal.identity.did.clone(),
+                sender_device_id: "source-device".to_owned(),
+                recipient_device_id: "target-device".to_owned(),
+                recipient_agreement_kid: agreement_key.kid.clone(),
+                root_kid,
+                checkpoint: target_checkpoint,
+                accepted_at: chrono::Utc::now().to_rfc3339(),
+            },
+            encoding: super::super::RootPrivateKeyEncoding::Pkcs8Der,
+            request_id: "legacy-transfer-1".to_owned(),
+        };
+        let authority = ProviderAuthorization::new();
+        let lease = authority
+            .acquire_lease(
+                "dsh-awiki".to_owned(),
+                [capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned()],
+                proposal.identity.store_id.clone(),
+                600,
+            )
+            .unwrap();
+        let (prepared, offer) =
+            PreparedSealedRootImport::prepare(&authority, &lease, preparation, 60).unwrap();
+        let aad = URL_SAFE_NO_PAD.decode(&offer.aad_b64u).unwrap();
+        let sealed = anp::sealed_handoff::SealedHandoff::seal(
+            &offer.recipient_public_key,
+            SEALED_SECRET_INFO,
+            &aad,
+            exported.as_pkcs8_der(),
+        )
+        .unwrap();
+        let envelope = SealedSecretEnvelope::from_handoff(&sealed);
+        let outcome = prepared
+            .complete(&mut target, &authority, offer.token, &envelope)
+            .unwrap();
+        assert_eq!(outcome, super::super::LegacyRootImportOutcome::Pending);
+    }
+
+    #[cfg(all(feature = "key-import", feature = "root-export"))]
+    fn create_spec_for_import() -> crate::CreateIdentityRequest {
+        crate::CreateIdentityRequest {
+            profile: crate::DidProfile::E1,
+            domain: "example.com".to_owned(),
+            port: None,
+            path_segments: vec!["sealed-root-import".to_owned()],
+            capabilities: crate::Capabilities { did_wba: true },
+            managed_keys: vec![
+                crate::ManagedKeySpec {
+                    fragment: "root".to_owned(),
+                    role: crate::KeyRole::RootControl,
+                },
+                crate::ManagedKeySpec {
+                    fragment: "source-sign".to_owned(),
+                    role: crate::KeyRole::DeviceSigning,
+                },
+                crate::ManagedKeySpec {
+                    fragment: "source-e2ee".to_owned(),
+                    role: crate::KeyRole::E2eeAgreement,
+                },
+            ],
+            external_keys: Vec::new(),
+            services: Vec::new(),
+            agent_description_url: None,
+            extensions: vec![crate::DidExtensionSpec::DeviceManifest(
+                crate::DeviceManifestSpec {
+                    devices: vec![crate::DeviceManifestEntrySpec {
+                        device_id: "source-device".to_owned(),
+                        signing_key_id: "#source-sign".to_owned(),
+                        e2ee_key_id: "#source-e2ee".to_owned(),
+                        profiles: vec!["anp.core.binding.v1".to_owned()],
+                    }],
+                },
+            )],
+        }
     }
 }
