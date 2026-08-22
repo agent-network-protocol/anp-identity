@@ -68,6 +68,23 @@ pub struct ProviderCapabilityLease {
     lease_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct IssuedAuthorizationContext {
+    pub provider_instance_id: String,
+    pub parent_lease_id: String,
+    pub consumer: String,
+    pub capability: String,
+    pub store_id: String,
+    pub expires_at: i64,
+}
+
+/// One signed token plus the non-secret context needed to construct the exact HPKE AAD.
+pub struct IssuedOneTimeAuthorization {
+    pub token: OneTimeCapabilityToken,
+    pub context: IssuedAuthorizationContext,
+}
+
 impl ProviderCapabilityLease {
     pub fn provider_instance_id(&self) -> &str {
         &self.provider_instance_id
@@ -194,6 +211,15 @@ impl ProviderAuthorization {
         self.issue_one_time_at(lease, binding, ttl_seconds, unix_now())
     }
 
+    pub fn issue_one_time_with_context(
+        &self,
+        lease: &ProviderCapabilityLease,
+        binding: &OneTimeOperationBinding,
+        ttl_seconds: i64,
+    ) -> Result<IssuedOneTimeAuthorization, ProviderAuthorizationError> {
+        self.issue_one_time_with_context_at(lease, binding, ttl_seconds, unix_now())
+    }
+
     pub fn consume_one_time(
         &self,
         token: &OneTimeCapabilityToken,
@@ -255,6 +281,17 @@ impl ProviderAuthorization {
         ttl_seconds: i64,
         now: i64,
     ) -> Result<OneTimeCapabilityToken, ProviderAuthorizationError> {
+        self.issue_one_time_with_context_at(lease, binding, ttl_seconds, now)
+            .map(|issued| issued.token)
+    }
+
+    fn issue_one_time_with_context_at(
+        &self,
+        lease: &ProviderCapabilityLease,
+        binding: &OneTimeOperationBinding,
+        ttl_seconds: i64,
+        now: i64,
+    ) -> Result<IssuedOneTimeAuthorization, ProviderAuthorizationError> {
         validate_binding(binding)?;
         if lease.provider_instance_id != self.provider_instance_id
             || !(1..=MAX_OPERATION_TTL_SECONDS).contains(&ttl_seconds)
@@ -295,11 +332,21 @@ impl ProviderAuthorization {
         let payload = serde_json_canonicalizer::to_vec(&claims)
             .map_err(|_| ProviderAuthorizationError::Internal)?;
         let tag = self.sign(&payload)?;
-        Ok(OneTimeCapabilityToken(format!(
-            "{}.{}",
-            URL_SAFE_NO_PAD.encode(payload),
-            URL_SAFE_NO_PAD.encode(tag)
-        )))
+        Ok(IssuedOneTimeAuthorization {
+            token: OneTimeCapabilityToken(format!(
+                "{}.{}",
+                URL_SAFE_NO_PAD.encode(payload),
+                URL_SAFE_NO_PAD.encode(tag)
+            )),
+            context: IssuedAuthorizationContext {
+                provider_instance_id: claims.provider_instance_id,
+                parent_lease_id: claims.parent_lease_id,
+                consumer: claims.consumer,
+                capability: claims.capability,
+                store_id: claims.store_id,
+                expires_at: claims.expires_at,
+            },
+        })
     }
 
     fn consume_for_operation_at(

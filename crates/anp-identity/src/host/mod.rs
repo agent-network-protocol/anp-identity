@@ -34,7 +34,8 @@ pub use provider_adoption::{
     ProviderAdoptionTarget,
 };
 pub use provider_authorization::{
-    capability, recipient_public_key_digest, OneTimeCapabilityToken, OneTimeOperationBinding,
+    capability, recipient_public_key_digest, IssuedAuthorizationContext,
+    IssuedOneTimeAuthorization, OneTimeCapabilityToken, OneTimeOperationBinding,
     ProviderAuthorization, ProviderAuthorizationError, ProviderCapabilityLease,
 };
 #[cfg(feature = "root-export")]
@@ -51,8 +52,8 @@ pub use root_transfer::{
     WrappedRootImportOutcome, WrappedRootImportPort,
 };
 pub use sealed_handoff::{
-    sealed_key_agreement_binding, SealedKeyAgreementPort, SealedKeyAgreementRequest,
-    SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_PROTOCOL,
+    sealed_key_agreement_binding, sealed_operation_aad, SealedKeyAgreementPort,
+    SealedKeyAgreementRequest, SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_PROTOCOL,
 };
 #[cfg(feature = "root-export")]
 pub use sealed_handoff::{

@@ -6,8 +6,8 @@ use thiserror::Error;
 
 use super::provider_authorization::ConsumedOneTimeAuthorization;
 use super::{
-    capability, recipient_public_key_digest, KeyAgreementPort, KeyAgreementRequest,
-    OneTimeCapabilityToken, OneTimeOperationBinding, ProviderAuthorization,
+    capability, recipient_public_key_digest, IssuedAuthorizationContext, KeyAgreementPort,
+    KeyAgreementRequest, OneTimeCapabilityToken, OneTimeOperationBinding, ProviderAuthorization,
     ProviderAuthorizationError,
 };
 use crate::{IdentityError, IdentityRef, KeySelector, ManagedIdentity};
@@ -323,10 +323,63 @@ fn sealed_aad(
     recipient_public_key: &[u8; 32],
     consumed: &ConsumedOneTimeAuthorization,
 ) -> Result<Vec<u8>, SealedProviderError> {
+    sealed_aad_values(
+        operation,
+        identity,
+        kid,
+        request_id,
+        operation_input_digest,
+        recipient_public_key,
+        &consumed.provider_instance_id,
+        &consumed.parent_lease_id,
+        &consumed.consumer,
+        &consumed.capability,
+    )
+}
+
+pub fn sealed_operation_aad(
+    context: &IssuedAuthorizationContext,
+    binding: &OneTimeOperationBinding,
+    identity: &IdentityRef,
+) -> Result<Vec<u8>, SealedProviderError> {
+    if context.store_id != identity.store_id || context.capability != binding.capability {
+        return Err(SealedProviderError::IdentityBinding);
+    }
+    let kid = binding
+        .kid
+        .as_deref()
+        .ok_or(SealedProviderError::InvalidRequest)?;
+    sealed_aad_values(
+        binding.operation.as_str(),
+        identity,
+        kid,
+        &binding.request_id,
+        &binding.operation_input_digest,
+        &binding.recipient_public_key,
+        &context.provider_instance_id,
+        &context.parent_lease_id,
+        &context.consumer,
+        &context.capability,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sealed_aad_values(
+    operation: &str,
+    identity: &IdentityRef,
+    kid: &str,
+    request_id: &str,
+    operation_input_digest: &str,
+    recipient_public_key: &[u8; 32],
+    provider_instance_id: &str,
+    parent_lease_id: &str,
+    consumer: &str,
+    capability: &str,
+) -> Result<Vec<u8>, SealedProviderError> {
     #[derive(Serialize)]
     struct Aad<'a> {
         protocol_version: &'static str,
-        operation: &'static str,
+        operation: &'a str,
         provider_instance_id: &'a str,
         parent_lease_id: &'a str,
         consumer: &'a str,
@@ -341,10 +394,10 @@ fn sealed_aad(
     serde_json_canonicalizer::to_vec(&Aad {
         protocol_version: SEALED_SECRET_PROTOCOL,
         operation,
-        provider_instance_id: &consumed.provider_instance_id,
-        parent_lease_id: &consumed.parent_lease_id,
-        consumer: &consumed.consumer,
-        capability: &consumed.capability,
+        provider_instance_id,
+        parent_lease_id,
+        consumer,
+        capability,
         store_id: &identity.store_id,
         identity_id: &identity.identity_id,
         kid,
