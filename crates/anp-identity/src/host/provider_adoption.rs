@@ -233,4 +233,91 @@ mod tests {
         );
         assert!(!root.path().join("root-key.b64u").exists());
     }
+
+    #[test]
+    fn adoption_recovers_after_every_persisted_phase() {
+        use crate::store::ProviderAdoptionPersistPoint;
+
+        for fail_after in [
+            ProviderAdoptionPersistPoint::TargetKeyImported,
+            ProviderAdoptionPersistPoint::InitialJournalWritten,
+            ProviderAdoptionPersistPoint::ManifestSwitched,
+            ProviderAdoptionPersistPoint::SwitchedJournalWritten,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let root_key = [0x66; 32];
+            let mut manager = crate::IdentityManager::initialize(crate::IdentityManagerConfig {
+                state_root: root.path().to_path_buf(),
+                root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                    "awiki-vault",
+                    root_key,
+                )),
+            })
+            .unwrap();
+            let reference = manager.create(create_spec()).unwrap().reference();
+            let before_records = record_bytes(root.path());
+            let before_fingerprint = serde_json::from_slice::<crate::StoreManifest>(
+                &std::fs::read(root.path().join("manifest.json")).unwrap(),
+            )
+            .unwrap()
+            .root_key_fingerprint;
+            let target = FileRootKeyProvider::new(
+                "local-private-file",
+                default_file_root_key_path(root.path()),
+            );
+
+            assert!(StoreRuntime::adopt_root_key_provider_injected(
+                root.path(),
+                RootKey::from_bytes(root_key),
+                &target,
+                fail_after,
+            )
+            .is_err());
+            let report = adopt_store_root_key_provider(AdoptStoreRootKeyRequest {
+                state_root: root.path().to_path_buf(),
+                existing_root_key: Zeroizing::new(root_key),
+                target: ProviderAdoptionTarget::LocalPrivateFile,
+            })
+            .unwrap();
+            assert_eq!(report.store_id, reference.store_id);
+            assert_eq!(report.root_key_fingerprint, before_fingerprint);
+            assert_eq!(record_bytes(root.path()), before_records);
+            assert!(!root.path().join("provider-adoption-v1.json").exists());
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let root_key = [0x67; 32];
+        let mut manager = crate::IdentityManager::initialize(crate::IdentityManagerConfig {
+            state_root: root.path().to_path_buf(),
+            root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                "awiki-vault",
+                root_key,
+            )),
+        })
+        .unwrap();
+        let reference = manager.create(create_spec()).unwrap().reference();
+        let target = FileRootKeyProvider::new(
+            "local-private-file",
+            default_file_root_key_path(root.path()),
+        );
+        let runtime = StoreRuntime::adopt_root_key_provider(
+            root.path(),
+            RootKey::from_bytes(root_key),
+            &target,
+        )
+        .unwrap();
+        assert!(runtime
+            .complete_root_key_provider_adoption_injected(
+                ProviderAdoptionPersistPoint::JournalRemoved,
+            )
+            .is_err());
+        let report = adopt_store_root_key_provider(AdoptStoreRootKeyRequest {
+            state_root: root.path().to_path_buf(),
+            existing_root_key: Zeroizing::new(root_key),
+            target: ProviderAdoptionTarget::LocalPrivateFile,
+        })
+        .unwrap();
+        assert_eq!(report.store_id, reference.store_id);
+        assert!(!root.path().join("provider-adoption-v1.json").exists());
+    }
 }

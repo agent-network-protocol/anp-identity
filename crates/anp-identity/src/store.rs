@@ -33,6 +33,15 @@ enum ProviderAdoptionPhase {
     ManifestSwitched,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderAdoptionPersistPoint {
+    TargetKeyImported,
+    InitialJournalWritten,
+    ManifestSwitched,
+    SwitchedJournalWritten,
+    JournalRemoved,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum ProviderInitialization<'a> {
     Required(&'a dyn RootKeyProvider),
@@ -128,7 +137,15 @@ impl StoreRuntime {
         root_key: RootKey,
         target: &dyn RootKeyProvider,
     ) -> DidResult<Self> {
-        let root = root.into();
+        Self::adopt_root_key_provider_inner(root.into(), root_key, target, &mut |_| Ok(()))
+    }
+
+    fn adopt_root_key_provider_inner(
+        root: PathBuf,
+        root_key: RootKey,
+        target: &dyn RootKeyProvider,
+        after_persist: &mut dyn FnMut(ProviderAdoptionPersistPoint) -> DidResult<()>,
+    ) -> DidResult<Self> {
         let lock = StoreLock::new(&root);
         let guard = lock.acquire_exclusive()?;
         let mut manifest = read_manifest(&root)?;
@@ -140,6 +157,7 @@ impl StoreRuntime {
         let journal_path = provider_adoption_journal_path(&root);
         if manifest.provider == target_binding && !journal_path.exists() {
             target.import_existing(&guard, &root_key)?;
+            after_persist(ProviderAdoptionPersistPoint::TargetKeyImported)?;
             drop(guard);
             return Self::open(root, &[target]);
         }
@@ -158,7 +176,9 @@ impl StoreRuntime {
         };
         validate_provider_adoption_journal(&journal, &manifest, &target_binding)?;
         target.import_existing(&guard, &root_key)?;
+        after_persist(ProviderAdoptionPersistPoint::TargetKeyImported)?;
         write_provider_adoption_journal(&root, &journal)?;
+        after_persist(ProviderAdoptionPersistPoint::InitialJournalWritten)?;
 
         if manifest.provider == journal.original_provider
             && manifest.generation == journal.original_generation
@@ -169,6 +189,7 @@ impl StoreRuntime {
                 .checked_add(1)
                 .ok_or(DidError::Conflict)?;
             write_manifest(&root, &guard, &manifest)?;
+            after_persist(ProviderAdoptionPersistPoint::ManifestSwitched)?;
         } else if manifest.provider != target_binding
             || manifest.generation
                 != journal
@@ -180,11 +201,37 @@ impl StoreRuntime {
         }
         journal.phase = ProviderAdoptionPhase::ManifestSwitched;
         write_provider_adoption_journal(&root, &journal)?;
+        after_persist(ProviderAdoptionPersistPoint::SwitchedJournalWritten)?;
         drop(guard);
         Self::open(root, &[target])
     }
 
+    #[cfg(test)]
+    pub(crate) fn adopt_root_key_provider_injected(
+        root: impl Into<PathBuf>,
+        root_key: RootKey,
+        target: &dyn RootKeyProvider,
+        fail_after: ProviderAdoptionPersistPoint,
+    ) -> DidResult<Self> {
+        Self::adopt_root_key_provider_inner(root.into(), root_key, target, &mut |point| {
+            if point == fail_after {
+                Err(DidError::Io(
+                    "injected provider adoption failure".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
+        })
+    }
+
     pub(crate) fn complete_root_key_provider_adoption(&self) -> DidResult<()> {
+        self.complete_root_key_provider_adoption_inner(&mut |_| Ok(()))
+    }
+
+    fn complete_root_key_provider_adoption_inner(
+        &self,
+        after_persist: &mut dyn FnMut(ProviderAdoptionPersistPoint) -> DidResult<()>,
+    ) -> DidResult<()> {
         let guard = self.acquire_write()?;
         let journal_path = provider_adoption_journal_path(&self.root);
         if !journal_path.exists() {
@@ -199,7 +246,24 @@ impl StoreRuntime {
             return Err(DidError::Conflict);
         }
         guard.require_store(&self.root)?;
-        remove_file_and_sync(&journal_path)
+        remove_file_and_sync(&journal_path)?;
+        after_persist(ProviderAdoptionPersistPoint::JournalRemoved)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn complete_root_key_provider_adoption_injected(
+        &self,
+        fail_after: ProviderAdoptionPersistPoint,
+    ) -> DidResult<()> {
+        self.complete_root_key_provider_adoption_inner(&mut |point| {
+            if point == fail_after {
+                Err(DidError::Io(
+                    "injected provider adoption failure".to_owned(),
+                ))
+            } else {
+                Ok(())
+            }
+        })
     }
 
     pub(crate) fn acquire_write(&self) -> DidResult<StoreWriteGuard> {
