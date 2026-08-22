@@ -21,6 +21,7 @@ const ROOT_EXPORT_SEALED_OPERATION: &str = "export_root_key_sealed";
 const ROOT_IMPORT_SEALED_OPERATION: &str = "import_legacy_root_transfer_sealed";
 #[cfg(feature = "key-import")]
 const IDENTITY_MATERIAL_IMPORT_SEALED_OPERATION: &str = "import_identity_material_sealed";
+const PROVIDER_ADOPTION_SEALED_OPERATION: &str = "adopt_store_root_key_provider_sealed";
 
 /// HPKE ciphertext safe to carry across the TypeScript bridge.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -142,6 +143,31 @@ pub struct PreparedSealedIdentityMaterialImport {
     preparation: SealedIdentityMaterialImportPreparation,
     binding: OneTimeOperationBinding,
     item_aad: Vec<Vec<u8>>,
+}
+
+pub struct SealedProviderAdoptionPreparation {
+    pub state_root: std::path::PathBuf,
+    pub target: super::ProviderAdoptionTarget,
+    pub request_id: String,
+}
+
+/// Store-level offer whose root key can only be supplied as an HPKE ciphertext.
+pub struct SealedProviderAdoptionOffer {
+    pub store_id: String,
+    pub root_key_fingerprint: String,
+    pub recipient_public_key: [u8; 32],
+    pub request_id: String,
+    pub token: OneTimeCapabilityToken,
+    pub authorization: IssuedAuthorizationContext,
+    pub aad_b64u: String,
+}
+
+pub struct PreparedSealedProviderAdoption {
+    recipient: anp::sealed_handoff::SealedHandoffRecipient,
+    preparation: SealedProviderAdoptionPreparation,
+    manifest: crate::StoreManifest,
+    binding: OneTimeOperationBinding,
+    aad: Vec<u8>,
 }
 
 #[cfg(feature = "key-import")]
@@ -321,6 +347,90 @@ impl PreparedSealedIdentityMaterialImport {
             return Err(SealedProviderError::IdentityBinding);
         }
         Ok(imported)
+    }
+}
+
+impl PreparedSealedProviderAdoption {
+    pub fn prepare(
+        authorization: &ProviderAuthorization,
+        lease: &super::ProviderCapabilityLease,
+        preparation: SealedProviderAdoptionPreparation,
+        ttl_seconds: i64,
+    ) -> Result<(Self, SealedProviderAdoptionOffer), SealedProviderError> {
+        if preparation.request_id.trim().is_empty() {
+            return Err(SealedProviderError::InvalidRequest);
+        }
+        let manifest = crate::store::StoreRuntime::manifest_at(&preparation.state_root)
+            .map_err(IdentityError::from)?;
+        let recipient = anp::sealed_handoff::SealedHandoffRecipient::generate();
+        let binding =
+            sealed_provider_adoption_binding(&preparation, &manifest, recipient.public_key())?;
+        let issued = authorization.issue_one_time_with_context(lease, &binding, ttl_seconds)?;
+        let identity = store_adoption_identity(&manifest);
+        let aad = sealed_aad_values(
+            PROVIDER_ADOPTION_SEALED_OPERATION,
+            &identity,
+            "store-root-key",
+            &preparation.request_id,
+            &binding.operation_input_digest,
+            recipient.public_key(),
+            &issued.context.provider_instance_id,
+            &issued.context.parent_lease_id,
+            &issued.context.consumer,
+            &issued.context.capability,
+        )?;
+        let offer = SealedProviderAdoptionOffer {
+            store_id: manifest.store_id.clone(),
+            root_key_fingerprint: manifest.root_key_fingerprint.clone(),
+            recipient_public_key: *recipient.public_key(),
+            request_id: preparation.request_id.clone(),
+            token: issued.token,
+            authorization: issued.context,
+            aad_b64u: URL_SAFE_NO_PAD.encode(&aad),
+        };
+        Ok((
+            Self {
+                recipient,
+                preparation,
+                manifest,
+                binding,
+                aad,
+            },
+            offer,
+        ))
+    }
+
+    pub fn complete(
+        self,
+        authorization: &ProviderAuthorization,
+        token: OneTimeCapabilityToken,
+        envelope: &SealedSecretEnvelope,
+    ) -> Result<super::ProviderAdoptionReport, SealedProviderError> {
+        let consumed = authorization.consume_for_operation(&token, &self.binding)?;
+        let current = crate::store::StoreRuntime::manifest_at(&self.preparation.state_root)
+            .map_err(IdentityError::from)?;
+        if consumed.store_id != self.manifest.store_id || current != self.manifest {
+            return Err(SealedProviderError::IdentityBinding);
+        }
+        let root_key = self
+            .recipient
+            .open(&envelope.to_handoff()?, SEALED_SECRET_INFO, &self.aad)
+            .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        let root_key: [u8; 32] = root_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        let report = super::adopt_store_root_key_provider(super::AdoptStoreRootKeyRequest {
+            state_root: self.preparation.state_root,
+            existing_root_key: zeroize::Zeroizing::new(root_key),
+            target: self.preparation.target,
+        })?;
+        if report.store_id != self.manifest.store_id
+            || report.root_key_fingerprint != self.manifest.root_key_fingerprint
+        {
+            return Err(SealedProviderError::IdentityBinding);
+        }
+        Ok(report)
     }
 }
 
@@ -687,6 +797,61 @@ fn sealed_identity_material_item_aad(
         &context.consumer,
         &context.capability,
     )
+}
+
+pub fn sealed_provider_adoption_binding(
+    preparation: &SealedProviderAdoptionPreparation,
+    manifest: &crate::StoreManifest,
+    recipient_public_key: &[u8; 32],
+) -> Result<OneTimeOperationBinding, SealedProviderError> {
+    if preparation.request_id.trim().is_empty()
+        || manifest.store_id.trim().is_empty()
+        || manifest.root_key_fingerprint.trim().is_empty()
+    {
+        return Err(SealedProviderError::InvalidRequest);
+    }
+    #[derive(Serialize)]
+    struct DigestInput<'a> {
+        protocol: &'static str,
+        operation: &'static str,
+        store_id: &'a str,
+        state_root: &'a std::path::Path,
+        original_provider: &'a crate::RootKeyProviderBinding,
+        target_provider: &'a super::ProviderAdoptionTarget,
+        root_key_fingerprint: &'a str,
+        generation: u64,
+        request_id: &'a str,
+        recipient_public_key_digest: String,
+    }
+    let input = DigestInput {
+        protocol: SEALED_SECRET_PROTOCOL,
+        operation: PROVIDER_ADOPTION_SEALED_OPERATION,
+        store_id: &manifest.store_id,
+        state_root: &preparation.state_root,
+        original_provider: &manifest.provider,
+        target_provider: &preparation.target,
+        root_key_fingerprint: &manifest.root_key_fingerprint,
+        generation: manifest.generation,
+        request_id: &preparation.request_id,
+        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+    };
+    Ok(OneTimeOperationBinding {
+        capability: capability::IDENTITY_IMPORT.to_owned(),
+        identity_id: manifest.store_id.clone(),
+        operation: PROVIDER_ADOPTION_SEALED_OPERATION.to_owned(),
+        kid: Some("store-root-key".to_owned()),
+        request_id: preparation.request_id.clone(),
+        recipient_public_key: *recipient_public_key,
+        operation_input_digest: canonical_digest(&input)?,
+    })
+}
+
+fn store_adoption_identity(manifest: &crate::StoreManifest) -> IdentityRef {
+    IdentityRef {
+        store_id: manifest.store_id.clone(),
+        identity_id: manifest.store_id.clone(),
+        did: format!("store:{}", manifest.store_id),
+    }
 }
 
 fn validate_identity_binding(
@@ -1086,6 +1251,92 @@ mod tests {
             imported.host_status().unwrap().root_capability,
             super::super::HostRootCapability::Active
         );
+    }
+
+    #[test]
+    fn sealed_provider_adoption_never_exposes_store_root_key_to_bridge() {
+        let root = tempfile::tempdir().unwrap();
+        let root_key = [0x6A; 32];
+        let mut manager = crate::IdentityManager::initialize(crate::IdentityManagerConfig {
+            state_root: root.path().to_path_buf(),
+            root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                "awiki-vault",
+                root_key,
+            )),
+        })
+        .unwrap();
+        let identity = manager
+            .create(crate::CreateIdentityRequest {
+                profile: crate::DidProfile::E1,
+                domain: "example.com".to_owned(),
+                port: None,
+                path_segments: vec!["sealed-provider-adoption".to_owned()],
+                capabilities: crate::Capabilities { did_wba: false },
+                managed_keys: vec![crate::ManagedKeySpec {
+                    fragment: "root".to_owned(),
+                    role: crate::KeyRole::RootControl,
+                }],
+                external_keys: Vec::new(),
+                services: Vec::new(),
+                agent_description_url: None,
+                extensions: Vec::new(),
+            })
+            .unwrap();
+        let reference = identity.reference();
+        let authority = ProviderAuthorization::new();
+        let lease = authority
+            .acquire_lease(
+                "dsh-awiki".to_owned(),
+                [capability::IDENTITY_IMPORT.to_owned()],
+                reference.store_id.clone(),
+                600,
+            )
+            .unwrap();
+        let (prepared, offer) = PreparedSealedProviderAdoption::prepare(
+            &authority,
+            &lease,
+            SealedProviderAdoptionPreparation {
+                state_root: root.path().to_path_buf(),
+                target: super::super::ProviderAdoptionTarget::LocalPrivateFile,
+                request_id: "provider-adoption-1".to_owned(),
+            },
+            60,
+        )
+        .unwrap();
+        let aad = URL_SAFE_NO_PAD.decode(&offer.aad_b64u).unwrap();
+        let sealed = anp::sealed_handoff::SealedHandoff::seal(
+            &offer.recipient_public_key,
+            SEALED_SECRET_INFO,
+            &aad,
+            &root_key,
+        )
+        .unwrap();
+        let report = prepared
+            .complete(
+                &authority,
+                offer.token,
+                &SealedSecretEnvelope::from_handoff(&sealed),
+            )
+            .unwrap();
+        assert_eq!(report.store_id, reference.store_id);
+        assert_eq!(
+            report.provider.kind,
+            crate::RootKeyProviderKind::LocalPrivateFile
+        );
+        assert!(crate::IdentityManager::open(crate::IdentityManagerConfig {
+            state_root: root.path().to_path_buf(),
+            root_key: crate::RootKeySource::Injected(crate::InjectedStoreKey::new(
+                "awiki-vault",
+                root_key,
+            )),
+        })
+        .is_err());
+        let reopened = crate::IdentityManager::open(crate::IdentityManagerConfig {
+            state_root: root.path().to_path_buf(),
+            root_key: crate::RootKeySource::LocalPrivateFile,
+        })
+        .unwrap();
+        assert_eq!(reopened.get(&reference).unwrap().reference(), reference);
     }
 
     #[cfg(feature = "key-import")]

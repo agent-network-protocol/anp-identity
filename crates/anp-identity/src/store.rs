@@ -51,6 +51,10 @@ pub(crate) struct StoreRuntime {
 }
 
 impl StoreRuntime {
+    pub(crate) fn manifest_at(root: &Path) -> DidResult<StoreManifest> {
+        read_manifest(root)
+    }
+
     pub(crate) fn initialize(
         root: impl Into<PathBuf>,
         initialization: ProviderInitialization<'_>,

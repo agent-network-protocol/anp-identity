@@ -59,9 +59,10 @@ pub use sealed_handoff::{
     SealedIdentityMaterialKeySpec, SealedImportOffer, SealedRootImportPreparation,
 };
 pub use sealed_handoff::{
-    sealed_key_agreement_binding, sealed_operation_aad, SealedKeyAgreementPort,
-    SealedKeyAgreementRequest, SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_INFO,
-    SEALED_SECRET_PROTOCOL,
+    sealed_key_agreement_binding, sealed_operation_aad, sealed_provider_adoption_binding,
+    PreparedSealedProviderAdoption, SealedKeyAgreementPort, SealedKeyAgreementRequest,
+    SealedProviderAdoptionOffer, SealedProviderAdoptionPreparation, SealedProviderError,
+    SealedSecretEnvelope, SEALED_SECRET_INFO, SEALED_SECRET_PROTOCOL,
 };
 #[cfg(feature = "root-export")]
 pub use sealed_handoff::{

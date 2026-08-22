@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::keystore::SecretRef;
@@ -11,6 +12,8 @@ use crate::store::StoreRuntime;
 use crate::{DidStore, IdentityError, IdentityResult, KeyOrigin, RootKeyProviderBinding};
 
 /// Destination for same-key provider adoption. The Store Root Key bytes do not rotate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ProviderAdoptionTarget {
     LocalPrivateFile,
     Keyring { service: String, account: String },
@@ -23,7 +26,8 @@ pub struct AdoptStoreRootKeyRequest {
     pub target: ProviderAdoptionTarget,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderAdoptionReport {
     pub store_id: String,
     pub provider: RootKeyProviderBinding,
