@@ -5,9 +5,23 @@
   "license": "Apache-2.0",
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./provider": {
+      "types": "./provider.d.ts",
+      "require": "./provider.js",
+      "default": "./provider.js"
+    }
+  },
   "files": [
     "index.js",
     "index.d.ts",
+    "provider.js",
+    "provider.d.ts",
     "native.cjs",
     "*.node",
     "README.md",

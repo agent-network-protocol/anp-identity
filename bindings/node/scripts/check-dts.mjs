@@ -16,12 +16,15 @@ for (const [name, fixture] of declarations) {
 }
 const actual = declarations
   .map(([name]) => readFileSync(join(root, name), 'utf8'))
+  .concat(readFileSync(join(root, 'provider.d.ts'), 'utf8'))
   .join('\n')
 for (const forbidden of [
   /private[_A-Z]?key/i,
   /private[_A-Z]?pem/i,
   /BEGIN PRIVATE KEY/i,
   /export.*secretbytes/i,
+  /DidStore/,
+  /\becdh\s*\(/,
 ]) {
   if (forbidden.test(actual)) {
     throw new Error(`index.d.ts exposes forbidden private material: ${forbidden}`)

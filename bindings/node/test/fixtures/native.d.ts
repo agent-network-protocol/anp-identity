@@ -20,6 +20,13 @@ export declare class IdentityManager {
 }
 export type JsIdentityManager = IdentityManager
 
+export declare class IdentityProvider {
+  static initialize(config: JsIdentityManagerConfig): Promise<IdentityProvider>
+  static open(config: JsIdentityManagerConfig): Promise<IdentityProvider>
+  acquireLease(request: JsProviderLeaseRequest): Promise<JsProviderLease>
+}
+export type JsIdentityProvider = IdentityProvider
+
 export declare class ManagedIdentity {
   reference(): Promise<JsIdentityRef>
   publicIdentity(): Promise<any>
@@ -30,6 +37,58 @@ export declare class ManagedIdentity {
   resumeDocumentChange(): Promise<JsDocumentChangeSession | null>
 }
 export type JsManagedIdentity = ManagedIdentity
+
+export declare class PreparedIdentityMaterialImport {
+  offer(): any
+  complete(token: string, envelopes: any): Promise<any>
+}
+export type JsPreparedIdentityMaterialImport = PreparedIdentityMaterialImport
+
+export declare class PreparedProviderAdoption {
+  offer(): any
+  complete(token: string, envelope: any): Promise<any>
+}
+export type JsPreparedProviderAdoption = PreparedProviderAdoption
+
+export declare class PreparedRootImport {
+  offer(): any
+  complete(token: string, envelope: any): Promise<string>
+}
+export type JsPreparedRootImport = PreparedRootImport
+
+export declare class ProviderLease {
+  dispose(): void
+  list(): Promise<any>
+  publicIdentity(identity: JsIdentityRef): Promise<any>
+  create(request: any): Promise<any>
+  sign(identity: JsIdentityRef, request: JsSignRequest): Promise<JsSignature>
+  signOriginProof(identity: JsIdentityRef, request: JsOriginProofRequest): Promise<any>
+  prepareHttpSignature(request: JsExactHttpSigningRequest): Promise<any>
+  ecdhSealed(request: JsSealedKeyAgreementRequest): Promise<any>
+  exportRootKeySealed(request: JsSealedRootExportRequest): Promise<any>
+  prepareLegacyRootImport(request: JsSealedRootImportPreparation): Promise<JsPreparedRootImport>
+  prepareIdentityMaterialImport(request: JsSealedIdentityImportPreparation): Promise<JsPreparedIdentityMaterialImport>
+  prepareProviderAdoption(request: JsSealedProviderAdoptionPreparation): Promise<JsPreparedProviderAdoption>
+}
+export type JsProviderLease = ProviderLease
+
+export interface JsExactHttpSigningRequest {
+  identity: JsIdentityRef
+  kid?: string
+  url: string
+  method: string
+  headers: Array<JsHttpHeader>
+  body?: Buffer
+  nonce?: string
+  created?: number
+  expires?: number
+  coveredComponents?: Array<string>
+}
+
+export interface JsHttpHeader {
+  name: string
+  value: string
+}
 
 export interface JsIdentityManagerConfig {
   stateRoot: string
@@ -60,6 +119,48 @@ export interface JsOriginProofRequest {
   body: any
   kid?: string
   options?: JsOriginProofOptions
+}
+
+export interface JsProviderLeaseRequest {
+  consumer: string
+  capabilities: Array<string>
+  ttlSeconds: number
+}
+
+export interface JsSealedIdentityImportPreparation {
+  remote: any
+  didWba: boolean
+  keys: any
+  requestId: string
+}
+
+export interface JsSealedKeyAgreementRequest {
+  identity: JsIdentityRef
+  kid: string
+  peerPublic: Buffer
+  recipientPublicKey: Buffer
+  requestId: string
+}
+
+export interface JsSealedProviderAdoptionPreparation {
+  stateRoot: string
+  target: any
+  requestId: string
+}
+
+export interface JsSealedRootExportRequest {
+  identity: JsIdentityRef
+  kid: string
+  recipientPublicKey: Buffer
+  requestId: string
+  userPresenceConfirmed: boolean
+}
+
+export interface JsSealedRootImportPreparation {
+  identity: JsIdentityRef
+  evidence: any
+  encoding: string
+  requestId: string
 }
 
 export interface JsSignature {
