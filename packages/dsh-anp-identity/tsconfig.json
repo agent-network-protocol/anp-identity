@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "lib",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node"],
+    "skipLibCheck": true,
+    "paths": {
+      "@agent-network-protocol/dsh-anp-identity": ["./src/index.ts"],
+      "@agent-network-protocol/anp-identity": ["../../bindings/node/index.d.ts"],
+      "@agent-network-protocol/anp-identity/provider": ["../../bindings/node/provider.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
