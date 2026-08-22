@@ -1,0 +1,21 @@
+# Host-only ANP Identity service and its native Provider. Apply after the DSH
+# base profile. Keep the Provider after the Service so Cordis injection owns
+# shutdown ordering.
+
+- insert:
+    - id: anp-identity
+      name: '@agent-network-protocol/dsh-anp-identity'
+      config:
+        stateRoot: !!js process.env.DSH_ANP_IDENTITY_STATE_ROOT
+        allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '[]')
+        allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '[]')
+        httpAllowedOrigins: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS ?? '{}')
+        recoveryOnOpen: true
+
+    - id: anp-identity-provider
+      name: '@agent-network-protocol/dsh-anp-identity/provider'
+      config:
+        stateRoot: !!js process.env.DSH_ANP_IDENTITY_STATE_ROOT
+        rootKeyProvider: !!js process.env.DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER ?? 'keyring'
+        rootKeyProviderId: !!js process.env.DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER_ID ?? 'anp-identity/dsh'
+        keyringFallbackToLocalFile: false
