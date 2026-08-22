@@ -15,6 +15,12 @@ pub struct ZeroizingSharedSecret {
 }
 
 impl ZeroizingSharedSecret {
+    pub(crate) fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes: Zeroizing::new(bytes),
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.bytes
     }
@@ -35,9 +41,7 @@ impl KeyAgreementPort for ManagedIdentity {
         let engine = self.lock_engine()?;
         let kid = select_agreement_key(&engine, &request.key)?;
         let shared = engine.ecdh(&kid, &request.peer_public)?;
-        Ok(ZeroizingSharedSecret {
-            bytes: Zeroizing::new(*shared.as_bytes()),
-        })
+        Ok(ZeroizingSharedSecret::new(*shared.as_bytes()))
     }
 }
 

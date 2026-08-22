@@ -119,8 +119,12 @@ impl IdentityManager {
         })
     }
 
-    fn store_id(&self) -> &str {
+    pub(crate) fn store_id(&self) -> &str {
         &self.engine.manifest().store_id
+    }
+
+    pub(crate) fn engine_mut(&mut self) -> &mut DidStore {
+        &mut self.engine
     }
 
     fn validate_store(&self, reference: &IdentityRef) -> IdentityResult<()> {
@@ -130,7 +134,7 @@ impl IdentityManager {
         Ok(())
     }
 
-    fn wrap(&self, engine: crate::DidIdentity) -> ManagedIdentity {
+    pub(crate) fn wrap(&self, engine: crate::DidIdentity) -> ManagedIdentity {
         let reference = IdentityRef {
             store_id: self.store_id().to_owned(),
             identity_id: engine.identity_id().to_owned(),
