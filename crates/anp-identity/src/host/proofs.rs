@@ -74,7 +74,7 @@ impl TypedProofPort for ManagedIdentity {
     }
 }
 
-fn select_root_key(
+pub(crate) fn select_root_key(
     identity: &crate::DidIdentity,
     selector: &KeySelector,
 ) -> IdentityResult<String> {
