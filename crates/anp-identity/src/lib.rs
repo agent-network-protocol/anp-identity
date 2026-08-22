@@ -4,6 +4,7 @@ mod adoption;
 mod crypto_ops;
 mod document;
 mod error;
+mod facade;
 mod fs_util;
 mod identity;
 mod input;
@@ -28,6 +29,17 @@ pub use adoption::{
 pub use anp::authentication::HttpSignatureOptions;
 pub use crypto_ops::SharedSecret;
 pub use error::{DidError, DidResult};
+pub use facade::{
+    CreateIdentityRequest, DeleteIdentityRequest, DeviceInput, DidDocument, DocumentChange,
+    DocumentChangeOutcome, DocumentChangeRequest, DocumentChangeSession, IdentityDescriptor,
+    IdentityError, IdentityManager, IdentityManagerConfig, IdentityRef, IdentityResult,
+    IdentityService, InjectedStoreKey, KeyAlgorithm, KeyPurpose, KeySelector, ManagedIdentity,
+    OriginProofOptions, OriginProofRequest, PreparedDocumentChange, PublicCapabilities,
+    PublicIdentity, PublicIdentityState, PublicKeyDescriptor, PublicKeyInput, PublicationAttempt,
+    PublicationResult, RecoveryReport, RootKeySource, SignRequest, Signature, SignedOriginProof,
+    SigningPurpose, StoreHealth, StoreInfo, VerificationOutcome, VerifiedPublicationEvidence,
+    VerifiedRemoteDocument, VerifyRequest,
+};
 pub use identity::{DidIdentity, DidStore};
 pub use input::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidExtensionSpec,

@@ -195,7 +195,7 @@ impl DidStore {
         self.create_identity_inner(spec, None)
     }
 
-    fn from_runtime(runtime: StoreRuntime) -> DidResult<Self> {
+    pub(crate) fn from_runtime(runtime: StoreRuntime) -> DidResult<Self> {
         let runtime = Arc::new(runtime);
         let registry = recover(&runtime)?;
         Ok(Self {

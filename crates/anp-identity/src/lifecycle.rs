@@ -180,6 +180,17 @@ impl DidIdentity {
         )
     }
 
+    pub(crate) fn reject_publication_before_acceptance(
+        &mut self,
+        revision_id: &str,
+    ) -> DidResult<()> {
+        self.transition_publication(
+            revision_id,
+            PublicationState::PublicationInFlight,
+            PublicationState::Prepared,
+        )
+    }
+
     pub fn commit_update(&mut self, revision_id: &str) -> DidResult<()> {
         self.commit_pending(revision_id, false)
     }
