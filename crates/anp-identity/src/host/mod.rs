@@ -33,7 +33,10 @@ pub use root_transfer::{
     LegacyRootImportEvidence, LegacyRootImportOutcome, LegacyRootImportRequest, RootImportPort,
     RootPrivateKeyEncoding,
 };
-pub use root_transfer::{PendingRootObjectProofRequest, RootPromotionPort, RootPromotionRequest};
+pub use root_transfer::{
+    PendingRootObjectProofRequest, RootPromotionPort, RootPromotionRequest,
+    WrappedRootImportOutcome, WrappedRootImportPort,
+};
 pub use status::{
     HostDocumentCheckpoint, HostRootCapability, IdentityHostStatus, IdentityStatusPort,
 };

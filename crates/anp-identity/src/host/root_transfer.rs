@@ -26,6 +26,32 @@ pub trait RootPromotionPort {
     ) -> IdentityResult<Value>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrappedRootImportOutcome {
+    Pending,
+    Active,
+}
+
+pub trait WrappedRootImportPort {
+    fn import_wrapped_root_envelope(
+        &mut self,
+        envelope: &crate::WrappedRootEnvelope,
+    ) -> IdentityResult<WrappedRootImportOutcome>;
+}
+
+impl WrappedRootImportPort for ManagedIdentity {
+    fn import_wrapped_root_envelope(
+        &mut self,
+        envelope: &crate::WrappedRootEnvelope,
+    ) -> IdentityResult<WrappedRootImportOutcome> {
+        let outcome = self.lock_engine()?.import_wrapped_root(envelope)?;
+        Ok(match outcome {
+            crate::RootTransferImportOutcome::Pending => WrappedRootImportOutcome::Pending,
+            crate::RootTransferImportOutcome::Active => WrappedRootImportOutcome::Active,
+        })
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PendingRootObjectProofRequest {

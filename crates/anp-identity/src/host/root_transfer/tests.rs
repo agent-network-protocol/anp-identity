@@ -34,6 +34,45 @@ fn legacy_root_export_requires_explicit_user_presence_and_matches_engine() {
     assert_eq!(facade.as_pkcs8_der(), engine.as_pkcs8_der());
 }
 
+#[test]
+fn wrapped_root_import_is_available_only_through_the_host_port() {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = IdentityManager::initialize(IdentityManagerConfig {
+        state_root: root.path().to_owned(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("wrapped-import", [0xd2; 32])),
+    })
+    .unwrap();
+    let mut identity = manager.create(spec()).unwrap();
+    let envelope = crate::WrappedRootEnvelope {
+        envelope_type: crate::WRAPPED_ROOT_ENVELOPE_TYPE.to_owned(),
+        version: crate::WRAPPED_ROOT_ENVELOPE_VERSION,
+        context: crate::RootTransferContext {
+            source_did: identity.reference().did.clone(),
+            target_did: identity.reference().did.clone(),
+            sender_device_id: "sender".to_owned(),
+            recipient_device_id: "recipient".to_owned(),
+            recipient_agreement_kid: format!("{}#missing", identity.reference().did),
+            root_kid: format!("{}#root", identity.reference().did),
+            checkpoint: crate::DocumentCheckpoint {
+                document_version: 1,
+                registry_version: 1,
+                document_digest: "sha256:invalid".to_owned(),
+            },
+            created_at: "2026-08-22T00:00:00Z".to_owned(),
+            expires_at: "2026-08-22T00:05:00Z".to_owned(),
+        },
+        ephemeral_public_b64u: "invalid".to_owned(),
+        nonce_b64u: "invalid".to_owned(),
+        ciphertext_b64u: "invalid".to_owned(),
+        signature_b64u: "invalid".to_owned(),
+    };
+
+    assert_eq!(
+        identity.import_wrapped_root_envelope(&envelope).err(),
+        Some(IdentityError::InvalidRequest)
+    );
+}
+
 fn spec() -> DidCreateSpec {
     DidCreateSpec {
         profile: DidProfile::E1,
