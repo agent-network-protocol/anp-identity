@@ -4,6 +4,7 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use super::convergence::evidence;
+#[cfg(feature = "root-export")]
 use super::proofs::select_root_key;
 use crate::facade::{
     IdentityError, IdentityResult, KeySelector, ManagedIdentity, VerifiedRemoteDocument,
