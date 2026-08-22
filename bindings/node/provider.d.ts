@@ -288,7 +288,7 @@ export class IdentityProvider {
   private constructor()
   static initialize(config: IdentityManagerConfig): Promise<IdentityProvider>
   static open(config: IdentityManagerConfig): Promise<IdentityProvider>
-  acquireLease(request: ProviderLeaseRequest): Promise<ProviderLease>
+  acquireLease(request: ProviderLeaseRequest): ProviderLease
 }
 
 export interface ProviderLease {

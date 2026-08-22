@@ -15,6 +15,19 @@ async function call(operation) {
   }
 }
 
+function callSync(operation) {
+  try {
+    return operation()
+  } catch (error) {
+    const match = /ANP_IDENTITY_CODE:([^:]+):(.*)$/s.exec(String(error.message))
+    if (match) {
+      error.code = match[1]
+      error.message = match[2]
+    }
+    throw error
+  }
+}
+
 class IdentityProvider {
   #inner
 
@@ -30,8 +43,8 @@ class IdentityProvider {
     return new IdentityProvider(await call(native.IdentityProvider.open(config)))
   }
 
-  async acquireLease(request) {
-    return new ProviderLease(await call(this.#inner.acquireLease(request)))
+  acquireLease(request) {
+    return new ProviderLease(callSync(() => this.#inner.acquireLease(request)))
   }
 }
 

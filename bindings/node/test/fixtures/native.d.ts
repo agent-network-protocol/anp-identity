@@ -23,7 +23,7 @@ export type JsIdentityManager = IdentityManager
 export declare class IdentityProvider {
   static initialize(config: JsIdentityManagerConfig): Promise<IdentityProvider>
   static open(config: JsIdentityManagerConfig): Promise<IdentityProvider>
-  acquireLease(request: JsProviderLeaseRequest): Promise<JsProviderLease>
+  acquireLease(request: JsProviderLeaseRequest): JsProviderLease
 }
 export type JsIdentityProvider = IdentityProvider
 

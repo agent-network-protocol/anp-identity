@@ -433,6 +433,7 @@ impl JsDocumentChangeSession {
 pub struct JsIdentityProvider {
     manager: Arc<Mutex<CoreIdentityManager>>,
     authorization: Arc<anp_identity::host::ProviderAuthorization>,
+    store_id: String,
 }
 
 #[napi]
@@ -440,38 +441,36 @@ impl JsIdentityProvider {
     #[napi(factory)]
     pub async fn initialize(config: JsIdentityManagerConfig) -> Result<Self> {
         let config = manager_config(config)?;
-        let manager =
-            run_blocking(move || CoreIdentityManager::initialize(config).map_err(map_error))
-                .await?;
-        Ok(Self::new(manager))
+        let (manager, store_id) = run_blocking(move || {
+            let manager = CoreIdentityManager::initialize(config).map_err(map_error)?;
+            let store_id = manager.info().map_err(map_error)?.store_id;
+            Ok((manager, store_id))
+        })
+        .await?;
+        Ok(Self::new(manager, store_id))
     }
 
     #[napi(factory)]
     pub async fn open(config: JsIdentityManagerConfig) -> Result<Self> {
         let config = manager_config(config)?;
-        let manager =
-            run_blocking(move || CoreIdentityManager::open(config).map_err(map_error)).await?;
-        Ok(Self::new(manager))
+        let (manager, store_id) = run_blocking(move || {
+            let manager = CoreIdentityManager::open(config).map_err(map_error)?;
+            let store_id = manager.info().map_err(map_error)?.store_id;
+            Ok((manager, store_id))
+        })
+        .await?;
+        Ok(Self::new(manager, store_id))
     }
 
     #[napi]
-    pub async fn acquire_lease(&self, request: JsProviderLeaseRequest) -> Result<JsProviderLease> {
-        let manager = Arc::clone(&self.manager);
+    pub fn acquire_lease(&self, request: JsProviderLeaseRequest) -> Result<JsProviderLease> {
         let authorization = Arc::clone(&self.authorization);
-        let store_id = run_blocking(move || {
-            manager
-                .blocking_lock()
-                .info()
-                .map(|info| info.store_id)
-                .map_err(map_error)
-        })
-        .await?;
         let lease = self
             .authorization
             .acquire_lease(
                 request.consumer,
                 request.capabilities,
-                store_id,
+                self.store_id.clone(),
                 request.ttl_seconds,
             )
             .map_err(map_authorization_error)?;
@@ -484,10 +483,11 @@ impl JsIdentityProvider {
 }
 
 impl JsIdentityProvider {
-    fn new(manager: CoreIdentityManager) -> Self {
+    fn new(manager: CoreIdentityManager, store_id: String) -> Self {
         Self {
             manager: Arc::new(Mutex::new(manager)),
             authorization: Arc::new(anp_identity::host::ProviderAuthorization::new()),
+            store_id,
         }
     }
 }
