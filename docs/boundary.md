@@ -14,6 +14,15 @@ an address space with its host. A compromised host process, malicious native
 addon, debugger, core dump, or local process-memory reader is outside the v1
 threat model. This module is not an HSM, Secure Enclave, or independent KMS.
 
+The default Node entry point exposes only `IdentityManager`, `ManagedIdentity`,
+and `DocumentChangeSession`. Host workflows are available from the separate
+`./provider` entry point. That entry point is intended for a trusted DSH host,
+not ordinary plugins, Browser/Remote APIs, or model tools. Every operation is
+authorized by a bounded provider lease; Root Transfer, key import, provider
+adoption, and ECDH additionally use a one-time token bound to the store,
+identity, KID, request digest, request ID, recipient public key, provider
+instance, and parent lease.
+
 The local-file root-key fallback protects file permissions and accidental
 disclosure. An attacker who obtains both that root-key file and the encrypted
 records can decrypt them offline.
@@ -52,6 +61,13 @@ written to a host DTO, journal, log, temporary file, or FFI value.
 
 No other plaintext private-key ingress is part of the boundary.
 
+In External Provider mode, legacy root and migration imports use a reverse
+sealed handoff. ANP Identity generates a one-time X25519 recipient inside Rust,
+returns only its public key plus authenticated AAD, and consumes the resulting
+HPKE ciphertext exactly once. Pending enrollment ECDH uses the same rule as
+active-identity ECDH: TypeScript receives an HPKE envelope, never the shared
+secret.
+
 ## Root-key export and protocol compatibility
 
 The default-off `root-export` feature exposes `export_root_private_key` to Rust
@@ -73,6 +89,11 @@ but type dispatch is exact and disjoint: a damaged, unknown-version, or
 authentication-failing wrapped envelope is never reinterpreted as legacy input.
 `export_wrapped_root` also remains available, but AWiki's sender does not call it.
 
+The Host-only Node provider never returns the exported Root key in plaintext.
+It seals the user-confirmed PKCS#8 bytes directly to a native recipient public
+key. The calling AWiki IM Core opens that envelope inside its native boundary
+before constructing the existing P5-protected `RootKeyEnvelopeV1` payload.
+
 ## Inputs and outputs
 
 Creation accepts an E1 domain, non-empty path segments, capabilities, typed
@@ -83,10 +104,12 @@ Managed root-control is exactly one key. Enabling DID-WBA requires at least one
 managed request-signing key. External root-control keys are forbidden.
 
 Outputs contain the DID document, public key metadata, KIDs, signatures,
-verification results, ECDH results, and the explicit Rust-only root export
-described above. An ECDH result is not a session key; the caller must immediately
-derive a scoped key through HKDF with domain separation. JavaScript Buffer
-copies are outside Rust zeroize coverage.
+verification results, Rust Host ECDH results, sealed Node Provider envelopes,
+and the explicit Rust-only root export described above. A Rust ECDH result is
+not a session key; the caller must immediately derive a scoped key through HKDF
+with domain separation. The default Node Facade has no raw ECDH method. The
+Host-only Provider returns ECDH material only as HPKE ciphertext. JavaScript
+Buffer copies supplied as inputs are outside Rust zeroize coverage.
 
 ## Ownership
 
@@ -112,3 +135,20 @@ verification methods from a published DID document.
 
 Multiple identities share no global singleton. Every operation is scoped to a
 store, identity, and KID. Cross-identity KID use fails closed.
+
+## Store provider adoption
+
+Provider adoption moves custody of the same Store root key from an injected
+host provider to a supported DSH-owned provider. It is not root-key rotation or
+re-encryption: record ciphertexts and `root_key_fingerprint` remain byte-for-byte
+unchanged. The operation verifies the supplied key against the current manifest,
+imports it into the target provider, records a recovery journal, atomically
+switches the manifest binding, and converges safely after interruption at every
+persistent phase.
+
+During an authorized adoption, both the old provider and the new provider may
+temporarily possess the same key. The old provider must be retired by the host
+only after the new binding opens successfully and the adoption report has been
+persisted. DSH External mode passes the key into adoption only through the
+reverse sealed handoff; it is never placed in a TypeScript DTO, log, catalog, or
+journal.

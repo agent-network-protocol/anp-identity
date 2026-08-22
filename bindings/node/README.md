@@ -1,28 +1,71 @@
 # @agent-network-protocol/anp-identity
 
-Node.js bindings for the E1-only `anp-identity` Rust crate. All APIs that can touch
-the filesystem or OS keyring are asynchronous.
+Node.js bindings for ANP Identity, an E1 DID identity manager that keeps managed
+keys behind a native Rust boundary. A single Store can own multiple DIDs. All
+filesystem, keyring, and cryptographic operations are asynchronous so they do
+not block the JavaScript main thread.
 
-Private DID keys are never returned by the JavaScript API. This is a logical
-API/FFI boundary, not process isolation: the native addon shares an address
-space with Node.js and is not an HSM or independent KMS.
+## Public Facade
 
-`initializeInjected()` and `openInjected()` consume and overwrite their
-32-byte root-key `Buffer`, including validation-error paths. Pass a disposable
-Buffer containing uniformly random bytes—not a password—and do not expect to
-reuse it after the call. `initializeEnv()` / `openEnv()` read the same key as
-unpadded base64url from a named environment variable.
+The default package entry exports only:
 
-After a cross-process `conflict`, call `reload()` on the affected `DidStore` or
-`DidIdentity`, inspect the refreshed snapshot, and then decide whether to retry.
-Reload takes the store-wide exclusive lock and runs crash recovery; it is not a
-cheap polling operation. Explicit deletion leaves the authorization state
-`revoked` and exposes `materialErased: true` in key metadata.
+- `IdentityManager` for Store initialization, recovery, and multi-DID lifecycle;
+- `ManagedIdentity` for public snapshots, purpose-scoped signing, verification,
+  Origin Proofs, and document-change preparation;
+- `DocumentChangeSession` for publication, commit, and uncertain-result
+  reconciliation.
 
-`ecdh()` returns a raw X25519 result as a `Buffer`. It is not a session key. Use
-a domain-separated HKDF immediately, then overwrite the Buffer. JavaScript
-copies are not covered by Rust zeroization.
+It does not export Engine types, raw ECDH, HTTP Header patches, key import,
+wrapped Root Transfer, or Root key export.
 
-The v1 package is verified on the build host platform. Build scripts list Linux,
-macOS, and Windows x64/arm64 targets, but a platform becomes supported only
-after its native CI build passes.
+```js
+const { IdentityManager } = require('@agent-network-protocol/anp-identity')
+
+const manager = await IdentityManager.open({
+  stateRoot: '/var/lib/example/identity',
+  rootKeyKind: 'local_private_file',
+})
+
+const [descriptor] = await manager.list()
+const identity = await manager.get(descriptor.reference)
+const signature = await identity.sign({
+  purpose: 'authentication',
+  payload: Buffer.from('request bytes'),
+})
+```
+
+## Trusted DSH Provider entry
+
+`@agent-network-protocol/anp-identity/provider` is a separate Host-only entry
+for a trusted DSH identity plugin and AWiki IM Core adapter. It requires a
+bounded capability lease. High-risk ECDH, Root Transfer, migration import, and
+Store-provider adoption operations additionally consume request-bound one-time
+tokens.
+
+Root keys, imported key material, and ECDH shared secrets never return as
+plaintext from this entry. They cross the TypeScript bridge only in fixed-suite
+HPKE envelopes. Ordinary DSH consumers must use the plugin's narrower client
+lease instead of importing this Host entry.
+
+## Root key sources
+
+The bindings support OS keyring, local private file, named environment variable,
+and an injected 32-byte key. An injected key `Buffer` is consumed and
+overwritten, including validation-error paths. Pass a disposable buffer
+containing uniformly random bytes, not a password, and do not reuse it.
+
+Environment-backed keys are unpadded base64url values read from the explicitly
+configured variable. Local private files protect against accidental disclosure,
+but copying both that file and the encrypted Store permits offline decryption.
+
+## Security boundary
+
+This is a logical API/FFI boundary, not process isolation. The native addon
+shares an address space with Node.js and is not an HSM, Secure Enclave, or
+independent KMS. JavaScript input-buffer copies are outside Rust zeroization.
+See the repository's `docs/boundary.md` for the full trust model, sealed-handoff
+rules, Root Transfer exception, and provider-adoption lifecycle.
+
+The package is supported on a platform only after its native build and tests
+pass there. Declaring a target in the build configuration alone is not a support
+guarantee.

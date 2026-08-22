@@ -2,15 +2,31 @@ impl anp_identity::ExportedRootPrivateKey
 impl anp_identity::host::HostExportedRootPrivateKey
 impl anp_identity::host::RootExportPort for anp_identity::ManagedIdentity
 impl anp_identity::host::RootExportPort for anp_identity::ManagedIdentity
+impl anp_identity::host::SealedRootExportPort for anp_identity::ManagedIdentity
+impl anp_identity::host::SealedRootExportPort for anp_identity::ManagedIdentity
+impl anp_identity::host::SealedRootExportRequest
+pub anp_identity::host::SealedRootExportRequest::identity: anp_identity::IdentityRef
+pub anp_identity::host::SealedRootExportRequest::kid: alloc::string::String
+pub anp_identity::host::SealedRootExportRequest::recipient_public_key: [u8; 32]
+pub anp_identity::host::SealedRootExportRequest::request_id: alloc::string::String
+pub anp_identity::host::SealedRootExportRequest::token: anp_identity::host::OneTimeCapabilityToken
+pub anp_identity::host::SealedRootExportRequest::user_presence_confirmed: bool
 pub anp_identity::host::UserConfirmedRootExportRequest::key: anp_identity::KeySelector
 pub anp_identity::host::UserConfirmedRootExportRequest::user_presence_confirmed: bool
 pub fn anp_identity::DidIdentity::export_root_private_key(&self, &str) -> anp_identity::DidResult<anp_identity::ExportedRootPrivateKey>
 pub fn anp_identity::ExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
 pub fn anp_identity::ManagedIdentity::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
 pub fn anp_identity::ManagedIdentity::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
+pub fn anp_identity::ManagedIdentity::export_root_key_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedRootExportRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::ManagedIdentity::export_root_key_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedRootExportRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
 pub fn anp_identity::host::HostExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
 pub fn anp_identity::host::RootExportPort::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
+pub fn anp_identity::host::SealedRootExportPort::export_root_key_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedRootExportRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::SealedRootExportRequest::operation_binding(&self) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::sealed_root_export_binding(&anp_identity::IdentityRef, &str, &[u8; 32], &str, bool) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
 pub struct anp_identity::ExportedRootPrivateKey
 pub struct anp_identity::host::HostExportedRootPrivateKey
+pub struct anp_identity::host::SealedRootExportRequest
 pub struct anp_identity::host::UserConfirmedRootExportRequest
 pub trait anp_identity::host::RootExportPort
+pub trait anp_identity::host::SealedRootExportPort

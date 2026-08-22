@@ -2,6 +2,8 @@ impl anp_identity::DidStore
 impl anp_identity::ImportedPrivateKey
 impl anp_identity::host::MigrationPort for anp_identity::IdentityManager
 impl anp_identity::host::MigrationPort for anp_identity::IdentityManager
+impl anp_identity::host::PreparedSealedIdentityMaterialImport
+impl anp_identity::host::PreparedSealedRootImport
 impl anp_identity::host::RootImportPort for anp_identity::ManagedIdentity
 impl anp_identity::host::RootImportPort for anp_identity::ManagedIdentity
 impl core::convert::From<anp_identity::host::MigrationPrivateKey> for anp_identity::ImportedPrivateKey
@@ -70,6 +72,28 @@ pub anp_identity::host::RequestSigningIdentityImportRequest::remote: anp_identit
 pub anp_identity::host::RequestSigningIdentityImportRequest::signing_key: anp_identity::host::MigrationPrivateKey
 pub anp_identity::host::RootPrivateKeyEncoding::Pkcs8Der
 pub anp_identity::host::RootPrivateKeyEncoding::Raw32
+pub anp_identity::host::SealedIdentityMaterialImportOffer::authorization: anp_identity::host::IssuedAuthorizationContext
+pub anp_identity::host::SealedIdentityMaterialImportOffer::item_aad_b64u: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::host::SealedIdentityMaterialImportOffer::recipient_public_key: [u8; 32]
+pub anp_identity::host::SealedIdentityMaterialImportOffer::request_id: alloc::string::String
+pub anp_identity::host::SealedIdentityMaterialImportOffer::target: anp_identity::IdentityRef
+pub anp_identity::host::SealedIdentityMaterialImportOffer::token: anp_identity::host::OneTimeCapabilityToken
+pub anp_identity::host::SealedIdentityMaterialImportPreparation::did_wba: bool
+pub anp_identity::host::SealedIdentityMaterialImportPreparation::keys: alloc::vec::Vec<anp_identity::host::SealedIdentityMaterialKeySpec>
+pub anp_identity::host::SealedIdentityMaterialImportPreparation::remote: anp_identity::VerifiedRemoteDocument
+pub anp_identity::host::SealedIdentityMaterialImportPreparation::request_id: alloc::string::String
+pub anp_identity::host::SealedIdentityMaterialKeySpec::encoding: anp_identity::host::MigrationPrivateKeyEncoding
+pub anp_identity::host::SealedIdentityMaterialKeySpec::kid: alloc::string::String
+pub anp_identity::host::SealedIdentityMaterialKeySpec::purpose: anp_identity::host::MigrationKeyPurpose
+pub anp_identity::host::SealedImportOffer::aad_b64u: alloc::string::String
+pub anp_identity::host::SealedImportOffer::authorization: anp_identity::host::IssuedAuthorizationContext
+pub anp_identity::host::SealedImportOffer::recipient_public_key: [u8; 32]
+pub anp_identity::host::SealedImportOffer::request_id: alloc::string::String
+pub anp_identity::host::SealedImportOffer::token: anp_identity::host::OneTimeCapabilityToken
+pub anp_identity::host::SealedRootImportPreparation::encoding: anp_identity::host::RootPrivateKeyEncoding
+pub anp_identity::host::SealedRootImportPreparation::evidence: anp_identity::host::LegacyRootImportEvidence
+pub anp_identity::host::SealedRootImportPreparation::identity: anp_identity::IdentityRef
+pub anp_identity::host::SealedRootImportPreparation::request_id: alloc::string::String
 pub enum anp_identity::PrivateKeyEncoding
 pub enum anp_identity::host::LegacyRootImportOutcome
 pub enum anp_identity::host::MigrationKeyPurpose
@@ -93,7 +117,13 @@ pub fn anp_identity::ManagedIdentity::import_legacy_root(&mut self, anp_identity
 pub fn anp_identity::host::MigrationPort::import_device_identity(&mut self, anp_identity::host::DeviceIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
 pub fn anp_identity::host::MigrationPort::import_full_identity(&mut self, anp_identity::host::FullIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
 pub fn anp_identity::host::MigrationPort::import_request_signing_identity(&mut self, anp_identity::host::RequestSigningIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::host::PreparedSealedIdentityMaterialImport::complete(self, &mut anp_identity::IdentityManager, &anp_identity::host::ProviderAuthorization, anp_identity::host::OneTimeCapabilityToken, &[anp_identity::host::SealedSecretEnvelope]) -> core::result::Result<anp_identity::ManagedIdentity, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::PreparedSealedIdentityMaterialImport::prepare(&anp_identity::IdentityManager, &anp_identity::host::ProviderAuthorization, &anp_identity::host::ProviderCapabilityLease, anp_identity::host::SealedIdentityMaterialImportPreparation, i64) -> core::result::Result<(Self, anp_identity::host::SealedIdentityMaterialImportOffer), anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::PreparedSealedRootImport::complete(self, &mut anp_identity::ManagedIdentity, &anp_identity::host::ProviderAuthorization, anp_identity::host::OneTimeCapabilityToken, &anp_identity::host::SealedSecretEnvelope) -> core::result::Result<anp_identity::host::LegacyRootImportOutcome, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::PreparedSealedRootImport::prepare(&anp_identity::host::ProviderAuthorization, &anp_identity::host::ProviderCapabilityLease, anp_identity::host::SealedRootImportPreparation, i64) -> core::result::Result<(Self, anp_identity::host::SealedImportOffer), anp_identity::host::SealedProviderError>
 pub fn anp_identity::host::RootImportPort::import_legacy_root(&mut self, anp_identity::host::LegacyRootImportRequest) -> anp_identity::IdentityResult<anp_identity::host::LegacyRootImportOutcome>
+pub fn anp_identity::host::sealed_identity_material_import_binding(&anp_identity::IdentityRef, &anp_identity::host::SealedIdentityMaterialImportPreparation, &[u8; 32]) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::sealed_root_import_binding(&anp_identity::host::SealedRootImportPreparation, &[u8; 32]) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
 pub struct anp_identity::DeviceIdentityImportSpec
 pub struct anp_identity::IdentityImportSpec
 pub struct anp_identity::ImportedPrivateKey
@@ -105,6 +135,13 @@ pub struct anp_identity::host::FullIdentityImportRequest
 pub struct anp_identity::host::LegacyRootImportEvidence
 pub struct anp_identity::host::LegacyRootImportRequest
 pub struct anp_identity::host::MigrationPrivateKey
+pub struct anp_identity::host::PreparedSealedIdentityMaterialImport
+pub struct anp_identity::host::PreparedSealedRootImport
 pub struct anp_identity::host::RequestSigningIdentityImportRequest
+pub struct anp_identity::host::SealedIdentityMaterialImportOffer
+pub struct anp_identity::host::SealedIdentityMaterialImportPreparation
+pub struct anp_identity::host::SealedIdentityMaterialKeySpec
+pub struct anp_identity::host::SealedImportOffer
+pub struct anp_identity::host::SealedRootImportPreparation
 pub trait anp_identity::host::MigrationPort
 pub trait anp_identity::host::RootImportPort
