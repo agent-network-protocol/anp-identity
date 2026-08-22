@@ -1,4 +1,16 @@
 impl anp_identity::ExportedRootPrivateKey
+impl anp_identity::host::HostExportedRootPrivateKey
+impl anp_identity::host::RootExportPort for anp_identity::ManagedIdentity
+impl anp_identity::host::RootExportPort for anp_identity::ManagedIdentity
+pub anp_identity::host::UserConfirmedRootExportRequest::key: anp_identity::KeySelector
+pub anp_identity::host::UserConfirmedRootExportRequest::user_presence_confirmed: bool
 pub fn anp_identity::DidIdentity::export_root_private_key(&self, &str) -> anp_identity::DidResult<anp_identity::ExportedRootPrivateKey>
 pub fn anp_identity::ExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
+pub fn anp_identity::ManagedIdentity::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
+pub fn anp_identity::ManagedIdentity::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
+pub fn anp_identity::host::HostExportedRootPrivateKey::as_pkcs8_der(&self) -> &[u8]
+pub fn anp_identity::host::RootExportPort::export_root_for_legacy_envelope(&self, anp_identity::host::UserConfirmedRootExportRequest) -> anp_identity::IdentityResult<anp_identity::host::HostExportedRootPrivateKey>
 pub struct anp_identity::ExportedRootPrivateKey
+pub struct anp_identity::host::HostExportedRootPrivateKey
+pub struct anp_identity::host::UserConfirmedRootExportRequest
+pub trait anp_identity::host::RootExportPort

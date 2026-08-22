@@ -1,5 +1,167 @@
 pub mod anp_identity
 pub use anp_identity::HttpSignatureOptions
+pub mod anp_identity::host
+pub enum anp_identity::host::ConvergenceOutcome
+pub anp_identity::host::ConvergenceOutcome::Activated
+pub anp_identity::host::ConvergenceOutcome::Revoked
+pub anp_identity::host::ConvergenceOutcome::Unchanged
+pub anp_identity::host::ConvergenceOutcome::Updated
+pub enum anp_identity::host::EnrollmentProposalKind
+pub anp_identity::host::EnrollmentProposalKind::Device
+pub anp_identity::host::EnrollmentProposalKind::Device::agreement_key: anp_identity::host::EnrollmentPublicKey
+pub anp_identity::host::EnrollmentProposalKind::Device::device_id: alloc::string::String
+pub anp_identity::host::EnrollmentProposalKind::Device::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::host::EnrollmentProposalKind::Device::signing_key: anp_identity::host::EnrollmentPublicKey
+pub anp_identity::host::EnrollmentProposalKind::RequestSigning
+pub anp_identity::host::EnrollmentProposalKind::RequestSigning::signing_key: anp_identity::host::EnrollmentPublicKey
+pub enum anp_identity::host::HostDocumentChangePhase
+pub anp_identity::host::HostDocumentChangePhase::Prepared
+pub anp_identity::host::HostDocumentChangePhase::PublicationInFlight
+pub anp_identity::host::HostDocumentChangePhase::PublicationUncertain
+pub anp_identity::host::HostDocumentChangePhase::Published
+pub enum anp_identity::host::HostRootCapability
+pub anp_identity::host::HostRootCapability::Absent
+pub anp_identity::host::HostRootCapability::Active
+pub anp_identity::host::HostRootCapability::Pending
+pub enum anp_identity::host::WrappedRootImportOutcome
+pub anp_identity::host::WrappedRootImportOutcome::Active
+pub anp_identity::host::WrappedRootImportOutcome::Pending
+pub struct anp_identity::host::DeviceEnrollmentRequest
+pub anp_identity::host::DeviceEnrollmentRequest::capabilities: anp_identity::host::EnrollmentCapabilities
+pub anp_identity::host::DeviceEnrollmentRequest::device_agreement_fragment: alloc::string::String
+pub anp_identity::host::DeviceEnrollmentRequest::device_id: alloc::string::String
+pub anp_identity::host::DeviceEnrollmentRequest::device_signing_fragment: alloc::string::String
+pub anp_identity::host::DeviceEnrollmentRequest::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::host::DeviceEnrollmentRequest::remote: anp_identity::VerifiedRemoteDocument
+pub struct anp_identity::host::DocumentProofOptions
+pub anp_identity::host::DocumentProofOptions::challenge: core::option::Option<alloc::string::String>
+pub anp_identity::host::DocumentProofOptions::created: core::option::Option<alloc::string::String>
+pub anp_identity::host::DocumentProofOptions::cryptosuite: core::option::Option<alloc::string::String>
+pub anp_identity::host::DocumentProofOptions::domain: core::option::Option<alloc::string::String>
+pub anp_identity::host::DocumentProofOptions::proof_purpose: core::option::Option<alloc::string::String>
+pub anp_identity::host::DocumentProofOptions::proof_type: core::option::Option<alloc::string::String>
+pub struct anp_identity::host::DocumentProofRequest
+pub anp_identity::host::DocumentProofRequest::document: serde_json::value::Value
+pub anp_identity::host::DocumentProofRequest::key: anp_identity::KeySelector
+pub anp_identity::host::DocumentProofRequest::options: anp_identity::host::DocumentProofOptions
+pub struct anp_identity::host::EnrollmentCapabilities
+pub anp_identity::host::EnrollmentCapabilities::did_wba: bool
+pub struct anp_identity::host::EnrollmentProposal
+pub anp_identity::host::EnrollmentProposal::checkpoint: anp_identity::host::HostDocumentCheckpoint
+pub anp_identity::host::EnrollmentProposal::enrollment_id: alloc::string::String
+pub anp_identity::host::EnrollmentProposal::identity: anp_identity::IdentityRef
+pub anp_identity::host::EnrollmentProposal::kind: anp_identity::host::EnrollmentProposalKind
+pub anp_identity::host::EnrollmentProposal::root_key_fingerprint: alloc::string::String
+pub struct anp_identity::host::EnrollmentPublicKey
+pub anp_identity::host::EnrollmentPublicKey::kid: alloc::string::String
+pub anp_identity::host::EnrollmentPublicKey::public_key_multibase: alloc::string::String
+pub struct anp_identity::host::EnrollmentSession
+impl anp_identity::host::EnrollmentSession
+pub fn anp_identity::host::EnrollmentSession::activate(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+pub fn anp_identity::host::EnrollmentSession::cancel(self, &mut anp_identity::IdentityManager) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret(&self, [u8; 32]) -> anp_identity::IdentityResult<anp_identity::host::ZeroizingSharedSecret>
+pub fn anp_identity::host::EnrollmentSession::proposal(&self) -> &anp_identity::host::EnrollmentProposal
+pub fn anp_identity::host::EnrollmentSession::sign_device_assertion(&self, &[u8]) -> anp_identity::IdentityResult<alloc::vec::Vec<u8>>
+pub struct anp_identity::host::ExactHttpRequest
+pub anp_identity::host::ExactHttpRequest::body: core::option::Option<alloc::vec::Vec<u8>>
+pub anp_identity::host::ExactHttpRequest::headers: alloc::vec::Vec<anp_identity::host::HttpHeader>
+pub anp_identity::host::ExactHttpRequest::key: anp_identity::KeySelector
+pub anp_identity::host::ExactHttpRequest::method: alloc::string::String
+pub anp_identity::host::ExactHttpRequest::options: anp_identity::host::HttpRequestSigningOptions
+pub anp_identity::host::ExactHttpRequest::url: alloc::string::String
+pub struct anp_identity::host::HostDocumentCheckpoint
+pub anp_identity::host::HostDocumentCheckpoint::document_digest: alloc::string::String
+pub anp_identity::host::HostDocumentCheckpoint::document_version: u64
+pub anp_identity::host::HostDocumentCheckpoint::registry_version: u64
+pub struct anp_identity::host::HttpHeader
+pub anp_identity::host::HttpHeader::name: alloc::string::String
+pub anp_identity::host::HttpHeader::value: alloc::string::String
+pub struct anp_identity::host::HttpRequestSigningOptions
+pub anp_identity::host::HttpRequestSigningOptions::covered_components: core::option::Option<alloc::vec::Vec<alloc::string::String>>
+pub anp_identity::host::HttpRequestSigningOptions::created: core::option::Option<i64>
+pub anp_identity::host::HttpRequestSigningOptions::expires: core::option::Option<i64>
+pub anp_identity::host::HttpRequestSigningOptions::nonce: core::option::Option<alloc::string::String>
+pub struct anp_identity::host::IdentityHostStatus
+pub anp_identity::host::IdentityHostStatus::checkpoint: core::option::Option<anp_identity::host::HostDocumentCheckpoint>
+pub anp_identity::host::IdentityHostStatus::root_capability: anp_identity::host::HostRootCapability
+pub anp_identity::host::IdentityHostStatus::root_key_fingerprint: alloc::string::String
+pub struct anp_identity::host::KeyAgreementRequest
+pub anp_identity::host::KeyAgreementRequest::key: anp_identity::KeySelector
+pub anp_identity::host::KeyAgreementRequest::peer_public: [u8; 32]
+pub struct anp_identity::host::ObjectProofRequest
+pub anp_identity::host::ObjectProofRequest::created: core::option::Option<alloc::string::String>
+pub anp_identity::host::ObjectProofRequest::document: serde_json::value::Value
+pub anp_identity::host::ObjectProofRequest::issuer_did: alloc::string::String
+pub anp_identity::host::ObjectProofRequest::key: anp_identity::KeySelector
+pub struct anp_identity::host::PendingRootObjectProofRequest
+pub anp_identity::host::PendingRootObjectProofRequest::created: core::option::Option<alloc::string::String>
+pub anp_identity::host::PendingRootObjectProofRequest::document: serde_json::value::Value
+pub anp_identity::host::PendingRootObjectProofRequest::issuer_did: alloc::string::String
+pub anp_identity::host::PendingRootObjectProofRequest::key: anp_identity::KeySelector
+pub struct anp_identity::host::PreparedHttpSignatureAttempt
+pub anp_identity::host::PreparedHttpSignatureAttempt::binding_digest: alloc::string::String
+pub anp_identity::host::PreparedHttpSignatureAttempt::header_patch: alloc::vec::Vec<anp_identity::host::HttpHeader>
+pub anp_identity::host::PreparedHttpSignatureAttempt::kid: alloc::string::String
+pub struct anp_identity::host::RequestSigningEnrollmentRequest
+pub anp_identity::host::RequestSigningEnrollmentRequest::capabilities: anp_identity::host::EnrollmentCapabilities
+pub anp_identity::host::RequestSigningEnrollmentRequest::fragment: alloc::string::String
+pub anp_identity::host::RequestSigningEnrollmentRequest::remote: anp_identity::VerifiedRemoteDocument
+pub struct anp_identity::host::RootPromotionRequest
+pub anp_identity::host::RootPromotionRequest::remote: anp_identity::VerifiedRemoteDocument
+pub struct anp_identity::host::ZeroizingSharedSecret
+impl anp_identity::host::ZeroizingSharedSecret
+pub fn anp_identity::host::ZeroizingSharedSecret::as_bytes(&self) -> &[u8; 32]
+pub const anp_identity::host::MAX_HTTP_SIGNING_BODY_BYTES: usize
+pub trait anp_identity::host::ConvergenceWorkflow
+pub fn anp_identity::host::ConvergenceWorkflow::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+impl anp_identity::host::ConvergenceWorkflow for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+pub trait anp_identity::host::DocumentChangeRecoveryPort
+pub fn anp_identity::host::DocumentChangeRecoveryPort::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
+impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
+pub fn anp_identity::DocumentChangeSession::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
+pub trait anp_identity::host::EnrollmentWorkflow
+pub fn anp_identity::host::EnrollmentWorkflow::begin_device_enrollment(&mut self, anp_identity::host::DeviceEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::host::EnrollmentWorkflow::begin_request_signing_enrollment(&mut self, anp_identity::host::RequestSigningEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::host::EnrollmentWorkflow::resume_enrollment(&self, &anp_identity::IdentityRef) -> anp_identity::IdentityResult<core::option::Option<anp_identity::host::EnrollmentSession>>
+impl anp_identity::host::EnrollmentWorkflow for anp_identity::IdentityManager
+pub fn anp_identity::IdentityManager::begin_device_enrollment(&mut self, anp_identity::host::DeviceEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::IdentityManager::begin_request_signing_enrollment(&mut self, anp_identity::host::RequestSigningEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::IdentityManager::resume_enrollment(&self, &anp_identity::IdentityRef) -> anp_identity::IdentityResult<core::option::Option<anp_identity::host::EnrollmentSession>>
+pub trait anp_identity::host::HttpRequestSigningPort
+pub fn anp_identity::host::HttpRequestSigningPort::prepare_http_signature(&self, anp_identity::host::ExactHttpRequest) -> anp_identity::IdentityResult<anp_identity::host::PreparedHttpSignatureAttempt>
+impl anp_identity::host::HttpRequestSigningPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::prepare_http_signature(&self, anp_identity::host::ExactHttpRequest) -> anp_identity::IdentityResult<anp_identity::host::PreparedHttpSignatureAttempt>
+pub trait anp_identity::host::IdentityStatusPort
+pub fn anp_identity::host::IdentityStatusPort::host_status(&self) -> anp_identity::IdentityResult<anp_identity::host::IdentityHostStatus>
+pub fn anp_identity::host::IdentityStatusPort::recover_identity(&self) -> anp_identity::IdentityResult<()>
+impl anp_identity::host::IdentityStatusPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::host_status(&self) -> anp_identity::IdentityResult<anp_identity::host::IdentityHostStatus>
+pub fn anp_identity::ManagedIdentity::recover_identity(&self) -> anp_identity::IdentityResult<()>
+pub trait anp_identity::host::KeyAgreementPort
+pub fn anp_identity::host::KeyAgreementPort::derive_shared_secret(&self, anp_identity::host::KeyAgreementRequest) -> anp_identity::IdentityResult<anp_identity::host::ZeroizingSharedSecret>
+impl anp_identity::host::KeyAgreementPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::derive_shared_secret(&self, anp_identity::host::KeyAgreementRequest) -> anp_identity::IdentityResult<anp_identity::host::ZeroizingSharedSecret>
+pub trait anp_identity::host::LegacyDidWbaPort
+pub fn anp_identity::host::LegacyDidWbaPort::prepare_legacy_did_wba(&self, anp_identity::KeySelector, &str, &str) -> anp_identity::IdentityResult<alloc::string::String>
+impl anp_identity::host::LegacyDidWbaPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::prepare_legacy_did_wba(&self, anp_identity::KeySelector, &str, &str) -> anp_identity::IdentityResult<alloc::string::String>
+pub trait anp_identity::host::RootPromotionPort
+pub fn anp_identity::host::RootPromotionPort::confirm_root_promotion(&mut self, anp_identity::host::RootPromotionRequest) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::host::RootPromotionPort::sign_pending_root_object_proof(&self, anp_identity::host::PendingRootObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+impl anp_identity::host::RootPromotionPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::confirm_root_promotion(&mut self, anp_identity::host::RootPromotionRequest) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::ManagedIdentity::sign_pending_root_object_proof(&self, anp_identity::host::PendingRootObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+pub trait anp_identity::host::TypedProofPort
+pub fn anp_identity::host::TypedProofPort::sign_document_proof(&self, anp_identity::host::DocumentProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+pub fn anp_identity::host::TypedProofPort::sign_object_proof(&self, anp_identity::host::ObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+impl anp_identity::host::TypedProofPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::sign_document_proof(&self, anp_identity::host::DocumentProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+pub fn anp_identity::ManagedIdentity::sign_object_proof(&self, anp_identity::host::ObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+pub trait anp_identity::host::WrappedRootImportPort
+pub fn anp_identity::host::WrappedRootImportPort::import_wrapped_root_envelope(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::IdentityResult<anp_identity::host::WrappedRootImportOutcome>
+impl anp_identity::host::WrappedRootImportPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::import_wrapped_root_envelope(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::IdentityResult<anp_identity::host::WrappedRootImportOutcome>
 pub enum anp_identity::AdoptDocumentOutcome
 pub anp_identity::AdoptDocumentOutcome::Activated
 pub anp_identity::AdoptDocumentOutcome::Revoked
@@ -50,34 +212,106 @@ pub anp_identity::DidError::Serialization(alloc::string::String)
 pub anp_identity::DidError::StoreNotFound
 pub anp_identity::DidError::UnsupportedOperation
 pub anp_identity::DidError::VerificationFailed
+impl core::convert::From<anp_identity::DidError> for anp_identity::IdentityError
+pub fn anp_identity::IdentityError::from(anp_identity::DidError) -> Self
 pub enum anp_identity::DidExtensionSpec
 pub anp_identity::DidExtensionSpec::DeviceManifest(anp_identity::DeviceManifestSpec)
 pub enum anp_identity::DidProfile
 pub anp_identity::DidProfile::E1
+pub enum anp_identity::DocumentChange
+pub anp_identity::DocumentChange::AddAuthenticationKey
+pub anp_identity::DocumentChange::AddAuthenticationKey::key: anp_identity::PublicKeyInput
+pub anp_identity::DocumentChange::AddDevice
+pub anp_identity::DocumentChange::AddDevice::device: anp_identity::DeviceInput
+pub anp_identity::DocumentChange::RemoveAuthenticationKey
+pub anp_identity::DocumentChange::RemoveAuthenticationKey::kid: alloc::string::String
+pub anp_identity::DocumentChange::RemoveDevice
+pub anp_identity::DocumentChange::RemoveDevice::device_id: alloc::string::String
+pub anp_identity::DocumentChange::ReplaceServices
+pub anp_identity::DocumentChange::ReplaceServices::services: alloc::vec::Vec<anp_identity::IdentityService>
+pub anp_identity::DocumentChange::RotateSigningKey
+pub anp_identity::DocumentChange::RotateSigningKey::new_fragment: alloc::string::String
+pub anp_identity::DocumentChange::RotateSigningKey::old_kid: alloc::string::String
+pub enum anp_identity::DocumentChangeOutcome
+pub anp_identity::DocumentChangeOutcome::Aborted
+pub anp_identity::DocumentChangeOutcome::Committed
+pub anp_identity::DocumentChangeOutcome::Committed::identity: anp_identity::PublicIdentity
+pub anp_identity::DocumentChangeOutcome::PublicationUncertain
+pub anp_identity::DocumentChangeOutcome::ReadyForPublication
 pub enum anp_identity::ExternalPublicKeyMaterial
 pub anp_identity::ExternalPublicKeyMaterial::Jwk
 pub anp_identity::ExternalPublicKeyMaterial::Jwk::public_key_jwk: anp_identity::PublicOkpJwk
 pub anp_identity::ExternalPublicKeyMaterial::Multibase
 pub anp_identity::ExternalPublicKeyMaterial::Multibase::value: alloc::string::String
+#[non_exhaustive] pub enum anp_identity::IdentityError
+pub anp_identity::IdentityError::AmbiguousKey
+pub anp_identity::IdentityError::CapabilityUnavailable
+pub anp_identity::IdentityError::Conflict
+pub anp_identity::IdentityError::CorruptState
+pub anp_identity::IdentityError::DocumentChangeNotFound
+pub anp_identity::IdentityError::IdentityAlreadyExists
+pub anp_identity::IdentityError::IdentityNotFound
+pub anp_identity::IdentityError::Internal
+pub anp_identity::IdentityError::InvalidDocumentChangeState
+pub anp_identity::IdentityError::InvalidRequest
+pub anp_identity::IdentityError::KeyNotFound
+pub anp_identity::IdentityError::KeyPurposeViolation
+pub anp_identity::IdentityError::KeyUnavailable
+pub anp_identity::IdentityError::PendingDocumentChange
+pub anp_identity::IdentityError::ProviderUnavailable
+pub anp_identity::IdentityError::RootKeyMismatch
+pub anp_identity::IdentityError::Storage
+pub anp_identity::IdentityError::StoreNotFound
+pub anp_identity::IdentityError::Unsupported
+pub anp_identity::IdentityError::VerificationFailed
+impl core::convert::From<anp_identity::DidError> for anp_identity::IdentityError
+pub fn anp_identity::IdentityError::from(anp_identity::DidError) -> Self
 pub enum anp_identity::IdentityState
 pub anp_identity::IdentityState::Active
 pub anp_identity::IdentityState::Creating
 pub anp_identity::IdentityState::Enrolling
 pub anp_identity::IdentityState::Revoked
+impl core::convert::TryFrom<anp_identity::IdentityState> for anp_identity::PublicIdentityState
+pub type anp_identity::PublicIdentityState::Error = anp_identity::IdentityError
+pub fn anp_identity::PublicIdentityState::try_from(anp_identity::IdentityState) -> core::result::Result<Self, Self::Error>
+pub enum anp_identity::KeyAlgorithm
+pub anp_identity::KeyAlgorithm::Ed25519
+pub anp_identity::KeyAlgorithm::X25519
 pub enum anp_identity::KeyOrigin
 pub anp_identity::KeyOrigin::External
 pub anp_identity::KeyOrigin::Managed
+pub enum anp_identity::KeyPurpose
+pub anp_identity::KeyPurpose::ApplicationAssertion
+pub anp_identity::KeyPurpose::Authentication
+pub anp_identity::KeyPurpose::DeviceAssertion
+pub anp_identity::KeyPurpose::KeyAgreement
+pub anp_identity::KeyPurpose::RootControl
 pub enum anp_identity::KeyRole
 pub anp_identity::KeyRole::DeviceSigning
 pub anp_identity::KeyRole::E2eeAgreement
 pub anp_identity::KeyRole::E2eeSigning
 pub anp_identity::KeyRole::RequestSigning
 pub anp_identity::KeyRole::RootControl
+pub enum anp_identity::KeySelector
+pub anp_identity::KeySelector::Default
+pub anp_identity::KeySelector::Kid(alloc::string::String)
 pub enum anp_identity::KeyState
 pub anp_identity::KeyState::Active
 pub anp_identity::KeyState::Pending
 pub anp_identity::KeyState::Retired
 pub anp_identity::KeyState::Revoked
+pub enum anp_identity::PublicIdentityState
+pub anp_identity::PublicIdentityState::Active
+pub anp_identity::PublicIdentityState::Enrolling
+pub anp_identity::PublicIdentityState::Revoked
+impl core::convert::TryFrom<anp_identity::IdentityState> for anp_identity::PublicIdentityState
+pub type anp_identity::PublicIdentityState::Error = anp_identity::IdentityError
+pub fn anp_identity::PublicIdentityState::try_from(anp_identity::IdentityState) -> core::result::Result<Self, Self::Error>
+pub enum anp_identity::PublicationResult
+pub anp_identity::PublicationResult::Confirmed
+pub anp_identity::PublicationResult::Confirmed::evidence: anp_identity::VerifiedPublicationEvidence
+pub anp_identity::PublicationResult::RejectedBeforeAcceptance
+pub anp_identity::PublicationResult::Unknown
 pub enum anp_identity::PublicationState
 pub anp_identity::PublicationState::Prepared
 pub anp_identity::PublicationState::PublicationInFlight
@@ -101,19 +335,47 @@ pub enum anp_identity::RootKeyProviderKind
 pub anp_identity::RootKeyProviderKind::Injected
 pub anp_identity::RootKeyProviderKind::LocalPrivateFile
 pub anp_identity::RootKeyProviderKind::OsKeyring
+pub enum anp_identity::RootKeySource
+pub anp_identity::RootKeySource::Environment
+pub anp_identity::RootKeySource::Environment::key_id: alloc::string::String
+pub anp_identity::RootKeySource::Environment::variable: alloc::string::String
+pub anp_identity::RootKeySource::Injected(anp_identity::InjectedStoreKey)
+pub anp_identity::RootKeySource::Keyring
+pub anp_identity::RootKeySource::Keyring::account: alloc::string::String
+pub anp_identity::RootKeySource::Keyring::fallback_to_local_file: bool
+pub anp_identity::RootKeySource::Keyring::service: alloc::string::String
+pub anp_identity::RootKeySource::LocalPrivateFile
 pub enum anp_identity::RootTransferImportOutcome
 pub anp_identity::RootTransferImportOutcome::Active
 pub anp_identity::RootTransferImportOutcome::Pending
+pub enum anp_identity::SigningPurpose
+pub anp_identity::SigningPurpose::ApplicationAssertion
+pub anp_identity::SigningPurpose::ApplicationAssertion::domain: alloc::string::String
+pub anp_identity::SigningPurpose::Authentication
+pub anp_identity::SigningPurpose::DeviceAssertion
+pub enum anp_identity::StoreHealth
+pub anp_identity::StoreHealth::Ready
+pub enum anp_identity::VerificationOutcome
+pub anp_identity::VerificationOutcome::Invalid
+pub anp_identity::VerificationOutcome::Valid
 pub struct anp_identity::AdoptVerifiedDocumentSpec
 pub anp_identity::AdoptVerifiedDocumentSpec::document: serde_json::value::Value
 pub anp_identity::AdoptVerifiedDocumentSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub struct anp_identity::Capabilities
 pub anp_identity::Capabilities::did_wba: bool
+impl core::convert::From<&anp_identity::Capabilities> for anp_identity::PublicCapabilities
+pub fn anp_identity::PublicCapabilities::from(&anp_identity::Capabilities) -> Self
+pub struct anp_identity::DeleteIdentityRequest
 pub struct anp_identity::DeviceAddSpec
 pub anp_identity::DeviceAddSpec::device_id: alloc::string::String
 pub anp_identity::DeviceAddSpec::e2ee_key: anp_identity::DevicePublicKeySpec
 pub anp_identity::DeviceAddSpec::profiles: alloc::vec::Vec<alloc::string::String>
 pub anp_identity::DeviceAddSpec::signing_key: anp_identity::DevicePublicKeySpec
+pub struct anp_identity::DeviceInput
+pub anp_identity::DeviceInput::agreement_key: anp_identity::PublicKeyInput
+pub anp_identity::DeviceInput::device_id: alloc::string::String
+pub anp_identity::DeviceInput::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::DeviceInput::signing_key: anp_identity::PublicKeyInput
 pub struct anp_identity::DeviceManifestEntrySpec
 pub anp_identity::DeviceManifestEntrySpec::device_id: alloc::string::String
 pub anp_identity::DeviceManifestEntrySpec::e2ee_key_id: alloc::string::String
@@ -138,6 +400,11 @@ pub anp_identity::DidCreateSpec::services: alloc::vec::Vec<anp_identity::Service
 impl anp_identity::DidCreateSpec
 pub fn anp_identity::DidCreateSpec::validate(&self) -> anp_identity::DidResult<()>
 pub fn anp_identity::DidCreateSpec::validate_for_did(&self, &str) -> anp_identity::DidResult<()>
+pub struct anp_identity::DidDocument(_)
+impl anp_identity::DidDocument
+pub fn anp_identity::DidDocument::as_value(&self) -> &serde_json::value::Value
+pub fn anp_identity::DidDocument::from_value(serde_json::value::Value) -> Self
+pub fn anp_identity::DidDocument::into_value(self) -> serde_json::value::Value
 pub struct anp_identity::DidIdentity
 impl anp_identity::DidIdentity
 pub fn anp_identity::DidIdentity::abort_update(&mut self, &str) -> anp_identity::DidResult<()>
@@ -213,6 +480,16 @@ pub fn anp_identity::DidStore::prepare_enrollment(&mut self, anp_identity::Enrol
 pub fn anp_identity::DidStore::prepare_request_signing_enrollment(&mut self, anp_identity::RequestSigningEnrollmentSpec) -> anp_identity::DidResult<(anp_identity::DidIdentity, anp_identity::PreparedRequestSigningEnrollment)>
 impl core::fmt::Debug for anp_identity::DidStore
 pub fn anp_identity::DidStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct anp_identity::DocumentChangeRequest
+pub anp_identity::DocumentChangeRequest::changes: alloc::vec::Vec<anp_identity::DocumentChange>
+pub struct anp_identity::DocumentChangeSession
+impl anp_identity::DocumentChangeSession
+pub fn anp_identity::DocumentChangeSession::begin_publication(&mut self) -> anp_identity::IdentityResult<anp_identity::PublicationAttempt>
+pub fn anp_identity::DocumentChangeSession::candidate(&self) -> &anp_identity::PreparedDocumentChange
+pub fn anp_identity::DocumentChangeSession::complete(&mut self, anp_identity::PublicationAttempt, anp_identity::PublicationResult) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
+pub fn anp_identity::DocumentChangeSession::reconcile(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
+impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
+pub fn anp_identity::DocumentChangeSession::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
 pub struct anp_identity::DocumentCheckpoint
 pub anp_identity::DocumentCheckpoint::document_digest: alloc::string::String
 pub anp_identity::DocumentCheckpoint::document_version: u64
@@ -238,12 +515,48 @@ pub struct anp_identity::ExternalPublicKeySpec
 pub anp_identity::ExternalPublicKeySpec::kid: alloc::string::String
 pub anp_identity::ExternalPublicKeySpec::material: anp_identity::ExternalPublicKeyMaterial
 pub anp_identity::ExternalPublicKeySpec::role: anp_identity::KeyRole
+pub struct anp_identity::IdentityDescriptor
+pub anp_identity::IdentityDescriptor::reference: anp_identity::IdentityRef
+pub anp_identity::IdentityDescriptor::state: anp_identity::PublicIdentityState
+pub struct anp_identity::IdentityManager
+impl anp_identity::IdentityManager
+pub fn anp_identity::IdentityManager::create(&mut self, anp_identity::CreateIdentityRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::delete(&mut self, &anp_identity::IdentityRef, anp_identity::DeleteIdentityRequest) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::IdentityManager::get(&self, &anp_identity::IdentityRef) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::info(&self) -> anp_identity::IdentityResult<anp_identity::StoreInfo>
+pub fn anp_identity::IdentityManager::initialize(anp_identity::IdentityManagerConfig) -> anp_identity::IdentityResult<Self>
+pub fn anp_identity::IdentityManager::list(&self) -> anp_identity::IdentityResult<alloc::vec::Vec<anp_identity::IdentityDescriptor>>
+pub fn anp_identity::IdentityManager::open(anp_identity::IdentityManagerConfig) -> anp_identity::IdentityResult<Self>
+pub fn anp_identity::IdentityManager::recover(&mut self) -> anp_identity::IdentityResult<anp_identity::RecoveryReport>
+impl anp_identity::host::EnrollmentWorkflow for anp_identity::IdentityManager
+pub fn anp_identity::IdentityManager::begin_device_enrollment(&mut self, anp_identity::host::DeviceEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::IdentityManager::begin_request_signing_enrollment(&mut self, anp_identity::host::RequestSigningEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
+pub fn anp_identity::IdentityManager::resume_enrollment(&self, &anp_identity::IdentityRef) -> anp_identity::IdentityResult<core::option::Option<anp_identity::host::EnrollmentSession>>
+pub struct anp_identity::IdentityManagerConfig
+pub anp_identity::IdentityManagerConfig::root_key: anp_identity::RootKeySource
+pub anp_identity::IdentityManagerConfig::state_root: std::path::PathBuf
+pub struct anp_identity::IdentityRef
+pub anp_identity::IdentityRef::did: alloc::string::String
+pub anp_identity::IdentityRef::identity_id: alloc::string::String
+pub anp_identity::IdentityRef::store_id: alloc::string::String
+pub struct anp_identity::IdentityService
+pub anp_identity::IdentityService::id: alloc::string::String
+pub anp_identity::IdentityService::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::IdentityService::security_profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::IdentityService::service_did: core::option::Option<alloc::string::String>
+pub anp_identity::IdentityService::service_endpoint: alloc::string::String
+pub anp_identity::IdentityService::service_type: alloc::string::String
+impl core::convert::From<anp_identity::IdentityService> for anp_identity::ServiceSpec
+pub fn anp_identity::ServiceSpec::from(anp_identity::IdentityService) -> Self
 pub struct anp_identity::IdentitySummary
 pub anp_identity::IdentitySummary::created_at: alloc::string::String
 pub anp_identity::IdentitySummary::did: alloc::string::String
 pub anp_identity::IdentitySummary::identity_id: alloc::string::String
 pub anp_identity::IdentitySummary::root_capability: anp_identity::RootCapabilityState
 pub anp_identity::IdentitySummary::state: anp_identity::IdentityState
+pub struct anp_identity::InjectedStoreKey
+impl anp_identity::InjectedStoreKey
+pub fn anp_identity::InjectedStoreKey::new(impl core::convert::Into<alloc::string::String>, [u8; 32]) -> Self
 pub struct anp_identity::KeyMetadata
 pub anp_identity::KeyMetadata::created_at: alloc::string::String
 pub anp_identity::KeyMetadata::kid: alloc::string::String
@@ -253,9 +566,49 @@ pub anp_identity::KeyMetadata::public_key_multibase: alloc::string::String
 pub anp_identity::KeyMetadata::role: anp_identity::KeyRole
 pub anp_identity::KeyMetadata::state: anp_identity::KeyState
 pub anp_identity::KeyMetadata::version: u32
+pub struct anp_identity::ManagedIdentity
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::prepare_document_change(&mut self, anp_identity::DocumentChangeRequest) -> anp_identity::IdentityResult<anp_identity::DocumentChangeSession>
+pub fn anp_identity::ManagedIdentity::resume_document_change(&mut self) -> anp_identity::IdentityResult<core::option::Option<anp_identity::DocumentChangeSession>>
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::public_identity(&self) -> anp_identity::IdentityResult<anp_identity::PublicIdentity>
+pub fn anp_identity::ManagedIdentity::reference(&self) -> anp_identity::IdentityRef
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::sign(&self, anp_identity::SignRequest) -> anp_identity::IdentityResult<anp_identity::Signature>
+pub fn anp_identity::ManagedIdentity::sign_origin_proof(&self, anp_identity::OriginProofRequest) -> anp_identity::IdentityResult<anp_identity::SignedOriginProof>
+pub fn anp_identity::ManagedIdentity::verify(&self, anp_identity::VerifyRequest) -> anp_identity::IdentityResult<anp_identity::VerificationOutcome>
+impl anp_identity::host::ConvergenceWorkflow for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+impl anp_identity::host::HttpRequestSigningPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::prepare_http_signature(&self, anp_identity::host::ExactHttpRequest) -> anp_identity::IdentityResult<anp_identity::host::PreparedHttpSignatureAttempt>
+impl anp_identity::host::IdentityStatusPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::host_status(&self) -> anp_identity::IdentityResult<anp_identity::host::IdentityHostStatus>
+pub fn anp_identity::ManagedIdentity::recover_identity(&self) -> anp_identity::IdentityResult<()>
+impl anp_identity::host::KeyAgreementPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::derive_shared_secret(&self, anp_identity::host::KeyAgreementRequest) -> anp_identity::IdentityResult<anp_identity::host::ZeroizingSharedSecret>
+impl anp_identity::host::LegacyDidWbaPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::prepare_legacy_did_wba(&self, anp_identity::KeySelector, &str, &str) -> anp_identity::IdentityResult<alloc::string::String>
+impl anp_identity::host::RootPromotionPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::confirm_root_promotion(&mut self, anp_identity::host::RootPromotionRequest) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::ManagedIdentity::sign_pending_root_object_proof(&self, anp_identity::host::PendingRootObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+impl anp_identity::host::TypedProofPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::sign_document_proof(&self, anp_identity::host::DocumentProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+pub fn anp_identity::ManagedIdentity::sign_object_proof(&self, anp_identity::host::ObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+impl anp_identity::host::WrappedRootImportPort for anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::import_wrapped_root_envelope(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::IdentityResult<anp_identity::host::WrappedRootImportOutcome>
 pub struct anp_identity::ManagedKeySpec
 pub anp_identity::ManagedKeySpec::fragment: alloc::string::String
 pub anp_identity::ManagedKeySpec::role: anp_identity::KeyRole
+pub struct anp_identity::OriginProofOptions
+pub anp_identity::OriginProofOptions::created: core::option::Option<i64>
+pub anp_identity::OriginProofOptions::expires: core::option::Option<i64>
+pub anp_identity::OriginProofOptions::nonce: core::option::Option<alloc::string::String>
+pub struct anp_identity::OriginProofRequest
+pub anp_identity::OriginProofRequest::body: serde_json::value::Value
+pub anp_identity::OriginProofRequest::key: anp_identity::KeySelector
+pub anp_identity::OriginProofRequest::meta: serde_json::value::Value
+pub anp_identity::OriginProofRequest::method: alloc::string::String
+pub anp_identity::OriginProofRequest::options: anp_identity::OriginProofOptions
 pub struct anp_identity::PendingRevisionSummary
 pub anp_identity::PendingRevisionSummary::candidate_digest: alloc::string::String
 pub anp_identity::PendingRevisionSummary::candidate_document: serde_json::value::Value
@@ -265,6 +618,10 @@ pub anp_identity::PendingRevisionSummary::generation: u64
 pub anp_identity::PendingRevisionSummary::parent_revision: u64
 pub anp_identity::PendingRevisionSummary::revision_id: alloc::string::String
 pub anp_identity::PendingRevisionSummary::state: anp_identity::PublicationState
+pub struct anp_identity::PreparedDocumentChange
+pub anp_identity::PreparedDocumentChange::candidate_digest: alloc::string::String
+pub anp_identity::PreparedDocumentChange::candidate_document: anp_identity::DidDocument
+pub anp_identity::PreparedDocumentChange::operation_id: alloc::string::String
 pub struct anp_identity::PreparedEnrollment
 pub anp_identity::PreparedEnrollment::checkpoint: anp_identity::DocumentCheckpoint
 pub anp_identity::PreparedEnrollment::device_e2ee_key: anp_identity::EnrollmentPublicKey
@@ -286,10 +643,34 @@ pub struct anp_identity::PreparedUpdate
 pub anp_identity::PreparedUpdate::candidate_digest: alloc::string::String
 pub anp_identity::PreparedUpdate::candidate_document: serde_json::value::Value
 pub anp_identity::PreparedUpdate::revision_id: alloc::string::String
+pub struct anp_identity::PublicCapabilities
+pub anp_identity::PublicCapabilities::did_wba: bool
+impl core::convert::From<&anp_identity::Capabilities> for anp_identity::PublicCapabilities
+pub fn anp_identity::PublicCapabilities::from(&anp_identity::Capabilities) -> Self
+pub struct anp_identity::PublicIdentity
+pub anp_identity::PublicIdentity::active_keys: alloc::vec::Vec<anp_identity::PublicKeyDescriptor>
+pub anp_identity::PublicIdentity::capabilities: anp_identity::PublicCapabilities
+pub anp_identity::PublicIdentity::document: anp_identity::DidDocument
+pub anp_identity::PublicIdentity::reference: anp_identity::IdentityRef
+pub anp_identity::PublicIdentity::revision: u64
+pub anp_identity::PublicIdentity::state: anp_identity::PublicIdentityState
+pub struct anp_identity::PublicKeyDescriptor
+pub anp_identity::PublicKeyDescriptor::algorithm: anp_identity::KeyAlgorithm
+pub anp_identity::PublicKeyDescriptor::kid: alloc::string::String
+pub anp_identity::PublicKeyDescriptor::purposes: alloc::vec::Vec<anp_identity::KeyPurpose>
+pub struct anp_identity::PublicKeyInput
+pub anp_identity::PublicKeyInput::kid: alloc::string::String
+pub anp_identity::PublicKeyInput::public_key_multibase: alloc::string::String
 pub struct anp_identity::PublicOkpJwk
 pub anp_identity::PublicOkpJwk::crv: alloc::string::String
 pub anp_identity::PublicOkpJwk::kty: alloc::string::String
 pub anp_identity::PublicOkpJwk::x: alloc::string::String
+pub struct anp_identity::PublicationAttempt
+impl anp_identity::PublicationAttempt
+pub fn anp_identity::PublicationAttempt::candidate_digest(&self) -> &str
+pub fn anp_identity::PublicationAttempt::operation_id(&self) -> &str
+pub struct anp_identity::RecoveryReport
+pub anp_identity::RecoveryReport::identity_count: usize
 pub struct anp_identity::RequestSigningEnrollmentSpec
 pub anp_identity::RequestSigningEnrollmentSpec::capabilities: anp_identity::Capabilities
 pub anp_identity::RequestSigningEnrollmentSpec::evidence: anp_identity::VerifiedDocumentEvidence
@@ -333,11 +714,30 @@ pub anp_identity::ServiceSpec::security_profiles: alloc::vec::Vec<alloc::string:
 pub anp_identity::ServiceSpec::service_did: core::option::Option<alloc::string::String>
 pub anp_identity::ServiceSpec::service_endpoint: alloc::string::String
 pub anp_identity::ServiceSpec::service_type: alloc::string::String
+impl core::convert::From<anp_identity::IdentityService> for anp_identity::ServiceSpec
+pub fn anp_identity::ServiceSpec::from(anp_identity::IdentityService) -> Self
 pub struct anp_identity::SharedSecret
 impl anp_identity::SharedSecret
 pub fn anp_identity::SharedSecret::as_bytes(&self) -> &[u8; 32]
 impl core::fmt::Debug for anp_identity::SharedSecret
 pub fn anp_identity::SharedSecret::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct anp_identity::SignRequest
+pub anp_identity::SignRequest::key: anp_identity::KeySelector
+pub anp_identity::SignRequest::payload: alloc::vec::Vec<u8>
+pub anp_identity::SignRequest::purpose: anp_identity::SigningPurpose
+pub struct anp_identity::Signature
+pub anp_identity::Signature::algorithm: anp_identity::KeyAlgorithm
+pub anp_identity::Signature::bytes: alloc::vec::Vec<u8>
+pub anp_identity::Signature::kid: alloc::string::String
+pub struct anp_identity::SignedOriginProof
+pub anp_identity::SignedOriginProof::content_digest: alloc::string::String
+pub anp_identity::SignedOriginProof::signature: alloc::string::String
+pub anp_identity::SignedOriginProof::signature_input: alloc::string::String
+pub struct anp_identity::StoreInfo
+pub anp_identity::StoreInfo::health: anp_identity::StoreHealth
+pub anp_identity::StoreInfo::identity_count: usize
+pub anp_identity::StoreInfo::schema_compatible: bool
+pub anp_identity::StoreInfo::store_id: alloc::string::String
 pub struct anp_identity::StoreManifest
 pub anp_identity::StoreManifest::created_at: alloc::string::String
 pub anp_identity::StoreManifest::generation: u64
@@ -350,6 +750,18 @@ pub struct anp_identity::VerifiedDocumentEvidence
 pub anp_identity::VerifiedDocumentEvidence::document_digest: alloc::string::String
 pub anp_identity::VerifiedDocumentEvidence::document_version: u64
 pub anp_identity::VerifiedDocumentEvidence::registry_version: u64
+pub struct anp_identity::VerifiedPublicationEvidence
+pub anp_identity::VerifiedPublicationEvidence::document_digest: alloc::string::String
+pub anp_identity::VerifiedPublicationEvidence::document_version: u64
+pub anp_identity::VerifiedPublicationEvidence::registry_version: u64
+pub struct anp_identity::VerifiedRemoteDocument
+pub anp_identity::VerifiedRemoteDocument::document: anp_identity::DidDocument
+pub anp_identity::VerifiedRemoteDocument::evidence: anp_identity::VerifiedPublicationEvidence
+pub struct anp_identity::VerifyRequest
+pub anp_identity::VerifyRequest::kid: alloc::string::String
+pub anp_identity::VerifyRequest::payload: alloc::vec::Vec<u8>
+pub anp_identity::VerifyRequest::purpose: anp_identity::SigningPurpose
+pub anp_identity::VerifyRequest::signature: alloc::vec::Vec<u8>
 pub struct anp_identity::WrappedRootEnvelope
 pub anp_identity::WrappedRootEnvelope::ciphertext_b64u: alloc::string::String
 pub anp_identity::WrappedRootEnvelope::context: anp_identity::RootTransferContext
@@ -362,4 +774,6 @@ pub const anp_identity::STORE_MANIFEST_SCHEMA_VERSION: u32
 pub const anp_identity::WRAPPED_ROOT_ENVELOPE_TYPE: &str
 pub const anp_identity::WRAPPED_ROOT_ENVELOPE_VERSION: u32
 pub fn anp_identity::canonical_document_digest(&serde_json::value::Value) -> anp_identity::DidResult<alloc::string::String>
+pub type anp_identity::CreateIdentityRequest = anp_identity::DidCreateSpec
 pub type anp_identity::DidResult<T> = core::result::Result<T, anp_identity::DidError>
+pub type anp_identity::IdentityResult<T> = core::result::Result<T, anp_identity::IdentityError>

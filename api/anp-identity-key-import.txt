@@ -1,5 +1,11 @@
 impl anp_identity::DidStore
 impl anp_identity::ImportedPrivateKey
+impl anp_identity::host::MigrationPort for anp_identity::IdentityManager
+impl anp_identity::host::MigrationPort for anp_identity::IdentityManager
+impl anp_identity::host::RootImportPort for anp_identity::ManagedIdentity
+impl anp_identity::host::RootImportPort for anp_identity::ManagedIdentity
+impl core::convert::From<anp_identity::host::MigrationPrivateKey> for anp_identity::ImportedPrivateKey
+impl core::convert::From<anp_identity::host::MigrationPrivateKey> for anp_identity::ImportedPrivateKey
 pub anp_identity::DeviceIdentityImportSpec::capabilities: anp_identity::Capabilities
 pub anp_identity::DeviceIdentityImportSpec::e2ee_key: anp_identity::ImportedPrivateKey
 pub anp_identity::DeviceIdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
@@ -27,15 +33,78 @@ pub anp_identity::RequestSigningIdentityImportSpec::capabilities: anp_identity::
 pub anp_identity::RequestSigningIdentityImportSpec::evidence: anp_identity::VerifiedDocumentEvidence
 pub anp_identity::RequestSigningIdentityImportSpec::private_key: anp_identity::ImportedPrivateKey
 pub anp_identity::RequestSigningIdentityImportSpec::verified_document: serde_json::value::Value
+pub anp_identity::host::DeviceIdentityImportRequest::agreement_key: anp_identity::host::MigrationPrivateKey
+pub anp_identity::host::DeviceIdentityImportRequest::did_wba: bool
+pub anp_identity::host::DeviceIdentityImportRequest::remote: anp_identity::VerifiedRemoteDocument
+pub anp_identity::host::DeviceIdentityImportRequest::signing_key: anp_identity::host::MigrationPrivateKey
+pub anp_identity::host::FullIdentityImportRequest::did_wba: bool
+pub anp_identity::host::FullIdentityImportRequest::private_keys: alloc::vec::Vec<anp_identity::host::MigrationPrivateKey>
+pub anp_identity::host::FullIdentityImportRequest::remote: anp_identity::VerifiedRemoteDocument
+pub anp_identity::host::LegacyRootImportEvidence::accepted_at: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::checkpoint: anp_identity::host::HostDocumentCheckpoint
+pub anp_identity::host::LegacyRootImportEvidence::recipient_agreement_kid: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::recipient_device_id: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::root_kid: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::sender_device_id: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::source_did: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::target_did: alloc::string::String
+pub anp_identity::host::LegacyRootImportEvidence::transfer_id: alloc::string::String
+pub anp_identity::host::LegacyRootImportOutcome::Active
+pub anp_identity::host::LegacyRootImportOutcome::Pending
+pub anp_identity::host::LegacyRootImportRequest::encoding: anp_identity::host::RootPrivateKeyEncoding
+pub anp_identity::host::LegacyRootImportRequest::evidence: anp_identity::host::LegacyRootImportEvidence
+pub anp_identity::host::LegacyRootImportRequest::root_key: zeroize::Zeroizing<alloc::vec::Vec<u8>>
+pub anp_identity::host::MigrationKeyPurpose::ApplicationAssertion
+pub anp_identity::host::MigrationKeyPurpose::Authentication
+pub anp_identity::host::MigrationKeyPurpose::DeviceAssertion
+pub anp_identity::host::MigrationKeyPurpose::KeyAgreement
+pub anp_identity::host::MigrationKeyPurpose::RootControl
+pub anp_identity::host::MigrationPrivateKey::encoding: anp_identity::host::MigrationPrivateKeyEncoding
+pub anp_identity::host::MigrationPrivateKey::kid: alloc::string::String
+pub anp_identity::host::MigrationPrivateKey::purpose: anp_identity::host::MigrationKeyPurpose
+pub anp_identity::host::MigrationPrivateKey::secret: zeroize::Zeroizing<alloc::vec::Vec<u8>>
+pub anp_identity::host::MigrationPrivateKeyEncoding::Pkcs8Der
+pub anp_identity::host::MigrationPrivateKeyEncoding::Raw32
+pub anp_identity::host::RequestSigningIdentityImportRequest::did_wba: bool
+pub anp_identity::host::RequestSigningIdentityImportRequest::remote: anp_identity::VerifiedRemoteDocument
+pub anp_identity::host::RequestSigningIdentityImportRequest::signing_key: anp_identity::host::MigrationPrivateKey
+pub anp_identity::host::RootPrivateKeyEncoding::Pkcs8Der
+pub anp_identity::host::RootPrivateKeyEncoding::Raw32
 pub enum anp_identity::PrivateKeyEncoding
+pub enum anp_identity::host::LegacyRootImportOutcome
+pub enum anp_identity::host::MigrationKeyPurpose
+pub enum anp_identity::host::MigrationPrivateKeyEncoding
+pub enum anp_identity::host::RootPrivateKeyEncoding
 pub fn anp_identity::DidIdentity::import_legacy_root_transfer(&mut self, anp_identity::LegacyRootTransferImportSpec) -> anp_identity::DidResult<anp_identity::RootTransferImportOutcome>
 pub fn anp_identity::DidStore::import_device_identity(&mut self, anp_identity::DeviceIdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::DidStore::import_identity(&mut self, anp_identity::IdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
 pub fn anp_identity::DidStore::import_request_signing_identity(&mut self, anp_identity::RequestSigningIdentityImportSpec) -> anp_identity::DidResult<anp_identity::DidIdentity>
+pub fn anp_identity::IdentityManager::import_device_identity(&mut self, anp_identity::host::DeviceIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::import_device_identity(&mut self, anp_identity::host::DeviceIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::import_full_identity(&mut self, anp_identity::host::FullIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::import_full_identity(&mut self, anp_identity::host::FullIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::import_request_signing_identity(&mut self, anp_identity::host::RequestSigningIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::IdentityManager::import_request_signing_identity(&mut self, anp_identity::host::RequestSigningIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::ImportedPrivateKey::from(anp_identity::host::MigrationPrivateKey) -> Self
+pub fn anp_identity::ImportedPrivateKey::from(anp_identity::host::MigrationPrivateKey) -> Self
 pub fn anp_identity::ImportedPrivateKey::new(impl core::convert::Into<alloc::string::String>, anp_identity::KeyRole, anp_identity::PrivateKeyEncoding, zeroize::Zeroizing<alloc::vec::Vec<u8>>) -> Self
+pub fn anp_identity::ManagedIdentity::import_legacy_root(&mut self, anp_identity::host::LegacyRootImportRequest) -> anp_identity::IdentityResult<anp_identity::host::LegacyRootImportOutcome>
+pub fn anp_identity::ManagedIdentity::import_legacy_root(&mut self, anp_identity::host::LegacyRootImportRequest) -> anp_identity::IdentityResult<anp_identity::host::LegacyRootImportOutcome>
+pub fn anp_identity::host::MigrationPort::import_device_identity(&mut self, anp_identity::host::DeviceIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::host::MigrationPort::import_full_identity(&mut self, anp_identity::host::FullIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::host::MigrationPort::import_request_signing_identity(&mut self, anp_identity::host::RequestSigningIdentityImportRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
+pub fn anp_identity::host::RootImportPort::import_legacy_root(&mut self, anp_identity::host::LegacyRootImportRequest) -> anp_identity::IdentityResult<anp_identity::host::LegacyRootImportOutcome>
 pub struct anp_identity::DeviceIdentityImportSpec
 pub struct anp_identity::IdentityImportSpec
 pub struct anp_identity::ImportedPrivateKey
 pub struct anp_identity::LegacyRootTransferEvidence
 pub struct anp_identity::LegacyRootTransferImportSpec
 pub struct anp_identity::RequestSigningIdentityImportSpec
+pub struct anp_identity::host::DeviceIdentityImportRequest
+pub struct anp_identity::host::FullIdentityImportRequest
+pub struct anp_identity::host::LegacyRootImportEvidence
+pub struct anp_identity::host::LegacyRootImportRequest
+pub struct anp_identity::host::MigrationPrivateKey
+pub struct anp_identity::host::RequestSigningIdentityImportRequest
+pub trait anp_identity::host::MigrationPort
+pub trait anp_identity::host::RootImportPort
