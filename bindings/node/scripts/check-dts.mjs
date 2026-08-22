@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const declarations = [
-  ['index.d.ts', join(root, 'test', 'fixtures', 'index.d.ts')],
+  ['index.d.ts', join(root, 'scripts', 'index.d.ts.template')],
   ['native.d.ts', join(root, 'test', 'fixtures', 'native.d.ts')],
 ]
 for (const [name, fixture] of declarations) {

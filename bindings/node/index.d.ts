@@ -1,17 +1,69 @@
-/// JSON-compatible value accepted by the native binding.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
-export type KeyRole = 'root_control' | 'device_signing' | 'request_signing' | 'e2ee_signing' | 'e2ee_agreement'
-export type KeyOrigin = 'managed' | 'external'
-export type KeyState = 'pending' | 'active' | 'retired' | 'revoked'
-export type IdentityState = 'creating' | 'enrolling' | 'active' | 'revoked'
-export type RootCapabilityState = 'absent' | 'pending' | 'active'
-export type PublicationState = 'prepared' | 'publication_in_flight' | 'publication_uncertain' | 'published'
-export type RootKeyProviderKind = 'os_keyring' | 'injected' | 'local_private_file'
+export type IdentityState = 'enrolling' | 'active' | 'revoked'
+export type KeyAlgorithm = 'ed25519' | 'x25519'
+export type KeyPurpose =
+  | 'root_control'
+  | 'authentication'
+  | 'device_assertion'
+  | 'application_assertion'
+  | 'key_agreement'
+export type KeyRole =
+  | 'root_control'
+  | 'device_signing'
+  | 'request_signing'
+  | 'e2ee_signing'
+  | 'e2ee_agreement'
 
-export interface Capabilities {
-  didWba: boolean
+export interface IdentityReference {
+  storeId: string
+  identityId: string
+  did: string
 }
+
+export interface StoreInfo {
+  storeId: string
+  schemaCompatible: boolean
+  identityCount: number
+  health: 'ready'
+}
+
+export interface RecoveryReport {
+  identityCount: number
+}
+
+export interface IdentityDescriptor {
+  reference: IdentityReference
+  state: IdentityState
+}
+
+export interface PublicKeyDescriptor {
+  kid: string
+  algorithm: KeyAlgorithm
+  purposes: KeyPurpose[]
+}
+
+export interface PublicIdentity {
+  reference: IdentityReference
+  state: IdentityState
+  revision: number
+  document: JsonValue
+  activeKeys: PublicKeyDescriptor[]
+  capabilities: { didWba: boolean }
+}
+
+export type RootKeyConfig =
+  | { rootKeyKind: 'injected'; keyId: string; rootKey: Buffer }
+  | { rootKeyKind: 'environment'; keyId: string; environmentVariable: string }
+  | { rootKeyKind: 'local_private_file' }
+  | {
+      rootKeyKind: 'keyring'
+      service: string
+      account: string
+      fallbackToLocalFile?: boolean
+    }
+
+export type IdentityManagerConfig = { stateRoot: string } & RootKeyConfig
 
 export interface ManagedKeySpec {
   fragment: string
@@ -25,8 +77,8 @@ export interface PublicOkpJwk {
 }
 
 export type ExternalPublicKeyMaterial =
-  | { format: 'multibase'; value: string; publicKeyJwk?: never }
-  | { format: 'jwk'; value?: never; publicKeyJwk: PublicOkpJwk }
+  | { format: 'multibase'; value: string }
+  | { format: 'jwk'; publicKeyJwk: PublicOkpJwk }
 
 export interface ExternalPublicKeySpec {
   kid: string
@@ -34,237 +86,185 @@ export interface ExternalPublicKeySpec {
   material: ExternalPublicKeyMaterial
 }
 
-export interface ServiceSpec {
+export interface IdentityService {
   id: string
   serviceType: string
   serviceEndpoint: string
   serviceDid?: string
-  profiles: string[]
-  securityProfiles: string[]
+  profiles?: string[]
+  securityProfiles?: string[]
 }
 
-export interface DeviceManifestEntrySpec {
+export interface DeviceManifestEntry {
   deviceId: string
   signingKeyId: string
   e2eeKeyId: string
-  profiles: string[]
+  profiles?: string[]
 }
 
-export interface DeviceManifestSpec {
-  devices: DeviceManifestEntrySpec[]
-}
-
-export type DidExtensionSpec = {
-  extensionType: 'device_manifest'
-  deviceManifest: DeviceManifestSpec
-}
-
-export interface DidCreateSpec {
+export interface CreateIdentityRequest {
   profile: 'e1'
   domain: string
   port?: number
   pathSegments: string[]
-  capabilities: Capabilities
+  capabilities?: { didWba?: boolean }
   managedKeys: ManagedKeySpec[]
-  externalKeys: ExternalPublicKeySpec[]
-  services: ServiceSpec[]
+  externalKeys?: ExternalPublicKeySpec[]
+  services?: IdentityService[]
   agentDescriptionUrl?: string
-  extensions: DidExtensionSpec[]
+  extensions?: Array<{
+    type: 'device_manifest'
+    value: { devices: DeviceManifestEntry[] }
+  }>
 }
 
-export interface IdentitySummary {
-  identityId: string
-  did: string
-  state: IdentityState
-  rootCapability: RootCapabilityState
-  createdAt: string
-}
+export type SignRequest =
+  | { purpose: 'authentication'; kid?: string; payload: Buffer }
+  | { purpose: 'device_assertion'; kid?: string; payload: Buffer }
+  | { purpose: 'application_assertion'; domain: string; kid?: string; payload: Buffer }
 
-export interface DocumentCheckpoint {
-  documentVersion: number
-  registryVersion: number
-  documentDigest: string
-}
-
-export interface VerifiedDocumentEvidence {
-  documentVersion: number
-  registryVersion: number
-  documentDigest: string
-}
-
-export interface RootTransferExportSpec {
-  targetDid: string
-  senderDeviceId: string
-  recipientDeviceId: string
-  recipientAgreementKid: string
-  recipientAgreementPublic: Buffer
-  rootKid: string
-  ttlSeconds: number
-}
-
-export interface RootPromotionSpec {
-  document: JsonValue
-  evidence: VerifiedDocumentEvidence
-}
-
-export interface EnrollmentSpec {
-  verifiedDocument: JsonValue
-  evidence: VerifiedDocumentEvidence
-  deviceId: string
-  deviceSigningFragment: string
-  deviceE2eeFragment: string
-  profiles: string[]
-  capabilities: Capabilities
-}
-
-export interface KeyMetadata {
+export interface Signature {
   kid: string
-  role: KeyRole
-  origin: KeyOrigin
-  state: KeyState
-  /** True only after explicit local crypto-erasure of a managed revoked key. */
-  materialErased: boolean
-  version: number
-  publicKeyMultibase: string
-  createdAt: string
+  algorithm: 'ed25519'
+  bytes: Buffer
 }
 
-export interface RootKeyProviderBinding {
-  kind: RootKeyProviderKind
-  keyId: string
-  account?: string
+export type VerifyRequest =
+  | { purpose: 'authentication'; kid: string; payload: Buffer; signature: Buffer }
+  | { purpose: 'device_assertion'; kid: string; payload: Buffer; signature: Buffer }
+  | {
+      purpose: 'application_assertion'
+      domain: string
+      kid: string
+      payload: Buffer
+      signature: Buffer
+    }
+
+export interface OriginProofRequest {
+  method: string
+  meta: JsonValue
+  body: JsonValue
+  kid?: string
+  options?: { created?: number; expires?: number; nonce?: string }
 }
 
-export interface StoreManifest {
-  schemaVersion: number
-  storeId: string
-  generation: number
-  provider: RootKeyProviderBinding
-  rootKeyFingerprint: string
-  createdAt: string
-  rekeyGeneration: number
+export interface SignedOriginProof {
+  contentDigest: string
+  signatureInput: string
+  signature: string
 }
 
-export interface IdentitySnapshot {
-  identityId: string
-  did: string
-  state: IdentityState
-  revision: number
-  rootCapability: RootCapabilityState
-  rootKeyFingerprint: string
-  checkpoint?: DocumentCheckpoint
-  document: JsonValue
-  capabilities: Capabilities
-  keys: KeyMetadata[]
-}
-
-export interface DocumentUpdateSpec {
-  requestSigningRotation?: {
-    oldKid: string
-    newFragment: string
-  }
-  deviceMutations?: DeviceMutationSpec[]
-  services?: ServiceSpec[]
-}
-
-export interface DevicePublicKeySpec {
+export interface PublicKeyInput {
   kid: string
   publicKeyMultibase: string
 }
 
-export interface DeviceAddSpec {
-  deviceId: string
-  signingKey: DevicePublicKeySpec
-  e2eeKey: DevicePublicKeySpec
-  profiles: string[]
+export type DocumentChange =
+  | { change: 'rotate_signing_key'; oldKid: string; newFragment: string }
+  | { change: 'add_authentication_key'; key: PublicKeyInput }
+  | { change: 'remove_authentication_key'; kid: string }
+  | {
+      change: 'add_device'
+      device: {
+        deviceId: string
+        signingKey: PublicKeyInput
+        agreementKey: PublicKeyInput
+        profiles?: string[]
+      }
+    }
+  | { change: 'remove_device'; deviceId: string }
+  | { change: 'replace_services'; services: IdentityService[] }
+
+export interface DocumentChangeRequest {
+  changes: DocumentChange[]
 }
 
-export type DeviceMutationSpec =
-  | { operation: 'add'; device: DeviceAddSpec; deviceId?: never }
-  | { operation: 'remove'; device?: never; deviceId: string }
-
-export interface PreparedUpdate {
-  revisionId: string
+export interface PreparedDocumentChange {
+  operationId: string
   candidateDocument: JsonValue
   candidateDigest: string
 }
 
-export interface PendingRevisionSummary {
-  revisionId: string
-  parentRevision: number
+export interface PublicationAttempt {
+  operationId: string
   candidateDigest: string
-  candidateKids: string[]
-  state: PublicationState
-  generation: number
-  createdAt: string
+  publicationGeneration: number
 }
 
-export interface Header {
-  name: string
-  value: string
+export interface VerifiedPublicationEvidence {
+  documentVersion: number
+  registryVersion: number
+  documentDigest: string
 }
 
-export interface HttpSignatureOptions {
-  nonce?: string
-  created?: number
-  expires?: number
-  coveredComponents?: string[]
+export type PublicationResult =
+  | { result: 'confirmed'; evidence: VerifiedPublicationEvidence }
+  | { result: 'rejected_before_acceptance' }
+  | { result: 'unknown' }
+
+export interface VerifiedRemoteDocument {
+  document: JsonValue
+  evidence: VerifiedPublicationEvidence
 }
+
+export type DocumentChangeOutcome =
+  | { outcome: 'ready_for_publication' }
+  | { outcome: 'publication_uncertain' }
+  | { outcome: 'committed'; identity: PublicIdentity }
+  | { outcome: 'aborted' }
 
 export interface AnpIdentityError extends Error {
-  code: string
+  code:
+    | 'invalid_request'
+    | 'store_not_found'
+    | 'provider_unavailable'
+    | 'root_key_mismatch'
+    | 'corrupt_state'
+    | 'identity_not_found'
+    | 'identity_already_exists'
+    | 'key_not_found'
+    | 'key_unavailable'
+    | 'key_purpose_violation'
+    | 'ambiguous_key'
+    | 'verification_failed'
+    | 'pending_document_change'
+    | 'document_change_not_found'
+    | 'invalid_document_change_state'
+    | 'conflict'
+    | 'capability_unavailable'
+    | 'unsupported_operation'
+    | 'storage'
+    | 'internal'
 }
 
-export class DidStore {
+export class IdentityManager {
   private constructor()
-  static canonicalDocumentDigest(document: JsonValue): string
-  /** Consumes and overwrites rootKey, including validation-error paths. */
-  static initializeInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
-  /** Consumes and overwrites rootKey, including validation-error paths. */
-  static openInjected(root: string, keyId: string, rootKey: Buffer): Promise<DidStore>
-  /** Reads a base64url-encoded, uniformly random 32-byte root key from envVar. */
-  static initializeEnv(root: string, keyId: string, envVar: string): Promise<DidStore>
-  /** Reads a base64url-encoded, uniformly random 32-byte root key from envVar. */
-  static openEnv(root: string, keyId: string, envVar: string): Promise<DidStore>
-  static initializeLocalFile(root: string): Promise<DidStore>
-  static openLocalFile(root: string): Promise<DidStore>
-  static initializeKeyring(root: string, service: string, account: string, fallbackToLocalFile: boolean): Promise<DidStore>
-  static openKeyring(root: string, service: string, account: string): Promise<DidStore>
-  generation(): Promise<number>
-  manifest(): Promise<StoreManifest>
-  /** Takes the store-wide exclusive lock, runs recovery, and refreshes after a conflict. */
-  reload(): Promise<void>
-  listIdentities(): Promise<IdentitySummary[]>
-  createIdentity(spec: DidCreateSpec): Promise<DidIdentity>
-  prepareEnrollment(spec: EnrollmentSpec): Promise<JsonValue>
-  openIdentity(did: string): Promise<DidIdentity>
-  deleteIdentityNamespace(did: string, expectedGeneration: number): Promise<void>
+  static initialize(config: IdentityManagerConfig): Promise<IdentityManager>
+  static open(config: IdentityManagerConfig): Promise<IdentityManager>
+  info(): Promise<StoreInfo>
+  list(): Promise<IdentityDescriptor[]>
+  create(request: CreateIdentityRequest): Promise<ManagedIdentity>
+  get(reference: IdentityReference): Promise<ManagedIdentity>
+  delete(reference: IdentityReference): Promise<void>
+  /** Acquires the Store-wide exclusive lock and runs recovery. */
+  recover(): Promise<RecoveryReport>
 }
 
-export class DidIdentity {
+export class ManagedIdentity {
   private constructor()
-  /** Takes the store-wide exclusive lock, runs recovery, and refreshes after a conflict. */
-  reload(): Promise<void>
-  snapshot(): Promise<IdentitySnapshot>
-  pendingRevision(): Promise<PendingRevisionSummary | undefined>
-  sign(kid: string, message: Buffer): Promise<Buffer>
-  verify(kid: string, message: Buffer, signature: Buffer): Promise<boolean>
-  publicKeyBytes(kid: string): Promise<Buffer>
-  /** Raw X25519 result; derive a domain-separated session key and overwrite this Buffer. */
-  ecdh(kid: string, peerPublic: Buffer): Promise<Buffer>
-  legacyDidWbaHeader(kid: string, serviceDomain: string, version: string): Promise<string>
-  httpSignatureHeaders(kid: string, requestUrl: string, requestMethod: string, headers?: Header[], body?: Buffer, options?: HttpSignatureOptions): Promise<Header[]>
-  prepareUpdate(spec: DocumentUpdateSpec): Promise<PreparedUpdate>
-  beginPublication(revisionId: string): Promise<void>
-  markPublicationUncertain(revisionId: string): Promise<void>
-  markPublished(revisionId: string): Promise<void>
-  commitUpdate(revisionId: string): Promise<void>
-  abortUpdate(revisionId: string): Promise<void>
-  reconcileUpdate(revisionId: string, observedRemoteDocument: JsonValue): Promise<'remote_old' | 'committed'>
-  endRetirement(kid: string): Promise<void>
-  deleteRevokedKey(kid: string): Promise<void>
-  exportWrappedRoot(spec: RootTransferExportSpec): Promise<JsonValue>
-  importWrappedRoot(envelope: JsonValue): Promise<'pending' | 'active'>
-  confirmRootPromotion(spec: RootPromotionSpec): Promise<void>
-  adoptVerifiedDocument(document: JsonValue, evidence: VerifiedDocumentEvidence): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>
+  reference(): Promise<IdentityReference>
+  publicIdentity(): Promise<PublicIdentity>
+  sign(request: SignRequest): Promise<Signature>
+  verify(request: VerifyRequest): Promise<'valid' | 'invalid'>
+  signOriginProof(request: OriginProofRequest): Promise<SignedOriginProof>
+  prepareDocumentChange(request: DocumentChangeRequest): Promise<DocumentChangeSession>
+  resumeDocumentChange(): Promise<DocumentChangeSession | undefined>
+}
+
+export class DocumentChangeSession {
+  private constructor()
+  candidate(): Promise<PreparedDocumentChange>
+  beginPublication(): Promise<PublicationAttempt>
+  complete(attempt: PublicationAttempt, result: PublicationResult): Promise<DocumentChangeOutcome>
+  reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
 }

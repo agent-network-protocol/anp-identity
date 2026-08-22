@@ -700,7 +700,9 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.DidIdentity = nativeBinding.DidIdentity
-module.exports.JsDidIdentity = nativeBinding.JsDidIdentity
-module.exports.DidStore = nativeBinding.DidStore
-module.exports.JsDidStore = nativeBinding.JsDidStore
+module.exports.DocumentChangeSession = nativeBinding.DocumentChangeSession
+module.exports.JsDocumentChangeSession = nativeBinding.JsDocumentChangeSession
+module.exports.IdentityManager = nativeBinding.IdentityManager
+module.exports.JsIdentityManager = nativeBinding.JsIdentityManager
+module.exports.ManagedIdentity = nativeBinding.ManagedIdentity
+module.exports.JsManagedIdentity = nativeBinding.JsManagedIdentity
