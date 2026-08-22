@@ -17,6 +17,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 ed25519-dalek = { version = "=2.1.1", features = ["rand_core"] }
 fs2 = "0.4"
 hkdf = "0.12"
+hmac = "0.12"
 keyring = "4.1.6"
 napi = { version = "3.12.1", default-features = false, features = ["napi8", "tokio_rt", "serde-json"] }
 napi-derive = "3.6.3"

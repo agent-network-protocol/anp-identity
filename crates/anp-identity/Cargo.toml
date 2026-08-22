@@ -26,6 +26,7 @@ chrono.workspace = true
 ed25519-dalek.workspace = true
 fs2.workspace = true
 hkdf.workspace = true
+hmac.workspace = true
 keyring.workspace = true
 rand.workspace = true
 serde.workspace = true
@@ -38,7 +39,6 @@ x25519-dalek.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"
-hmac = "0.12"
 tempfile = "3"
 trybuild = "1"
 

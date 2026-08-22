@@ -6,6 +6,7 @@ mod key_agreement;
 #[cfg(feature = "key-import")]
 mod migration;
 mod proofs;
+mod provider_authorization;
 mod root_transfer;
 mod status;
 
@@ -26,6 +27,10 @@ pub use migration::{
     MigrationPrivateKey, MigrationPrivateKeyEncoding, RequestSigningIdentityImportRequest,
 };
 pub use proofs::{DocumentProofOptions, DocumentProofRequest, ObjectProofRequest, TypedProofPort};
+pub use provider_authorization::{
+    capability, recipient_public_key_digest, OneTimeCapabilityToken, OneTimeOperationBinding,
+    ProviderAuthorization, ProviderAuthorizationError, ProviderCapabilityLease,
+};
 #[cfg(feature = "root-export")]
 pub use root_transfer::{
     HostExportedRootPrivateKey, RootExportPort, UserConfirmedRootExportRequest,
