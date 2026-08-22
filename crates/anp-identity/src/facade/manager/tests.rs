@@ -1,6 +1,6 @@
 use crate::facade::{
-    DeleteIdentityRequest, IdentityError, IdentityManager, IdentityManagerConfig, InjectedStoreKey,
-    RootKeySource,
+    DeleteIdentityRequest, DidDocument, IdentityError, IdentityManager, IdentityManagerConfig,
+    InjectedStoreKey, RootKeySource,
 };
 use crate::{Capabilities, DidCreateSpec, DidProfile, KeyRole, ManagedKeySpec};
 
@@ -87,6 +87,18 @@ fn manager_maps_engine_failures_to_stable_categories() {
         IdentityManager::open(config(root.path(), [0x73; 32])).err(),
         Some(IdentityError::RootKeyMismatch)
     );
+}
+
+#[test]
+fn did_document_can_cross_the_facade_boundary() {
+    let value = serde_json::json!({
+        "id": "did:wba:example.com:user:alice",
+        "verificationMethod": []
+    });
+    let document = DidDocument::from_value(value.clone());
+
+    assert_eq!(document.as_value(), &value);
+    assert_eq!(document.into_value(), value);
 }
 
 fn config(root: &std::path::Path, bytes: [u8; 32]) -> IdentityManagerConfig {

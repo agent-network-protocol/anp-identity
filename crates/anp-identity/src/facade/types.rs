@@ -92,6 +92,10 @@ pub struct IdentityDescriptor {
 pub struct DidDocument(Value);
 
 impl DidDocument {
+    pub fn from_value(value: Value) -> Self {
+        Self(value)
+    }
+
     pub fn as_value(&self) -> &Value {
         &self.0
     }
