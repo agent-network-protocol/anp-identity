@@ -202,6 +202,31 @@ impl ProviderAuthorization {
             .ok_or(ProviderAuthorizationError::LeaseInvalid)
     }
 
+    pub fn authorize(
+        &self,
+        lease: &ProviderCapabilityLease,
+        capability: &str,
+    ) -> Result<(), ProviderAuthorizationError> {
+        if lease.provider_instance_id != self.provider_instance_id || capability.trim().is_empty() {
+            return Err(ProviderAuthorizationError::LeaseInvalid);
+        }
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| ProviderAuthorizationError::Internal)?;
+        let parent = state
+            .leases
+            .get(&lease.lease_id)
+            .ok_or(ProviderAuthorizationError::LeaseInvalid)?;
+        if parent.expires_at <= unix_now() {
+            return Err(ProviderAuthorizationError::LeaseInvalid);
+        }
+        if !parent.capabilities.contains(capability) {
+            return Err(ProviderAuthorizationError::CapabilityDenied);
+        }
+        Ok(())
+    }
+
     pub fn issue_one_time(
         &self,
         lease: &ProviderCapabilityLease,
@@ -586,5 +611,31 @@ mod tests {
             authority.issue_one_time_at(&denied_lease, &denied, 10, 1_000),
             Err(ProviderAuthorizationError::CapabilityDenied)
         ));
+    }
+
+    #[test]
+    fn lease_authorization_enforces_capability_and_disposal() {
+        let authority = ProviderAuthorization::new();
+        let lease = authority
+            .acquire_lease(
+                "viewer".to_owned(),
+                [capability::IDENTITY_READ.to_owned()],
+                "store-1".to_owned(),
+                600,
+            )
+            .unwrap();
+        assert_eq!(
+            authority.authorize(&lease, capability::IDENTITY_READ),
+            Ok(())
+        );
+        assert_eq!(
+            authority.authorize(&lease, capability::IDENTITY_SIGN),
+            Err(ProviderAuthorizationError::CapabilityDenied)
+        );
+        authority.dispose_lease(&lease).unwrap();
+        assert_eq!(
+            authority.authorize(&lease, capability::IDENTITY_READ),
+            Err(ProviderAuthorizationError::LeaseInvalid)
+        );
     }
 }
