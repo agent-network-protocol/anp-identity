@@ -28,6 +28,8 @@ pub struct IdentityHostStatus {
 
 pub trait IdentityStatusPort {
     fn host_status(&self) -> IdentityResult<IdentityHostStatus>;
+
+    fn recover_identity(&self) -> IdentityResult<()>;
 }
 
 impl IdentityStatusPort for ManagedIdentity {
@@ -48,5 +50,10 @@ impl IdentityStatusPort for ManagedIdentity {
                     document_digest: checkpoint.document_digest.clone(),
                 }),
         })
+    }
+
+    fn recover_identity(&self) -> IdentityResult<()> {
+        self.lock_engine()?.reload()?;
+        Ok(())
     }
 }
