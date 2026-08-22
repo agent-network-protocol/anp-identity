@@ -49,6 +49,19 @@ pub(crate) fn write_private_if_absent(path: &Path, bytes: &[u8]) -> DidResult<bo
     Ok(true)
 }
 
+pub(crate) fn remove_file_and_sync(path: &Path) -> DidResult<()> {
+    match fs::remove_file(path) {
+        Ok(()) => {
+            if let Some(parent) = path.parent() {
+                sync_directory(parent);
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_error(error)),
+    }
+}
+
 pub(crate) fn set_private_file_mode(path: &Path) -> DidResult<()> {
     set_private_file_mode_impl(path)
 }

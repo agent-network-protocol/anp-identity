@@ -41,6 +41,7 @@ pub(crate) trait RootKeyProvider: Send + Sync {
     fn binding(&self) -> RootKeyProviderBinding;
     fn load_existing(&self) -> DidResult<RootKey>;
     fn create_if_missing(&self, guard: &StoreWriteGuard) -> DidResult<RootKey>;
+    fn import_existing(&self, guard: &StoreWriteGuard, root_key: &RootKey) -> DidResult<()>;
 }
 
 pub(crate) struct InjectedRootKeyProvider {
@@ -83,6 +84,13 @@ impl RootKeyProvider for InjectedRootKeyProvider {
 
     fn create_if_missing(&self, _guard: &StoreWriteGuard) -> DidResult<RootKey> {
         self.load_existing()
+    }
+
+    fn import_existing(&self, _guard: &StoreWriteGuard, root_key: &RootKey) -> DidResult<()> {
+        if self.root_key.expose() != root_key.expose() {
+            return Err(DidError::RootKeyMismatch);
+        }
+        Ok(())
     }
 }
 
@@ -135,6 +143,29 @@ impl RootKeyProvider for FileRootKeyProvider {
             return self.read();
         }
         Ok(root_key)
+    }
+
+    fn import_existing(&self, guard: &StoreWriteGuard, root_key: &RootKey) -> DidResult<()> {
+        let store_root = self
+            .path
+            .parent()
+            .ok_or_else(|| DidError::Io("root-key file has no parent".to_string()))?;
+        guard.require_store(store_root)?;
+        if self.path.exists() {
+            let existing = self.read()?;
+            if existing.expose() != root_key.expose() {
+                return Err(DidError::RootKeyMismatch);
+            }
+            return Ok(());
+        }
+        let encoded = Zeroizing::new(URL_SAFE_NO_PAD.encode(root_key.expose()));
+        if !write_private_if_absent(&self.path, encoded.as_bytes())? {
+            let existing = self.read()?;
+            if existing.expose() != root_key.expose() {
+                return Err(DidError::RootKeyMismatch);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -194,6 +225,26 @@ impl RootKeyProvider for KeyringRootKeyProvider {
             .set_password(&value)
             .map_err(|_| DidError::ProviderUnavailable)?;
         Ok(root_key)
+    }
+
+    fn import_existing(&self, _guard: &StoreWriteGuard, root_key: &RootKey) -> DidResult<()> {
+        let entry = self.entry()?;
+        match entry.get_password() {
+            Ok(value) => {
+                let existing = RootKey::from_bytes(decode_root_key(value.as_bytes())?);
+                if existing.expose() != root_key.expose() {
+                    return Err(DidError::RootKeyMismatch);
+                }
+            }
+            Err(keyring::Error::NoEntry) => {
+                let value = Zeroizing::new(URL_SAFE_NO_PAD.encode(root_key.expose()));
+                entry
+                    .set_password(&value)
+                    .map_err(|_| DidError::ProviderUnavailable)?;
+            }
+            Err(_) => return Err(DidError::ProviderUnavailable),
+        }
+        Ok(())
     }
 }
 
@@ -286,6 +337,13 @@ impl RootKeyProvider for MemoryRootKeyProvider {
     fn create_if_missing(&self, _guard: &StoreWriteGuard) -> DidResult<RootKey> {
         self.load_existing()
     }
+
+    fn import_existing(&self, _guard: &StoreWriteGuard, root_key: &RootKey) -> DidResult<()> {
+        if self.bytes != *root_key.expose() {
+            return Err(DidError::RootKeyMismatch);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +375,10 @@ impl RootKeyProvider for UnavailableRootKeyProvider {
     }
 
     fn create_if_missing(&self, _guard: &StoreWriteGuard) -> DidResult<RootKey> {
+        Err(DidError::ProviderUnavailable)
+    }
+
+    fn import_existing(&self, _guard: &StoreWriteGuard, _root_key: &RootKey) -> DidResult<()> {
         Err(DidError::ProviderUnavailable)
     }
 }

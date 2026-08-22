@@ -6,6 +6,7 @@ mod key_agreement;
 #[cfg(feature = "key-import")]
 mod migration;
 mod proofs;
+mod provider_adoption;
 mod provider_authorization;
 mod root_transfer;
 mod sealed_handoff;
@@ -28,6 +29,10 @@ pub use migration::{
     MigrationPrivateKey, MigrationPrivateKeyEncoding, RequestSigningIdentityImportRequest,
 };
 pub use proofs::{DocumentProofOptions, DocumentProofRequest, ObjectProofRequest, TypedProofPort};
+pub use provider_adoption::{
+    adopt_store_root_key_provider, AdoptStoreRootKeyRequest, ProviderAdoptionReport,
+    ProviderAdoptionTarget,
+};
 pub use provider_authorization::{
     capability, recipient_public_key_digest, OneTimeCapabilityToken, OneTimeOperationBinding,
     ProviderAuthorization, ProviderAuthorizationError, ProviderCapabilityLease,
