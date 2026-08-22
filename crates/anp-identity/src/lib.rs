@@ -21,6 +21,8 @@ mod secret;
 mod store;
 mod store_lock;
 
+pub mod host;
+
 pub use adoption::{
     canonical_document_digest, AdoptDocumentOutcome, AdoptVerifiedDocumentSpec,
     EnrollmentPublicKey, EnrollmentSpec, PreparedEnrollment, PreparedRequestSigningEnrollment,
