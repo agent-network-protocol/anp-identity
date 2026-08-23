@@ -183,9 +183,11 @@ At the audited revision:
 - Provider binding is pinned by `manifest.json`. Opening a Store with a
   different binding fails closed; fallback is initialization-only.
 
-These facts select same-key, fingerprint-verified provider adoption for v1.
-They do not authorize rekey, production cutover, or deletion of the original
-key source.
+Because ANP Identity has not shipped, these development Store layouts do not
+require an upgrade or provider-binding migration. The first DSH release creates
+its own canonical Store. Only released AWiki legacy vault/PEM custody migrates,
+using sealed identity import followed by AWiki's verified atomic cutover; this
+does not authorize rekey or deletion before verification succeeds.
 
 ## Step 0 spike result
 

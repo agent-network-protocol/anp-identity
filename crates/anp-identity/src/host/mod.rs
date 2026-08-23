@@ -6,7 +6,6 @@ mod key_agreement;
 #[cfg(feature = "key-import")]
 mod migration;
 mod proofs;
-mod provider_adoption;
 mod provider_authorization;
 mod root_transfer;
 mod sealed_handoff;
@@ -29,10 +28,6 @@ pub use migration::{
     MigrationPrivateKey, MigrationPrivateKeyEncoding, RequestSigningIdentityImportRequest,
 };
 pub use proofs::{DocumentProofOptions, DocumentProofRequest, ObjectProofRequest, TypedProofPort};
-pub use provider_adoption::{
-    adopt_store_root_key_provider, AdoptStoreRootKeyRequest, ProviderAdoptionReport,
-    ProviderAdoptionTarget,
-};
 pub use provider_authorization::{
     capability, recipient_public_key_digest, IssuedAuthorizationContext,
     IssuedOneTimeAuthorization, OneTimeCapabilityToken, OneTimeOperationBinding,
@@ -53,11 +48,9 @@ pub use root_transfer::{
 };
 pub use sealed_handoff::{
     sealed_enrollment_key_agreement_binding, sealed_key_agreement_binding, sealed_operation_aad,
-    sealed_provider_adoption_binding, PreparedSealedProviderAdoption,
     SealedEnrollmentKeyAgreementPort, SealedEnrollmentKeyAgreementRequest, SealedKeyAgreementPort,
-    SealedKeyAgreementRequest, SealedProviderAdoptionOffer, SealedProviderAdoptionPreparation,
-    SealedProviderError, SealedSecretDelivery, SealedSecretEnvelope, SEALED_SECRET_INFO,
-    SEALED_SECRET_PROTOCOL,
+    SealedKeyAgreementRequest, SealedProviderError, SealedSecretDelivery, SealedSecretEnvelope,
+    SEALED_SECRET_INFO, SEALED_SECRET_PROTOCOL,
 };
 #[cfg(feature = "key-import")]
 pub use sealed_handoff::{

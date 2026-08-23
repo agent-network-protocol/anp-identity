@@ -147,13 +147,6 @@ pub struct JsSealedIdentityImportPreparation {
     pub request_id: String,
 }
 
-#[napi(object)]
-pub struct JsSealedProviderAdoptionPreparation {
-    pub state_root: String,
-    pub target: Value,
-    pub request_id: String,
-}
-
 #[napi(js_name = "IdentityManager")]
 pub struct JsIdentityManager {
     inner: Arc<Mutex<CoreIdentityManager>>,
@@ -1205,41 +1198,6 @@ impl JsProviderLease {
             offer: Arc::new(StdMutex::new(Some(identity_import_offer(offer)?))),
         })
     }
-
-    #[napi]
-    pub async fn prepare_provider_adoption(
-        &self,
-        request: JsSealedProviderAdoptionPreparation,
-    ) -> Result<JsPreparedProviderAdoption> {
-        let preparation = anp_identity::host::SealedProviderAdoptionPreparation {
-            state_root: PathBuf::from(request.state_root),
-            target: serde_json::from_value(request.target).map_err(invalid_json)?,
-            request_id: request.request_id,
-        };
-        let authorization = Arc::clone(&self.authorization);
-        let lease = Arc::clone(&self.lease);
-        let (prepared, offer) = run_blocking(move || {
-            let lease = lease
-                .lock()
-                .map_err(|_| js_error("internal", "provider lease state failed"))?;
-            let lease = lease
-                .as_ref()
-                .ok_or_else(|| js_error("provider_disposed", "provider lease is disposed"))?;
-            anp_identity::host::PreparedSealedProviderAdoption::prepare(
-                &authorization,
-                lease,
-                preparation,
-                60,
-            )
-            .map_err(map_sealed_error)
-        })
-        .await?;
-        Ok(JsPreparedProviderAdoption {
-            authorization: Arc::clone(&self.authorization),
-            prepared: Arc::new(StdMutex::new(Some(prepared))),
-            offer: Arc::new(StdMutex::new(Some(provider_adoption_offer(offer)?))),
-        })
-    }
 }
 
 #[napi(js_name = "ProviderDocumentChangeSession")]
@@ -1567,40 +1525,6 @@ impl JsPreparedIdentityMaterialImport {
     }
 }
 
-#[napi(js_name = "PreparedProviderAdoption")]
-pub struct JsPreparedProviderAdoption {
-    authorization: Arc<anp_identity::host::ProviderAuthorization>,
-    prepared: Arc<StdMutex<Option<anp_identity::host::PreparedSealedProviderAdoption>>>,
-    offer: Arc<StdMutex<Option<Value>>>,
-}
-
-#[napi]
-impl JsPreparedProviderAdoption {
-    #[napi]
-    pub fn offer(&self) -> Result<Value> {
-        take_once(&self.offer, "sealed adoption offer was already read")
-    }
-
-    #[napi]
-    pub async fn complete(&self, token: String, envelope: Value) -> Result<Value> {
-        let prepared = take_once(&self.prepared, "sealed adoption was already completed")?;
-        let envelope = serde_json::from_value(envelope).map_err(invalid_json)?;
-        let authorization = Arc::clone(&self.authorization);
-        run_blocking(move || {
-            to_value(
-                prepared
-                    .complete(
-                        &authorization,
-                        anp_identity::host::OneTimeCapabilityToken::from_encoded(token),
-                        &envelope,
-                    )
-                    .map_err(map_sealed_error)?,
-            )
-        })
-        .await
-    }
-}
-
 impl JsProviderLease {
     fn with_lease<T>(
         &self,
@@ -1788,20 +1712,6 @@ fn identity_import_offer(
         "token": offer.token.into_encoded(),
         "authorization": to_value(offer.authorization)?,
         "item_aad_b64u": offer.item_aad_b64u,
-    }))
-}
-
-fn provider_adoption_offer(
-    offer: anp_identity::host::SealedProviderAdoptionOffer,
-) -> Result<Value> {
-    Ok(serde_json::json!({
-        "store_id": offer.store_id,
-        "root_key_fingerprint": offer.root_key_fingerprint,
-        "recipient_public_key": offer.recipient_public_key,
-        "request_id": offer.request_id,
-        "token": offer.token.into_encoded(),
-        "authorization": to_value(offer.authorization)?,
-        "aad_b64u": offer.aad_b64u,
     }))
 }
 

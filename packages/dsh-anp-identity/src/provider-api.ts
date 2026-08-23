@@ -15,7 +15,6 @@ import type {
   ObjectProofRequest,
   PreparedHttpSignatureAttempt,
   PreparedIdentityMaterialImport,
-  PreparedProviderAdoption,
   PreparedRootImport,
   ProviderCapability,
   ProviderDocumentChangeSession,
@@ -26,7 +25,6 @@ import type {
   RootPromotionRequest,
   SealedIdentityImportPreparation,
   SealedKeyAgreementRequest,
-  SealedProviderAdoptionPreparation,
   SealedRootExportRequest,
   SealedRootImportPreparation,
   SealedSecretDelivery,
@@ -55,7 +53,6 @@ export type {
   ObjectProofRequest,
   PreparedHttpSignatureAttempt,
   PreparedIdentityMaterialImport,
-  PreparedProviderAdoption,
   PreparedRootImport,
   ProviderCapability,
   ProviderDocumentChangeSession,
@@ -65,7 +62,6 @@ export type {
   RootPromotionRequest,
   SealedIdentityImportPreparation,
   SealedKeyAgreementRequest,
-  SealedProviderAdoptionPreparation,
   SealedRootExportRequest,
   SealedRootImportPreparation,
   SealedSecretDelivery,
@@ -132,7 +128,6 @@ export interface HostProviderLease {
   exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretDelivery>
   prepareLegacyRootImport(request: SealedRootImportPreparation): Promise<PreparedRootImport>
   prepareIdentityMaterialImport(request: SealedIdentityImportPreparation): Promise<PreparedIdentityMaterialImport>
-  prepareProviderAdoption(request: SealedProviderAdoptionPreparation): Promise<PreparedProviderAdoption>
   grantConsumer(reference: IdentityReference, consumer: string): Promise<void>
   revokeConsumer(reference: IdentityReference, consumer: string): Promise<void>
 }

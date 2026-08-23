@@ -224,16 +224,6 @@ class ProviderLease {
     return new PreparedIdentityMaterialImport(prepared)
   }
 
-  async prepareProviderAdoption(request) {
-    const prepared = await call(
-      this.#inner.prepareProviderAdoption({
-        stateRoot: request.stateRoot,
-        target: request.target,
-        requestId: request.requestId,
-      }),
-    )
-    return new PreparedProviderAdoption(prepared)
-  }
 }
 
 class ProviderDocumentChangeSession {
@@ -335,37 +325,6 @@ class PreparedIdentityMaterialImport {
     return publicIdentity(
       await call(this.#inner.complete(token, envelopes.map(nativeEnvelope))),
     )
-  }
-}
-
-class PreparedProviderAdoption {
-  #inner
-
-  constructor(inner) {
-    this.#inner = inner
-  }
-
-  offer() {
-    const value = this.#inner.offer()
-    return {
-      storeId: value.store_id,
-      rootKeyFingerprint: value.root_key_fingerprint,
-      recipientPublicKey: Buffer.from(value.recipient_public_key),
-      requestId: value.request_id,
-      token: value.token,
-      authorization: authorizationContext(value.authorization),
-      aad: value.aad_b64u,
-    }
-  }
-
-  async complete(token, envelope) {
-    const value = await call(this.#inner.complete(token, nativeEnvelope(envelope)))
-    return {
-      storeId: value.store_id,
-      provider: value.provider,
-      rootKeyFingerprint: value.root_key_fingerprint,
-      generation: value.generation,
-    }
   }
 }
 

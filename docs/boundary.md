@@ -136,19 +136,16 @@ verification methods from a published DID document.
 Multiple identities share no global singleton. Every operation is scoped to a
 store, identity, and KID. Cross-identity KID use fails closed.
 
-## Store provider adoption
+## First-release Store ownership
 
-Provider adoption moves custody of the same Store root key from an injected
-host provider to a supported DSH-owned provider. It is not root-key rotation or
-re-encryption: record ciphertexts and `root_key_fingerprint` remain byte-for-byte
-unchanged. The operation verifies the supplied key against the current manifest,
-imports it into the target provider, records a recovery journal, atomically
-switches the manifest binding, and converges safely after interruption at every
-persistent phase.
+ANP Identity has not shipped a compatible Store that DSH must upgrade. The DSH
+identity plugin therefore creates and owns its canonical Store from first use;
+it does not adopt another Store's root key or mutate an existing provider
+binding. A development Store created by another owner fails closed and must be
+removed or migrated explicitly by its operator.
 
-During an authorized adoption, both the old provider and the new provider may
-temporarily possess the same key. The old provider must be retired by the host
-only after the new binding opens successfully and the adoption report has been
-persisted. DSH External mode passes the key into adoption only through the
-reverse sealed handoff; it is never placed in a TypeScript DTO, log, catalog, or
-journal.
+Released AWiki legacy vault/PEM custody is a separate case. Its identity keys
+are imported into the new plugin-owned Store through the request-bound sealed
+Host SPI, verified there, and only then selected by AWiki's existing atomic
+cutover workflow. Plaintext imported key material never enters a TypeScript
+DTO, log, catalog, or journal.

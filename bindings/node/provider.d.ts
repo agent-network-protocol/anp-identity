@@ -198,28 +198,6 @@ export interface SealedIdentityMaterialImportOffer extends SealedImportOffer {
   itemAad: string[]
 }
 
-export type ProviderAdoptionTarget =
-  | { kind: 'local_private_file' }
-  | { kind: 'keyring'; service: string; account: string }
-
-export interface SealedProviderAdoptionPreparation {
-  stateRoot: string
-  target: ProviderAdoptionTarget
-  requestId: string
-}
-
-export interface SealedProviderAdoptionOffer extends SealedImportOffer {
-  storeId: string
-  rootKeyFingerprint: string
-}
-
-export interface ProviderAdoptionReport {
-  storeId: string
-  provider: unknown
-  rootKeyFingerprint: string
-  generation: number
-}
-
 export interface DeviceEnrollmentRequest {
   remote: VerifiedRemoteDocument
   deviceId: string
@@ -348,9 +326,6 @@ export interface ProviderLease {
   prepareIdentityMaterialImport(
     request: SealedIdentityImportPreparation,
   ): Promise<PreparedIdentityMaterialImport>
-  prepareProviderAdoption(
-    request: SealedProviderAdoptionPreparation,
-  ): Promise<PreparedProviderAdoption>
 }
 
 export interface ProviderDocumentChangeSession {
@@ -382,9 +357,4 @@ export interface PreparedRootImport {
 export interface PreparedIdentityMaterialImport {
   offer(): SealedIdentityMaterialImportOffer
   complete(token: string, envelopes: SealedSecretEnvelope[]): Promise<PublicIdentity>
-}
-
-export interface PreparedProviderAdoption {
-  offer(): SealedProviderAdoptionOffer
-  complete(token: string, envelope: SealedSecretEnvelope): Promise<ProviderAdoptionReport>
 }

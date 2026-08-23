@@ -34,11 +34,6 @@ pub enum anp_identity::host::HostRootCapability
 pub anp_identity::host::HostRootCapability::Absent
 pub anp_identity::host::HostRootCapability::Active
 pub anp_identity::host::HostRootCapability::Pending
-pub enum anp_identity::host::ProviderAdoptionTarget
-pub anp_identity::host::ProviderAdoptionTarget::Keyring
-pub anp_identity::host::ProviderAdoptionTarget::Keyring::account: alloc::string::String
-pub anp_identity::host::ProviderAdoptionTarget::Keyring::service: alloc::string::String
-pub anp_identity::host::ProviderAdoptionTarget::LocalPrivateFile
 pub enum anp_identity::host::ProviderAuthorizationError
 pub anp_identity::host::ProviderAuthorizationError::CapabilityDenied
 pub anp_identity::host::ProviderAuthorizationError::Internal
@@ -61,10 +56,6 @@ pub fn anp_identity::host::SealedProviderError::from(anp_identity::host::Provide
 pub enum anp_identity::host::WrappedRootImportOutcome
 pub anp_identity::host::WrappedRootImportOutcome::Active
 pub anp_identity::host::WrappedRootImportOutcome::Pending
-pub struct anp_identity::host::AdoptStoreRootKeyRequest
-pub anp_identity::host::AdoptStoreRootKeyRequest::existing_root_key: zeroize::Zeroizing<[u8; 32]>
-pub anp_identity::host::AdoptStoreRootKeyRequest::state_root: std::path::PathBuf
-pub anp_identity::host::AdoptStoreRootKeyRequest::target: anp_identity::host::ProviderAdoptionTarget
 pub struct anp_identity::host::DeviceEnrollmentRequest
 pub anp_identity::host::DeviceEnrollmentRequest::capabilities: anp_identity::host::EnrollmentCapabilities
 pub anp_identity::host::DeviceEnrollmentRequest::device_agreement_fragment: alloc::string::String
@@ -166,15 +157,6 @@ pub struct anp_identity::host::PreparedHttpSignatureAttempt
 pub anp_identity::host::PreparedHttpSignatureAttempt::binding_digest: alloc::string::String
 pub anp_identity::host::PreparedHttpSignatureAttempt::header_patch: alloc::vec::Vec<anp_identity::host::HttpHeader>
 pub anp_identity::host::PreparedHttpSignatureAttempt::kid: alloc::string::String
-pub struct anp_identity::host::PreparedSealedProviderAdoption
-impl anp_identity::host::PreparedSealedProviderAdoption
-pub fn anp_identity::host::PreparedSealedProviderAdoption::complete(self, &anp_identity::host::ProviderAuthorization, anp_identity::host::OneTimeCapabilityToken, &anp_identity::host::SealedSecretEnvelope) -> core::result::Result<anp_identity::host::ProviderAdoptionReport, anp_identity::host::SealedProviderError>
-pub fn anp_identity::host::PreparedSealedProviderAdoption::prepare(&anp_identity::host::ProviderAuthorization, &anp_identity::host::ProviderCapabilityLease, anp_identity::host::SealedProviderAdoptionPreparation, i64) -> core::result::Result<(Self, anp_identity::host::SealedProviderAdoptionOffer), anp_identity::host::SealedProviderError>
-pub struct anp_identity::host::ProviderAdoptionReport
-pub anp_identity::host::ProviderAdoptionReport::generation: u64
-pub anp_identity::host::ProviderAdoptionReport::provider: anp_identity::RootKeyProviderBinding
-pub anp_identity::host::ProviderAdoptionReport::root_key_fingerprint: alloc::string::String
-pub anp_identity::host::ProviderAdoptionReport::store_id: alloc::string::String
 pub struct anp_identity::host::ProviderAuthorization
 impl anp_identity::host::ProviderAuthorization
 pub fn anp_identity::host::ProviderAuthorization::acquire_lease(&self, alloc::string::String, impl core::iter::traits::collect::IntoIterator<Item = alloc::string::String>, alloc::string::String, i64) -> core::result::Result<anp_identity::host::ProviderCapabilityLease, anp_identity::host::ProviderAuthorizationError>
@@ -216,18 +198,6 @@ pub anp_identity::host::SealedKeyAgreementRequest::request_id: alloc::string::St
 pub anp_identity::host::SealedKeyAgreementRequest::token: anp_identity::host::OneTimeCapabilityToken
 impl anp_identity::host::SealedKeyAgreementRequest
 pub fn anp_identity::host::SealedKeyAgreementRequest::operation_binding(&self) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
-pub struct anp_identity::host::SealedProviderAdoptionOffer
-pub anp_identity::host::SealedProviderAdoptionOffer::aad_b64u: alloc::string::String
-pub anp_identity::host::SealedProviderAdoptionOffer::authorization: anp_identity::host::IssuedAuthorizationContext
-pub anp_identity::host::SealedProviderAdoptionOffer::recipient_public_key: [u8; 32]
-pub anp_identity::host::SealedProviderAdoptionOffer::request_id: alloc::string::String
-pub anp_identity::host::SealedProviderAdoptionOffer::root_key_fingerprint: alloc::string::String
-pub anp_identity::host::SealedProviderAdoptionOffer::store_id: alloc::string::String
-pub anp_identity::host::SealedProviderAdoptionOffer::token: anp_identity::host::OneTimeCapabilityToken
-pub struct anp_identity::host::SealedProviderAdoptionPreparation
-pub anp_identity::host::SealedProviderAdoptionPreparation::request_id: alloc::string::String
-pub anp_identity::host::SealedProviderAdoptionPreparation::state_root: std::path::PathBuf
-pub anp_identity::host::SealedProviderAdoptionPreparation::target: anp_identity::host::ProviderAdoptionTarget
 pub struct anp_identity::host::SealedSecretDelivery
 pub anp_identity::host::SealedSecretDelivery::aad: alloc::string::String
 pub anp_identity::host::SealedSecretDelivery::authorization: anp_identity::host::IssuedAuthorizationContext
@@ -304,12 +274,10 @@ pub trait anp_identity::host::WrappedRootImportPort
 pub fn anp_identity::host::WrappedRootImportPort::import_wrapped_root_envelope(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::IdentityResult<anp_identity::host::WrappedRootImportOutcome>
 impl anp_identity::host::WrappedRootImportPort for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::import_wrapped_root_envelope(&mut self, &anp_identity::WrappedRootEnvelope) -> anp_identity::IdentityResult<anp_identity::host::WrappedRootImportOutcome>
-pub fn anp_identity::host::adopt_store_root_key_provider(anp_identity::host::AdoptStoreRootKeyRequest) -> anp_identity::IdentityResult<anp_identity::host::ProviderAdoptionReport>
 pub fn anp_identity::host::recipient_public_key_digest(&[u8; 32]) -> alloc::string::String
 pub fn anp_identity::host::sealed_enrollment_key_agreement_binding(&anp_identity::IdentityRef, &str, &str, &[u8; 32], &[u8; 32], &str) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
 pub fn anp_identity::host::sealed_key_agreement_binding(&anp_identity::IdentityRef, &str, &[u8; 32], &[u8; 32], &str) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
 pub fn anp_identity::host::sealed_operation_aad(&anp_identity::host::IssuedAuthorizationContext, &anp_identity::host::OneTimeOperationBinding, &anp_identity::IdentityRef) -> core::result::Result<alloc::vec::Vec<u8>, anp_identity::host::SealedProviderError>
-pub fn anp_identity::host::sealed_provider_adoption_binding(&anp_identity::host::SealedProviderAdoptionPreparation, &anp_identity::StoreManifest, &[u8; 32]) -> core::result::Result<anp_identity::host::OneTimeOperationBinding, anp_identity::host::SealedProviderError>
 pub enum anp_identity::AdoptDocumentOutcome
 pub anp_identity::AdoptDocumentOutcome::Activated
 pub anp_identity::AdoptDocumentOutcome::Revoked

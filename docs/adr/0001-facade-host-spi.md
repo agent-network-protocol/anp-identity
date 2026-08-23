@@ -72,10 +72,10 @@ the provider instance, lease, consumer, capability, store, identity, key,
 operation, recipient public-key digest, canonical input digest, and expiry.
 One-time operation tokens are replay checked.
 
-The existing same-key provider adoption is a v1 migration operation, not a
-rekey. It verifies the Store root-key fingerprint before atomically changing
-the provider binding. Any shared-key residue is reported; production cutover
-requires separate authorization.
+ANP Identity has not shipped a Store format, so the first DSH release creates
+and owns its canonical Store from first use. It does not adopt the root key or
+provider binding of a development Store. Migration from released AWiki legacy
+custody imports identity keys through the sealed Host SPI into that new Store.
 
 ## Consequences
 
@@ -96,5 +96,5 @@ Rust/TypeScript boundary with bounded revoke, cancellation, timeout, provider
 failure, and Host shutdown behavior. No business lock crosses the await. The
 shared RFC 9180 implementation passes a fixed reviewed vector, bidirectional
 sealed transfer, AAD substitution, tamper, length, and prototype one-time-token
-tests. Production capability-token and provider-adoption state are delivered
-in Step 2; the spike does not expose them as a compatibility API.
+tests. Production capability-token state is delivered in Step 2; the spike
+does not expose it as a compatibility API.

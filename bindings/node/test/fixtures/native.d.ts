@@ -44,12 +44,6 @@ export declare class PreparedIdentityMaterialImport {
 }
 export type JsPreparedIdentityMaterialImport = PreparedIdentityMaterialImport
 
-export declare class PreparedProviderAdoption {
-  offer(): any
-  complete(token: string, envelope: any): Promise<any>
-}
-export type JsPreparedProviderAdoption = PreparedProviderAdoption
-
 export declare class PreparedRootImport {
   offer(): any
   complete(token: string, envelope: any): Promise<string>
@@ -104,7 +98,6 @@ export declare class ProviderLease {
   exportRootKeySealed(request: JsSealedRootExportRequest): Promise<any>
   prepareLegacyRootImport(request: JsSealedRootImportPreparation): Promise<JsPreparedRootImport>
   prepareIdentityMaterialImport(request: JsSealedIdentityImportPreparation): Promise<JsPreparedIdentityMaterialImport>
-  prepareProviderAdoption(request: JsSealedProviderAdoptionPreparation): Promise<JsPreparedProviderAdoption>
 }
 export type JsProviderLease = ProviderLease
 
@@ -181,12 +174,6 @@ export interface JsSealedKeyAgreementRequest {
   kid: string
   peerPublic: Buffer
   recipientPublicKey: Buffer
-  requestId: string
-}
-
-export interface JsSealedProviderAdoptionPreparation {
-  stateRoot: string
-  target: any
   requestId: string
 }
 

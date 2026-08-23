@@ -221,16 +221,6 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
   )
   await targetLease.recoverIdentity(proposal.identity)
 
-  const adoption = await lease.prepareProviderAdoption({
-    stateRoot: root,
-    target: { kind: 'local_private_file' },
-    requestId: 'adoption-1',
-  })
-  const offer = adoption.offer()
-  assert.equal(offer.recipientPublicKey.length, 32)
-  assert.match(offer.rootKeyFingerprint, /^[A-Za-z0-9_-]{43}$/)
-  assert.equal(Object.hasOwn(offer, 'rootKey'), false)
-
   const denied = await provider.acquireLease({
     consumer: 'viewer',
     capabilities: ['IDENTITY_READ'],

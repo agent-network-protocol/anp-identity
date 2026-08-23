@@ -5,42 +5,11 @@ use chrono::Utc;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use crate::fs_util::{remove_file_and_sync, write_atomic_private};
+use crate::fs_util::write_atomic_private;
 use crate::keystore::FileKeyStore;
 use crate::platform::{root_key_fingerprint, RootKey, RootKeyProvider};
 use crate::store_lock::{StoreLock, StoreWriteGuard};
 use crate::{DidError, DidResult, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION};
-
-const PROVIDER_ADOPTION_SCHEMA_VERSION: u32 = 1;
-const PROVIDER_ADOPTION_JOURNAL: &str = "provider-adoption-v1.json";
-
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ProviderAdoptionJournal {
-    schema_version: u32,
-    store_id: String,
-    original_provider: crate::RootKeyProviderBinding,
-    target_provider: crate::RootKeyProviderBinding,
-    root_key_fingerprint: String,
-    original_generation: u64,
-    phase: ProviderAdoptionPhase,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum ProviderAdoptionPhase {
-    TargetKeyImported,
-    ManifestSwitched,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProviderAdoptionPersistPoint {
-    TargetKeyImported,
-    InitialJournalWritten,
-    ManifestSwitched,
-    SwitchedJournalWritten,
-    JournalRemoved,
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum ProviderInitialization<'a> {
@@ -60,10 +29,6 @@ pub(crate) struct StoreRuntime {
 }
 
 impl StoreRuntime {
-    pub(crate) fn manifest_at(root: &Path) -> DidResult<StoreManifest> {
-        read_manifest(root)
-    }
-
     pub(crate) fn initialize(
         root: impl Into<PathBuf>,
         initialization: ProviderInitialization<'_>,
@@ -132,140 +97,6 @@ impl StoreRuntime {
         })
     }
 
-    pub(crate) fn adopt_root_key_provider(
-        root: impl Into<PathBuf>,
-        root_key: RootKey,
-        target: &dyn RootKeyProvider,
-    ) -> DidResult<Self> {
-        Self::adopt_root_key_provider_inner(root.into(), root_key, target, &mut |_| Ok(()))
-    }
-
-    fn adopt_root_key_provider_inner(
-        root: PathBuf,
-        root_key: RootKey,
-        target: &dyn RootKeyProvider,
-        after_persist: &mut dyn FnMut(ProviderAdoptionPersistPoint) -> DidResult<()>,
-    ) -> DidResult<Self> {
-        let lock = StoreLock::new(&root);
-        let guard = lock.acquire_exclusive()?;
-        let mut manifest = read_manifest(&root)?;
-        let supplied_fingerprint = root_key_fingerprint(&root_key);
-        if supplied_fingerprint != manifest.root_key_fingerprint {
-            return Err(DidError::RootKeyMismatch);
-        }
-        let target_binding = target.binding();
-        let journal_path = provider_adoption_journal_path(&root);
-        if manifest.provider == target_binding && !journal_path.exists() {
-            target.import_existing(&guard, &root_key)?;
-            after_persist(ProviderAdoptionPersistPoint::TargetKeyImported)?;
-            drop(guard);
-            return Self::open(root, &[target]);
-        }
-        let mut journal = if journal_path.exists() {
-            read_provider_adoption_journal(&journal_path)?
-        } else {
-            ProviderAdoptionJournal {
-                schema_version: PROVIDER_ADOPTION_SCHEMA_VERSION,
-                store_id: manifest.store_id.clone(),
-                original_provider: manifest.provider.clone(),
-                target_provider: target_binding.clone(),
-                root_key_fingerprint: manifest.root_key_fingerprint.clone(),
-                original_generation: manifest.generation,
-                phase: ProviderAdoptionPhase::TargetKeyImported,
-            }
-        };
-        validate_provider_adoption_journal(&journal, &manifest, &target_binding)?;
-        target.import_existing(&guard, &root_key)?;
-        after_persist(ProviderAdoptionPersistPoint::TargetKeyImported)?;
-        write_provider_adoption_journal(&root, &journal)?;
-        after_persist(ProviderAdoptionPersistPoint::InitialJournalWritten)?;
-
-        if manifest.provider == journal.original_provider
-            && manifest.generation == journal.original_generation
-        {
-            manifest.provider = target_binding.clone();
-            manifest.generation = manifest
-                .generation
-                .checked_add(1)
-                .ok_or(DidError::Conflict)?;
-            write_manifest(&root, &guard, &manifest)?;
-            after_persist(ProviderAdoptionPersistPoint::ManifestSwitched)?;
-        } else if manifest.provider != target_binding
-            || manifest.generation
-                != journal
-                    .original_generation
-                    .checked_add(1)
-                    .ok_or(DidError::Conflict)?
-        {
-            return Err(DidError::Conflict);
-        }
-        journal.phase = ProviderAdoptionPhase::ManifestSwitched;
-        write_provider_adoption_journal(&root, &journal)?;
-        after_persist(ProviderAdoptionPersistPoint::SwitchedJournalWritten)?;
-        drop(guard);
-        Self::open(root, &[target])
-    }
-
-    #[cfg(test)]
-    pub(crate) fn adopt_root_key_provider_injected(
-        root: impl Into<PathBuf>,
-        root_key: RootKey,
-        target: &dyn RootKeyProvider,
-        fail_after: ProviderAdoptionPersistPoint,
-    ) -> DidResult<Self> {
-        Self::adopt_root_key_provider_inner(root.into(), root_key, target, &mut |point| {
-            if point == fail_after {
-                Err(DidError::Io(
-                    "injected provider adoption failure".to_owned(),
-                ))
-            } else {
-                Ok(())
-            }
-        })
-    }
-
-    pub(crate) fn complete_root_key_provider_adoption(&self) -> DidResult<()> {
-        self.complete_root_key_provider_adoption_inner(&mut |_| Ok(()))
-    }
-
-    fn complete_root_key_provider_adoption_inner(
-        &self,
-        after_persist: &mut dyn FnMut(ProviderAdoptionPersistPoint) -> DidResult<()>,
-    ) -> DidResult<()> {
-        let guard = self.acquire_write()?;
-        let journal_path = provider_adoption_journal_path(&self.root);
-        if !journal_path.exists() {
-            return Ok(());
-        }
-        let journal = read_provider_adoption_journal(&journal_path)?;
-        if journal.phase != ProviderAdoptionPhase::ManifestSwitched
-            || journal.store_id != self.manifest.store_id
-            || journal.target_provider != self.manifest.provider
-            || journal.root_key_fingerprint != self.manifest.root_key_fingerprint
-        {
-            return Err(DidError::Conflict);
-        }
-        guard.require_store(&self.root)?;
-        remove_file_and_sync(&journal_path)?;
-        after_persist(ProviderAdoptionPersistPoint::JournalRemoved)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn complete_root_key_provider_adoption_injected(
-        &self,
-        fail_after: ProviderAdoptionPersistPoint,
-    ) -> DidResult<()> {
-        self.complete_root_key_provider_adoption_inner(&mut |point| {
-            if point == fail_after {
-                Err(DidError::Io(
-                    "injected provider adoption failure".to_owned(),
-                ))
-            } else {
-                Ok(())
-            }
-        })
-    }
-
     pub(crate) fn acquire_write(&self) -> DidResult<StoreWriteGuard> {
         self.lock.acquire_exclusive()
     }
@@ -314,64 +145,6 @@ fn write_manifest(root: &Path, guard: &StoreWriteGuard, manifest: &StoreManifest
 
 fn manifest_path(root: &Path) -> PathBuf {
     root.join("manifest.json")
-}
-
-fn provider_adoption_journal_path(root: &Path) -> PathBuf {
-    root.join(PROVIDER_ADOPTION_JOURNAL)
-}
-
-fn read_provider_adoption_journal(path: &Path) -> DidResult<ProviderAdoptionJournal> {
-    let bytes = std::fs::read(path).map_err(|error| DidError::Io(error.to_string()))?;
-    let journal: ProviderAdoptionJournal = serde_json::from_slice(&bytes)
-        .map_err(|error| DidError::Serialization(error.to_string()))?;
-    if journal.schema_version != PROVIDER_ADOPTION_SCHEMA_VERSION {
-        return Err(DidError::Serialization(
-            "unsupported provider adoption journal schema".to_owned(),
-        ));
-    }
-    Ok(journal)
-}
-
-fn write_provider_adoption_journal(
-    root: &Path,
-    journal: &ProviderAdoptionJournal,
-) -> DidResult<()> {
-    let bytes = serde_json::to_vec_pretty(journal)
-        .map_err(|error| DidError::Serialization(error.to_string()))?;
-    write_atomic_private(&provider_adoption_journal_path(root), &bytes)
-}
-
-fn validate_provider_adoption_journal(
-    journal: &ProviderAdoptionJournal,
-    manifest: &StoreManifest,
-    target: &crate::RootKeyProviderBinding,
-) -> DidResult<()> {
-    if journal.store_id != manifest.store_id
-        || &journal.target_provider != target
-        || journal.root_key_fingerprint != manifest.root_key_fingerprint
-        || journal.original_provider == journal.target_provider
-    {
-        return Err(DidError::Conflict);
-    }
-    match journal.phase {
-        ProviderAdoptionPhase::TargetKeyImported => {
-            let before_switch = manifest.provider == journal.original_provider
-                && manifest.generation == journal.original_generation;
-            let after_switch = manifest.provider == journal.target_provider
-                && manifest.generation == journal.original_generation.checked_add(1).unwrap_or(0);
-            if !before_switch && !after_switch {
-                return Err(DidError::Conflict);
-            }
-        }
-        ProviderAdoptionPhase::ManifestSwitched => {
-            if manifest.provider != journal.target_provider
-                || manifest.generation != journal.original_generation.checked_add(1).unwrap_or(0)
-            {
-                return Err(DidError::Conflict);
-            }
-        }
-    }
-    Ok(())
 }
 
 fn random_store_id() -> String {

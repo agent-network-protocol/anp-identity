@@ -1003,8 +1003,6 @@ class HostLease implements HostProviderLease, DisposableLease {
     this.call('IDENTITY_IMPORT', () => this.native.prepareLegacyRootImport(request))
   prepareIdentityMaterialImport = (request: NativeProvider.SealedIdentityImportPreparation) =>
     this.call('IDENTITY_IMPORT', () => this.native.prepareIdentityMaterialImport(request))
-  prepareProviderAdoption = (request: NativeProvider.SealedProviderAdoptionPreparation) =>
-    this.call('IDENTITY_IMPORT', () => this.native.prepareProviderAdoption(request))
   grantConsumer = (reference: IdentityReference, consumer: string) =>
     this.call('IDENTITY_READ', () => this.service.grantConsumer(this.slot, reference, consumer))
   revokeConsumer = (reference: IdentityReference, consumer: string) =>

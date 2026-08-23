@@ -38,9 +38,8 @@ const signature = await identity.sign({
 
 `@agent-network-protocol/anp-identity/provider` is a separate Host-only entry
 for a trusted DSH identity plugin and AWiki IM Core adapter. It requires a
-bounded capability lease. High-risk ECDH, Root Transfer, migration import, and
-Store-provider adoption operations additionally consume request-bound one-time
-tokens.
+bounded capability lease. High-risk ECDH, Root Transfer, and migration import
+operations additionally consume request-bound one-time tokens.
 
 Root keys, imported key material, and ECDH shared secrets never return as
 plaintext from this entry. They cross the TypeScript bridge only in fixed-suite
@@ -63,8 +62,9 @@ but copying both that file and the encrypted Store permits offline decryption.
 This is a logical API/FFI boundary, not process isolation. The native addon
 shares an address space with Node.js and is not an HSM, Secure Enclave, or
 independent KMS. JavaScript input-buffer copies are outside Rust zeroization.
-See the repository's `docs/boundary.md` for the full trust model, sealed-handoff
-rules, Root Transfer exception, and provider-adoption lifecycle.
+See the repository's `docs/boundary.md` for the full trust model,
+sealed-handoff rules, Root Transfer exception, and first-release Store
+ownership.
 
 The package is supported on a platform only after its native build and tests
 pass there. Declaring a target in the build configuration alone is not a support
