@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -120,7 +120,7 @@ pub struct ProviderAuthorization {
 
 struct AuthorizationState {
     leases: HashMap<String, LeaseState>,
-    consumed_tokens: HashSet<[u8; 32]>,
+    consumed_tokens: HashMap<[u8; 32], i64>,
 }
 
 struct LeaseState {
@@ -166,7 +166,7 @@ impl ProviderAuthorization {
             hmac_key: Zeroizing::new(hmac_key),
             state: Mutex::new(AuthorizationState {
                 leases: HashMap::new(),
-                consumed_tokens: HashSet::new(),
+                consumed_tokens: HashMap::new(),
             }),
         }
     }
@@ -431,7 +431,14 @@ impl ProviderAuthorization {
         {
             return Err(ProviderAuthorizationError::LeaseInvalid);
         }
-        if !state.consumed_tokens.insert(token_digest) {
+        state
+            .consumed_tokens
+            .retain(|_, expires_at| *expires_at > now);
+        if state
+            .consumed_tokens
+            .insert(token_digest, claims.expires_at)
+            .is_some()
+        {
             return Err(ProviderAuthorizationError::TokenConsumed);
         }
         Ok(ConsumedOneTimeAuthorization {
@@ -610,6 +617,43 @@ mod tests {
             authority.issue_one_time_at(&denied_lease, &denied, 10, 1_000),
             Err(ProviderAuthorizationError::CapabilityDenied)
         ));
+    }
+
+    #[test]
+    fn consuming_a_token_prunes_expired_replay_markers() {
+        let authority = ProviderAuthorization::new();
+        let lease = authority
+            .acquire_lease_at(
+                "dsh-awiki".to_owned(),
+                [capability::IDENTITY_ECDH_SEALED.to_owned()],
+                "store-1".to_owned(),
+                600,
+                1_000,
+            )
+            .unwrap();
+        let first = binding();
+        let first_token = authority
+            .issue_one_time_at(&lease, &first, 10, 1_000)
+            .unwrap();
+        authority
+            .consume_for_operation_at(&first_token, &first, 1_001)
+            .unwrap();
+
+        let mut second = binding();
+        second.request_id = "request-2".to_owned();
+        let second_token = authority
+            .issue_one_time_at(&lease, &second, 20, 1_005)
+            .unwrap();
+        authority
+            .consume_for_operation_at(&second_token, &second, 1_011)
+            .unwrap();
+
+        let state = authority.state.lock().unwrap();
+        assert_eq!(state.consumed_tokens.len(), 1);
+        assert!(state
+            .consumed_tokens
+            .values()
+            .all(|expires_at| *expires_at > 1_011));
     }
 
     #[test]
