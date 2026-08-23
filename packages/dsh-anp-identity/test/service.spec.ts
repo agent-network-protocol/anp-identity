@@ -54,6 +54,12 @@ describe('DSH ANP Identity service', () => {
       payload,
       signature: signature.bytes,
     })).resolves.toBe('valid')
+    const deviceSignature = await alice.sign({
+      purpose: 'device_assertion',
+      kid: `${publicIdentity.reference.did}#device`,
+      payload,
+    })
+    expect(deviceSignature.bytes).toHaveLength(64)
 
     let transported: Request | undefined
     const response = await alice.authenticatedHttp.dispatch(

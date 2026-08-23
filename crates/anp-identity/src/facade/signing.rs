@@ -100,7 +100,7 @@ impl ManagedIdentity {
         request: OriginProofRequest,
     ) -> IdentityResult<SignedOriginProof> {
         let engine = self.lock_engine()?;
-        let metadata = select_key(&engine, &request.key, KeyRole::RequestSigning)?;
+        let metadata = select_origin_proof_key(&engine, &request.key)?;
         let proof = engine.sign_origin_proof(
             &request.method,
             &request.meta,
@@ -136,6 +136,50 @@ impl ManagedIdentity {
             Err(error) => Err(error.into()),
         }
     }
+}
+
+fn select_origin_proof_key<'a>(
+    identity: &'a crate::DidIdentity,
+    selector: &KeySelector,
+) -> IdentityResult<&'a KeyMetadata> {
+    match selector {
+        KeySelector::Kid(kid) => {
+            let metadata = identity.key_metadata(kid)?;
+            require_origin_proof_key(identity, metadata)?;
+            Ok(metadata)
+        }
+        KeySelector::Default => {
+            let mut candidates = identity
+                .keys()
+                .iter()
+                .filter(|metadata| require_origin_proof_key(identity, metadata).is_ok());
+            let selected = candidates.next().ok_or(IdentityError::KeyUnavailable)?;
+            if candidates.next().is_some() {
+                return Err(IdentityError::AmbiguousKey);
+            }
+            Ok(selected)
+        }
+    }
+}
+
+fn require_origin_proof_key(
+    identity: &crate::DidIdentity,
+    metadata: &KeyMetadata,
+) -> IdentityResult<()> {
+    if !matches!(
+        metadata.role,
+        KeyRole::DeviceSigning | KeyRole::RequestSigning
+    ) {
+        return Err(IdentityError::KeyPurposeViolation);
+    }
+    require_relationship(identity, metadata, metadata.role)?;
+    if metadata.origin != KeyOrigin::Managed
+        || metadata.state != KeyState::Active
+        || metadata.material_erased
+    {
+        return Err(IdentityError::KeyUnavailable);
+    }
+    Ok(())
 }
 
 pub(crate) fn select_key<'a>(

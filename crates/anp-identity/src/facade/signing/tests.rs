@@ -110,38 +110,53 @@ fn facade_origin_proof_matches_the_engine_semantics() {
         "content_type": "application/json"
     });
     let body = serde_json::json!({"message": "facade"});
-    let facade = identity
-        .sign_origin_proof(OriginProofRequest {
-            method: "message.send".to_owned(),
-            meta: meta.clone(),
-            body: body.clone(),
-            key: KeySelector::Kid("#request".to_owned()),
-            options: OriginProofOptions {
-                created: Some(1_787_403_600),
-                expires: Some(1_787_403_900),
-                nonce: Some("facade-parity".to_owned()),
-            },
-        })
-        .unwrap();
-    let engine = identity
-        .lock_engine()
-        .unwrap()
-        .sign_origin_proof(
-            "message.send",
-            &meta,
-            &body,
-            "#request",
-            anp::proof::Rfc9421OriginProofGenerationOptions {
-                created: Some(1_787_403_600),
-                expires: Some(1_787_403_900),
-                nonce: Some("facade-parity".to_owned()),
-                label: None,
-            },
-        )
-        .unwrap();
-    assert_eq!(facade.content_digest, engine.content_digest);
-    assert_eq!(facade.signature_input, engine.signature_input);
-    assert_eq!(facade.signature, engine.signature);
+    for kid in ["#request", "#device"] {
+        let facade = identity
+            .sign_origin_proof(OriginProofRequest {
+                method: "message.send".to_owned(),
+                meta: meta.clone(),
+                body: body.clone(),
+                key: KeySelector::Kid(kid.to_owned()),
+                options: OriginProofOptions {
+                    created: Some(1_787_403_600),
+                    expires: Some(1_787_403_900),
+                    nonce: Some("facade-parity".to_owned()),
+                },
+            })
+            .unwrap();
+        let engine = identity
+            .lock_engine()
+            .unwrap()
+            .sign_origin_proof(
+                "message.send",
+                &meta,
+                &body,
+                kid,
+                anp::proof::Rfc9421OriginProofGenerationOptions {
+                    created: Some(1_787_403_600),
+                    expires: Some(1_787_403_900),
+                    nonce: Some("facade-parity".to_owned()),
+                    label: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(facade.content_digest, engine.content_digest);
+        assert_eq!(facade.signature_input, engine.signature_input);
+        assert_eq!(facade.signature, engine.signature);
+    }
+
+    assert_eq!(
+        identity
+            .sign_origin_proof(OriginProofRequest {
+                method: "message.send".to_owned(),
+                meta,
+                body,
+                key: KeySelector::Default,
+                options: OriginProofOptions::default(),
+            })
+            .err(),
+        Some(IdentityError::AmbiguousKey)
+    );
 }
 
 fn identity(duplicate_request: bool) -> (tempfile::TempDir, ManagedIdentity) {
