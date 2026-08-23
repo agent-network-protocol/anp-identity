@@ -467,10 +467,7 @@ impl Default for ProviderAuthorization {
 }
 
 pub fn recipient_public_key_digest(public_key: &[u8; 32]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(b"anp.identity.recipient-public-key.v1\0");
-    digest.update(public_key);
-    format!("sha256:{}", URL_SAFE_NO_PAD.encode(digest.finalize()))
+    anp::sealed_handoff::sealed_recipient_public_key_digest(public_key)
 }
 
 fn validate_binding(binding: &OneTimeOperationBinding) -> Result<(), ProviderAuthorizationError> {

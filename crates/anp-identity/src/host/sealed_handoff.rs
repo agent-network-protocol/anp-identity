@@ -12,12 +12,13 @@ use super::{
 };
 use crate::{IdentityError, IdentityRef, KeySelector, ManagedIdentity};
 
-pub const SEALED_SECRET_PROTOCOL: &str = "anp-sealed-secret/1";
-pub const SEALED_SECRET_INFO: &[u8] = b"anp.identity.sealed-secret.v1";
-const ECDH_SEALED_OPERATION: &str = "ecdh_sealed";
-const ENROLLMENT_ECDH_SEALED_OPERATION: &str = "enrollment_ecdh_sealed";
+pub const SEALED_SECRET_PROTOCOL: &str = anp::sealed_handoff::IDENTITY_SEALED_SECRET_PROTOCOL;
+pub const SEALED_SECRET_INFO: &[u8] = anp::sealed_handoff::IDENTITY_SEALED_SECRET_INFO;
+const ECDH_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ECDH_OPERATION;
+const ENROLLMENT_ECDH_SEALED_OPERATION: &str =
+    anp::sealed_handoff::IDENTITY_ENROLLMENT_ECDH_OPERATION;
 #[cfg(feature = "root-export")]
-const ROOT_EXPORT_SEALED_OPERATION: &str = "export_root_key_sealed";
+const ROOT_EXPORT_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ROOT_EXPORT_OPERATION;
 #[cfg(feature = "key-import")]
 const ROOT_IMPORT_SEALED_OPERATION: &str = "import_legacy_root_transfer_sealed";
 #[cfg(feature = "key-import")]
@@ -403,6 +404,7 @@ impl PreparedSealedProviderAdoption {
             &issued.context.parent_lease_id,
             &issued.context.consumer,
             &issued.context.capability,
+            issued.context.expires_at,
         )?;
         let offer = SealedProviderAdoptionOffer {
             store_id: manifest.store_id.clone(),
@@ -683,41 +685,15 @@ pub fn sealed_key_agreement_binding(
     recipient_public_key: &[u8; 32],
     request_id: &str,
 ) -> Result<OneTimeOperationBinding, SealedProviderError> {
-    validate_request(identity, kid, request_id)?;
-    #[derive(Serialize)]
-    struct DigestInput<'a> {
-        protocol: &'static str,
-        operation: &'static str,
-        store_id: &'a str,
-        identity_id: &'a str,
-        did: &'a str,
-        kid: &'a str,
-        algorithm: &'static str,
-        peer_public_b64u: String,
-        recipient_public_key_digest: String,
-        request_id: &'a str,
-    }
-    let input = DigestInput {
-        protocol: SEALED_SECRET_PROTOCOL,
-        operation: ECDH_SEALED_OPERATION,
-        store_id: &identity.store_id,
-        identity_id: &identity.identity_id,
-        did: &identity.did,
+    anp::sealed_handoff::identity_ecdh_binding(
+        &sealed_identity_context(identity),
         kid,
-        algorithm: "X25519",
-        peer_public_b64u: URL_SAFE_NO_PAD.encode(peer_public),
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        peer_public,
+        recipient_public_key,
         request_id,
-    };
-    Ok(OneTimeOperationBinding {
-        capability: capability::IDENTITY_ECDH_SEALED.to_owned(),
-        identity_id: identity.identity_id.clone(),
-        operation: ECDH_SEALED_OPERATION.to_owned(),
-        kid: Some(kid.to_owned()),
-        request_id: request_id.to_owned(),
-        recipient_public_key: *recipient_public_key,
-        operation_input_digest: canonical_digest(&input)?,
-    })
+    )
+    .map(shared_operation_binding)
+    .map_err(|_| SealedProviderError::InvalidRequest)
 }
 
 pub fn sealed_enrollment_key_agreement_binding(
@@ -728,46 +704,16 @@ pub fn sealed_enrollment_key_agreement_binding(
     recipient_public_key: &[u8; 32],
     request_id: &str,
 ) -> Result<OneTimeOperationBinding, SealedProviderError> {
-    validate_request(identity, kid, request_id)?;
-    if enrollment_id.trim().is_empty() {
-        return Err(SealedProviderError::InvalidRequest);
-    }
-    #[derive(Serialize)]
-    struct DigestInput<'a> {
-        protocol: &'static str,
-        operation: &'static str,
-        store_id: &'a str,
-        identity_id: &'a str,
-        did: &'a str,
-        enrollment_id: &'a str,
-        kid: &'a str,
-        algorithm: &'static str,
-        peer_public_b64u: String,
-        recipient_public_key_digest: String,
-        request_id: &'a str,
-    }
-    let input = DigestInput {
-        protocol: SEALED_SECRET_PROTOCOL,
-        operation: ENROLLMENT_ECDH_SEALED_OPERATION,
-        store_id: &identity.store_id,
-        identity_id: &identity.identity_id,
-        did: &identity.did,
+    anp::sealed_handoff::identity_enrollment_ecdh_binding(
+        &sealed_identity_context(identity),
         enrollment_id,
         kid,
-        algorithm: "X25519",
-        peer_public_b64u: URL_SAFE_NO_PAD.encode(peer_public),
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        peer_public,
+        recipient_public_key,
         request_id,
-    };
-    Ok(OneTimeOperationBinding {
-        capability: capability::IDENTITY_ECDH_SEALED.to_owned(),
-        identity_id: identity.identity_id.clone(),
-        operation: ENROLLMENT_ECDH_SEALED_OPERATION.to_owned(),
-        kid: Some(kid.to_owned()),
-        request_id: request_id.to_owned(),
-        recipient_public_key: *recipient_public_key,
-        operation_input_digest: canonical_digest(&input)?,
-    })
+    )
+    .map(shared_operation_binding)
+    .map_err(|_| SealedProviderError::InvalidRequest)
 }
 
 #[cfg(feature = "root-export")]
@@ -778,41 +724,20 @@ pub fn sealed_root_export_binding(
     request_id: &str,
     user_presence_confirmed: bool,
 ) -> Result<OneTimeOperationBinding, SealedProviderError> {
-    validate_request(identity, kid, request_id)?;
-    if !user_presence_confirmed {
-        return Err(SealedProviderError::Authorization);
-    }
-    #[derive(Serialize)]
-    struct DigestInput<'a> {
-        protocol: &'static str,
-        operation: &'static str,
-        store_id: &'a str,
-        identity_id: &'a str,
-        did: &'a str,
-        kid: &'a str,
-        recipient_public_key_digest: String,
-        request_id: &'a str,
-        user_presence_confirmed: bool,
-    }
-    let input = DigestInput {
-        protocol: SEALED_SECRET_PROTOCOL,
-        operation: ROOT_EXPORT_SEALED_OPERATION,
-        store_id: &identity.store_id,
-        identity_id: &identity.identity_id,
-        did: &identity.did,
+    anp::sealed_handoff::identity_root_export_binding(
+        &sealed_identity_context(identity),
         kid,
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
+        recipient_public_key,
         request_id,
         user_presence_confirmed,
-    };
-    Ok(OneTimeOperationBinding {
-        capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
-        identity_id: identity.identity_id.clone(),
-        operation: ROOT_EXPORT_SEALED_OPERATION.to_owned(),
-        kid: Some(kid.to_owned()),
-        request_id: request_id.to_owned(),
-        recipient_public_key: *recipient_public_key,
-        operation_input_digest: canonical_digest(&input)?,
+    )
+    .map(shared_operation_binding)
+    .map_err(|_| {
+        if user_presence_confirmed {
+            SealedProviderError::InvalidRequest
+        } else {
+            SealedProviderError::Authorization
+        }
     })
 }
 
@@ -951,6 +876,7 @@ fn sealed_identity_material_item_aad(
         &context.parent_lease_id,
         &context.consumer,
         &context.capability,
+        context.expires_at,
     )
 }
 
@@ -1040,6 +966,7 @@ fn sealed_aad(
         &consumed.parent_lease_id,
         &consumed.consumer,
         &consumed.capability,
+        consumed.expires_at,
     )
 }
 
@@ -1066,6 +993,7 @@ pub fn sealed_operation_aad(
         &context.parent_lease_id,
         &context.consumer,
         &context.capability,
+        context.expires_at,
     )
 }
 
@@ -1081,37 +1009,51 @@ fn sealed_aad_values(
     parent_lease_id: &str,
     consumer: &str,
     capability: &str,
+    expires_at: i64,
 ) -> Result<Vec<u8>, SealedProviderError> {
-    #[derive(Serialize)]
-    struct Aad<'a> {
-        protocol_version: &'static str,
-        operation: &'a str,
-        provider_instance_id: &'a str,
-        parent_lease_id: &'a str,
-        consumer: &'a str,
-        capability: &'a str,
-        store_id: &'a str,
-        identity_id: &'a str,
-        kid: &'a str,
-        request_id: &'a str,
-        recipient_public_key_digest: String,
-        canonical_request_digest: &'a str,
-    }
-    serde_json_canonicalizer::to_vec(&Aad {
-        protocol_version: SEALED_SECRET_PROTOCOL,
-        operation,
-        provider_instance_id,
-        parent_lease_id,
-        consumer,
-        capability,
-        store_id: &identity.store_id,
-        identity_id: &identity.identity_id,
-        kid,
-        request_id,
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
-        canonical_request_digest: operation_input_digest,
-    })
+    anp::sealed_handoff::identity_operation_aad(
+        &anp::sealed_handoff::SealedAuthorizationContext {
+            provider_instance_id: provider_instance_id.to_owned(),
+            parent_lease_id: parent_lease_id.to_owned(),
+            consumer: consumer.to_owned(),
+            capability: capability.to_owned(),
+            store_id: identity.store_id.clone(),
+            expires_at,
+        },
+        &anp::sealed_handoff::SealedOperationBinding {
+            capability: capability.to_owned(),
+            identity_id: identity.identity_id.clone(),
+            operation: operation.to_owned(),
+            kid: kid.to_owned(),
+            request_id: request_id.to_owned(),
+            recipient_public_key: *recipient_public_key,
+            operation_input_digest: operation_input_digest.to_owned(),
+        },
+        &sealed_identity_context(identity),
+    )
     .map_err(|_| SealedProviderError::InvalidRequest)
+}
+
+fn sealed_identity_context(identity: &IdentityRef) -> anp::sealed_handoff::SealedIdentityContext {
+    anp::sealed_handoff::SealedIdentityContext {
+        store_id: identity.store_id.clone(),
+        identity_id: identity.identity_id.clone(),
+        did: identity.did.clone(),
+    }
+}
+
+fn shared_operation_binding(
+    binding: anp::sealed_handoff::SealedOperationBinding,
+) -> OneTimeOperationBinding {
+    OneTimeOperationBinding {
+        capability: binding.capability,
+        identity_id: binding.identity_id,
+        operation: binding.operation,
+        kid: Some(binding.kid),
+        request_id: binding.request_id,
+        recipient_public_key: binding.recipient_public_key,
+        operation_input_digest: binding.operation_input_digest,
+    }
 }
 
 fn canonical_digest(value: &impl Serialize) -> Result<String, SealedProviderError> {
