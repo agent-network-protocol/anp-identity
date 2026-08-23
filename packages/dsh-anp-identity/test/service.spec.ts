@@ -182,6 +182,19 @@ describe('DSH ANP Identity service', () => {
     await expect(beforeDispose.publicIdentity()).rejects.toMatchObject({ code: 'provider_disposed' })
   })
 
+  it('renews a long-lived Host Provider lease before its native token expires', async () => {
+    await using fixture = await serviceFixture(['owner'])
+    const host = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'owner',
+      capabilities: ['IDENTITY_READ'],
+      ttlSeconds: 3,
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 3_200))
+    await expect(host.list()).resolves.toEqual([])
+    host.dispose()
+  })
+
   it('rebuilds a corrupt catalog as unclaimed without inventing grants', async () => {
     await using fixture = await serviceFixture(['owner'])
     const owner = await fixture.ctx.anpIdentity.acquireClient({

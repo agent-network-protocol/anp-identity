@@ -164,6 +164,8 @@ const ALL_PROVIDER_CAPABILITIES: NativeProvider.ProviderCapability[] = [
   'AWIKI_LEGACY_ROOT_TRANSFER_V1',
 ]
 
+const HOST_LEASE_RENEWAL_SKEW_MS = 60_000
+
 /** One multi-DID ANP Identity service with a replaceable native Provider. */
 export class AnpIdentityService extends Service implements AnpIdentityServiceContract {
   static Config = Config
@@ -279,9 +281,11 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     const lease = new HostLease(
       this as unknown as InternalService,
       slot,
+      provider,
       native,
       request.consumer,
       request.capabilities,
+      request.ttlSeconds,
     )
     slot.leases.add(lease)
     return lease
@@ -899,21 +903,36 @@ class HostLease implements HostProviderLease, DisposableLease {
   readonly protocol = ANP_IDENTITY_PROVIDER_PROTOCOL
   readonly capabilities: readonly NativeProvider.ProviderCapability[]
   #disposed = false
+  #native: NativeProvider.ProviderLease
+  #expiresAt: number
+  #renewAt: number
+  readonly #retired = new Map<NativeProvider.ProviderLease, ReturnType<typeof setTimeout>>()
 
   constructor(
     readonly service: InternalService,
     readonly slot: ProviderSlot,
-    readonly native: NativeProvider.ProviderLease,
+    readonly provider: NativeIdentityProvider,
+    native: NativeProvider.ProviderLease,
     readonly consumer: string,
     capabilities: readonly NativeProvider.ProviderCapability[],
+    readonly ttlSeconds: number,
   ) {
     this.capabilities = Object.freeze([...capabilities])
+    this.#native = native
+    const now = Date.now()
+    this.#expiresAt = now + ttlSeconds * 1_000
+    this.#renewAt = renewalAt(now, ttlSeconds)
   }
 
   dispose(): void {
     if (this.#disposed) return
     this.#disposed = true
-    this.native.dispose()
+    this.#native.dispose()
+    for (const [native, timer] of this.#retired) {
+      clearTimeout(timer)
+      native.dispose()
+    }
+    this.#retired.clear()
     this.service.removeLease(this.slot, this)
   }
 
@@ -994,8 +1013,54 @@ class HostLease implements HostProviderLease, DisposableLease {
   private call<T>(capability: NativeProvider.ProviderCapability, operation: () => Promise<T>): Promise<T> {
     if (this.#disposed || this.slot.disposed) return Promise.reject(pluginError('provider_disposed'))
     if (!this.capabilities.includes(capability)) return Promise.reject(pluginError('capability_forbidden'))
+    try {
+      this.renewIfNeeded()
+    } catch (error) {
+      return Promise.reject(mapNativeError(error))
+    }
     return nativeCall(operation)
   }
+
+  private get native(): NativeProvider.ProviderLease {
+    return this.#native
+  }
+
+  private renewIfNeeded(): void {
+    const now = Date.now()
+    if (now < this.#renewAt) return
+    let next: NativeProvider.ProviderLease
+    try {
+      next = this.provider.acquireLease({
+        consumer: this.consumer,
+        capabilities: [...this.capabilities],
+        ttlSeconds: this.ttlSeconds,
+      })
+    } catch (error) {
+      if (now >= this.#expiresAt) throw error
+      return
+    }
+
+    const retired = this.#native
+    const retiredExpiresAt = this.#expiresAt
+    this.#native = next
+    this.#expiresAt = now + this.ttlSeconds * 1_000
+    this.#renewAt = renewalAt(now, this.ttlSeconds)
+    this.retire(retired, retiredExpiresAt)
+  }
+
+  private retire(native: NativeProvider.ProviderLease, expiresAt: number): void {
+    const timer = setTimeout(() => {
+      this.#retired.delete(native)
+      native.dispose()
+    }, Math.max(1, expiresAt - Date.now()))
+    timer.unref?.()
+    this.#retired.set(native, timer)
+  }
+}
+
+function renewalAt(issuedAt: number, ttlSeconds: number): number {
+  const ttlMs = ttlSeconds * 1_000
+  return issuedAt + ttlMs - Math.min(HOST_LEASE_RENEWAL_SKEW_MS, Math.floor(ttlMs / 5))
 }
 
 export default AnpIdentityService
