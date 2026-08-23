@@ -340,7 +340,12 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
           ...current,
           baselineIdentityIds: baseline.map(value => value.reference.identityId).sort(),
         }))
-        const created = await nativeCall(() => lease.native.create(input.identity))
+        const created = await this.createNativeWithRecovery(
+          lease.native,
+          input.identity,
+          requestId,
+          baseline.map(value => value.reference.identityId),
+        )
         await this.catalogStore.updateIntent(requestId, current => ({
           ...current,
           reference: created.reference,
@@ -483,7 +488,12 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
           ...current,
           baselineIdentityIds: baseline.map(value => value.reference.identityId).sort(),
         }))
-        const created = await nativeCall(() => native.create(request))
+        const created = await this.createNativeWithRecovery(
+          native,
+          request,
+          requestId,
+          baseline.map(value => value.reference.identityId),
+        )
         await this.catalogStore.updateIntent(requestId, current => ({
           ...current,
           reference: created.reference,
@@ -530,6 +540,31 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
         ...catalog,
         entries: catalog.entries.filter(entry => entry.identityId !== reference.identityId),
       }))
+    }
+  }
+
+  private async createNativeWithRecovery(
+    native: NativeProvider.ProviderLease,
+    request: NativeCreateIdentityRequest,
+    requestId: string,
+    baselineIdentityIds: string[],
+  ): Promise<PublicIdentity> {
+    try {
+      return await nativeCall(() => native.create(request))
+    } catch (createError) {
+      try {
+        const baseline = new Set(baselineIdentityIds)
+        const candidates = (await nativeCall(() => native.list()))
+          .filter(value => !baseline.has(value.reference.identityId))
+        if (candidates.length === 0) {
+          await this.catalogStore.deleteIntent(requestId)
+        } else if (candidates.length === 1) {
+          return await nativeCall(() => native.publicIdentity(candidates[0]!.reference))
+        }
+      } catch {
+        // Keep the intent when the native outcome cannot be determined safely.
+      }
+      throw createError
     }
   }
 

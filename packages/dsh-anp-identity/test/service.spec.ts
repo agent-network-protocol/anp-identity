@@ -9,6 +9,7 @@ import AnpIdentityService from '../src/index.js'
 import { CatalogStore, CREATE_INTENT_SCHEMA, findEntry } from '../src/catalog.js'
 import {
   ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL,
+  type NativeIdentityProvider,
   type NativeProviderRegistry,
 } from '../src/provider-api.js'
 import { openNativeProvider } from '../src/provider.js'
@@ -193,6 +194,65 @@ describe('DSH ANP Identity service', () => {
     await new Promise(resolve => setTimeout(resolve, 3_200))
     await expect(host.list()).resolves.toEqual([])
     host.dispose()
+  })
+
+  it('removes a create intent when native creation definitively created nothing', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-create-retry-'))
+    const ctx = await createContext(root, ['owner'])
+    const registration = await openNativeProvider({
+      stateRoot: root,
+      rootKeyProvider: 'injected',
+      rootKeyProviderId: 'dsh-test-root',
+      injectedRootKey: Buffer.alloc(32, 17),
+    })
+    let rejectCreate = true
+    const provider: NativeIdentityProvider = {
+      acquireLease(request) {
+        const lease = registration.provider.acquireLease(request)
+        return new Proxy(lease, {
+          get(target, property) {
+            if (property === 'create') {
+              return async (input: NativeCreateIdentityRequest) => {
+                if (rejectCreate) {
+                  rejectCreate = false
+                  throw Object.assign(new Error('injected create failure'), {
+                    code: 'provider_unavailable',
+                    retryable: true,
+                  })
+                }
+                return target.create(input)
+              }
+            }
+            const value = Reflect.get(target, property, target)
+            return typeof value === 'function' ? value.bind(target) : value
+          },
+        })
+      },
+    }
+    const registry = ctx.anpIdentity as unknown as NativeProviderRegistry
+    const dispose = registry.registerProvider({
+      protocol: ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL,
+      provider,
+    })
+    try {
+      await waitForReady(ctx)
+      const owner = await ctx.anpIdentity.acquireClient({
+        consumer: 'owner',
+        capabilities: ['identity:read', 'identity:create'],
+      })
+      const create = {
+        identity: identitySpec('retry'),
+        handle: 'retry.identity',
+        requestId: 'retry-create',
+      }
+      await expect(owner.create(create)).rejects.toMatchObject({ code: 'provider_unavailable' })
+      await expect(new CatalogStore(root).listIntents()).resolves.toEqual([])
+      await expect(owner.create(create)).resolves.toBeDefined()
+    } finally {
+      await dispose()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('rebuilds a corrupt catalog as unclaimed without inventing grants', async () => {
