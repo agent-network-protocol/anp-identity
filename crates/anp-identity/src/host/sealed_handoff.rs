@@ -20,7 +20,7 @@ const ENROLLMENT_ECDH_SEALED_OPERATION: &str =
 #[cfg(feature = "root-export")]
 const ROOT_EXPORT_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ROOT_EXPORT_OPERATION;
 #[cfg(feature = "key-import")]
-const ROOT_IMPORT_SEALED_OPERATION: &str = "import_legacy_root_transfer_sealed";
+const ROOT_IMPORT_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ROOT_IMPORT_OPERATION;
 #[cfg(feature = "key-import")]
 const IDENTITY_MATERIAL_IMPORT_SEALED_OPERATION: &str = "import_identity_material_sealed";
 const PROVIDER_ADOPTION_SEALED_OPERATION: &str = "adopt_store_root_key_provider_sealed";
@@ -746,45 +746,43 @@ pub fn sealed_root_import_binding(
     preparation: &SealedRootImportPreparation,
     recipient_public_key: &[u8; 32],
 ) -> Result<OneTimeOperationBinding, SealedProviderError> {
-    validate_request(
-        &preparation.identity,
-        &preparation.evidence.root_kid,
-        &preparation.request_id,
-    )?;
-    if preparation.evidence.target_did != preparation.identity.did {
-        return Err(SealedProviderError::IdentityBinding);
-    }
-    #[derive(Serialize)]
-    struct DigestInput<'a> {
-        protocol: &'static str,
-        operation: &'static str,
-        store_id: &'a str,
-        identity_id: &'a str,
-        did: &'a str,
-        request_id: &'a str,
-        recipient_public_key_digest: String,
-        encoding: super::RootPrivateKeyEncoding,
-        evidence: &'a super::LegacyRootImportEvidence,
-    }
-    let input = DigestInput {
-        protocol: SEALED_SECRET_PROTOCOL,
-        operation: ROOT_IMPORT_SEALED_OPERATION,
-        store_id: &preparation.identity.store_id,
-        identity_id: &preparation.identity.identity_id,
-        did: &preparation.identity.did,
-        request_id: &preparation.request_id,
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
-        encoding: preparation.encoding,
-        evidence: &preparation.evidence,
+    let evidence = anp::sealed_handoff::SealedLegacyRootImportEvidence {
+        transfer_id: preparation.evidence.transfer_id.clone(),
+        source_did: preparation.evidence.source_did.clone(),
+        target_did: preparation.evidence.target_did.clone(),
+        sender_device_id: preparation.evidence.sender_device_id.clone(),
+        recipient_device_id: preparation.evidence.recipient_device_id.clone(),
+        recipient_agreement_kid: preparation.evidence.recipient_agreement_kid.clone(),
+        root_kid: preparation.evidence.root_kid.clone(),
+        checkpoint: anp::sealed_handoff::SealedDocumentCheckpoint {
+            document_version: preparation.evidence.checkpoint.document_version,
+            registry_version: preparation.evidence.checkpoint.registry_version,
+            document_digest: preparation.evidence.checkpoint.document_digest.clone(),
+        },
+        accepted_at: preparation.evidence.accepted_at.clone(),
     };
-    Ok(OneTimeOperationBinding {
-        capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
-        identity_id: preparation.identity.identity_id.clone(),
-        operation: ROOT_IMPORT_SEALED_OPERATION.to_owned(),
-        kid: Some(preparation.evidence.root_kid.clone()),
-        request_id: preparation.request_id.clone(),
-        recipient_public_key: *recipient_public_key,
-        operation_input_digest: canonical_digest(&input)?,
+    let encoding = match preparation.encoding {
+        super::RootPrivateKeyEncoding::Raw32 => {
+            anp::sealed_handoff::SealedPrivateKeyEncoding::Raw32
+        }
+        super::RootPrivateKeyEncoding::Pkcs8Der => {
+            anp::sealed_handoff::SealedPrivateKeyEncoding::Pkcs8Der
+        }
+    };
+    anp::sealed_handoff::identity_root_import_binding(
+        &sealed_identity_context(&preparation.identity),
+        &evidence,
+        encoding,
+        recipient_public_key,
+        &preparation.request_id,
+    )
+    .map(shared_operation_binding)
+    .map_err(|_| {
+        if preparation.evidence.target_did != preparation.identity.did {
+            SealedProviderError::IdentityBinding
+        } else {
+            SealedProviderError::InvalidRequest
+        }
     })
 }
 
@@ -1066,22 +1064,6 @@ fn canonical_digest(value: &impl Serialize) -> Result<String, SealedProviderErro
         "sha256:{}",
         URL_SAFE_NO_PAD.encode(digest.finalize())
     ))
-}
-
-fn validate_request(
-    identity: &IdentityRef,
-    kid: &str,
-    request_id: &str,
-) -> Result<(), SealedProviderError> {
-    if identity.store_id.trim().is_empty()
-        || identity.identity_id.trim().is_empty()
-        || identity.did.trim().is_empty()
-        || kid.trim().is_empty()
-        || request_id.trim().is_empty()
-    {
-        return Err(SealedProviderError::InvalidRequest);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
