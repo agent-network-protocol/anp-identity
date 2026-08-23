@@ -21,8 +21,6 @@ const ENROLLMENT_ECDH_SEALED_OPERATION: &str =
 const ROOT_EXPORT_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ROOT_EXPORT_OPERATION;
 #[cfg(feature = "key-import")]
 const ROOT_IMPORT_SEALED_OPERATION: &str = anp::sealed_handoff::IDENTITY_ROOT_IMPORT_OPERATION;
-#[cfg(feature = "key-import")]
-const IDENTITY_MATERIAL_IMPORT_SEALED_OPERATION: &str = "import_identity_material_sealed";
 const PROVIDER_ADOPTION_SEALED_OPERATION: &str = "adopt_store_root_key_provider_sealed";
 
 /// HPKE ciphertext safe to carry across the TypeScript bridge.
@@ -792,15 +790,6 @@ pub fn sealed_identity_material_import_binding(
     preparation: &SealedIdentityMaterialImportPreparation,
     recipient_public_key: &[u8; 32],
 ) -> Result<OneTimeOperationBinding, SealedProviderError> {
-    if target.store_id.trim().is_empty()
-        || target.identity_id.trim().is_empty()
-        || target.did.trim().is_empty()
-        || preparation.request_id.trim().is_empty()
-        || preparation.keys.is_empty()
-        || preparation.keys.iter().any(|key| key.kid.trim().is_empty())
-    {
-        return Err(SealedProviderError::InvalidRequest);
-    }
     let document = preparation.remote.document.as_value();
     if document.get("id").and_then(serde_json::Value::as_str) != Some(target.did.as_str())
         || crate::canonical_document_digest(document).map_err(IdentityError::from)?
@@ -808,47 +797,57 @@ pub fn sealed_identity_material_import_binding(
     {
         return Err(SealedProviderError::IdentityBinding);
     }
-    let unique_kids = preparation
+    let keys = preparation
         .keys
         .iter()
-        .map(|key| key.kid.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    if unique_kids.len() != preparation.keys.len() {
-        return Err(SealedProviderError::InvalidRequest);
-    }
-    #[derive(Serialize)]
-    struct DigestInput<'a> {
-        protocol: &'static str,
-        operation: &'static str,
-        target: &'a IdentityRef,
-        request_id: &'a str,
-        recipient_public_key_digest: String,
-        did_wba: bool,
-        document_digest: &'a str,
-        document_version: u64,
-        registry_version: u64,
-        keys: &'a [SealedIdentityMaterialKeySpec],
-    }
-    let input = DigestInput {
-        protocol: SEALED_SECRET_PROTOCOL,
-        operation: IDENTITY_MATERIAL_IMPORT_SEALED_OPERATION,
-        target,
-        request_id: &preparation.request_id,
-        recipient_public_key_digest: recipient_public_key_digest(recipient_public_key),
-        did_wba: preparation.did_wba,
-        document_digest: &preparation.remote.evidence.document_digest,
-        document_version: preparation.remote.evidence.document_version,
-        registry_version: preparation.remote.evidence.registry_version,
-        keys: &preparation.keys,
-    };
+        .map(|key| anp::sealed_handoff::SealedIdentityMaterialKeySpec {
+            kid: key.kid.clone(),
+            purpose: match key.purpose {
+                super::MigrationKeyPurpose::RootControl => {
+                    anp::sealed_handoff::SealedIdentityMaterialKeyPurpose::RootControl
+                }
+                super::MigrationKeyPurpose::Authentication => {
+                    anp::sealed_handoff::SealedIdentityMaterialKeyPurpose::Authentication
+                }
+                super::MigrationKeyPurpose::DeviceAssertion => {
+                    anp::sealed_handoff::SealedIdentityMaterialKeyPurpose::DeviceAssertion
+                }
+                super::MigrationKeyPurpose::ApplicationAssertion => {
+                    anp::sealed_handoff::SealedIdentityMaterialKeyPurpose::ApplicationAssertion
+                }
+                super::MigrationKeyPurpose::KeyAgreement => {
+                    anp::sealed_handoff::SealedIdentityMaterialKeyPurpose::KeyAgreement
+                }
+            },
+            encoding: match key.encoding {
+                super::MigrationPrivateKeyEncoding::Raw32 => {
+                    anp::sealed_handoff::SealedPrivateKeyEncoding::Raw32
+                }
+                super::MigrationPrivateKeyEncoding::Pkcs8Der => {
+                    anp::sealed_handoff::SealedPrivateKeyEncoding::Pkcs8Der
+                }
+            },
+        })
+        .collect::<Vec<_>>();
+    let binding = anp::sealed_handoff::identity_material_import_binding(
+        &sealed_identity_context(target),
+        &preparation.request_id,
+        recipient_public_key,
+        preparation.did_wba,
+        &preparation.remote.evidence.document_digest,
+        preparation.remote.evidence.document_version,
+        preparation.remote.evidence.registry_version,
+        &keys,
+    )
+    .map_err(|_| SealedProviderError::InvalidRequest)?;
     Ok(OneTimeOperationBinding {
-        capability: capability::IDENTITY_IMPORT.to_owned(),
-        identity_id: target.identity_id.clone(),
-        operation: IDENTITY_MATERIAL_IMPORT_SEALED_OPERATION.to_owned(),
+        capability: binding.capability,
+        identity_id: binding.identity_id,
+        operation: binding.operation,
         kid: None,
-        request_id: preparation.request_id.clone(),
-        recipient_public_key: *recipient_public_key,
-        operation_input_digest: canonical_digest(&input)?,
+        request_id: binding.request_id,
+        recipient_public_key: binding.recipient_public_key,
+        operation_input_digest: binding.operation_input_digest,
     })
 }
 
@@ -860,22 +859,29 @@ fn sealed_identity_material_item_aad(
     index: usize,
     kid: &str,
 ) -> Result<Vec<u8>, SealedProviderError> {
-    if context.store_id != target.store_id || context.capability != binding.capability {
-        return Err(SealedProviderError::IdentityBinding);
-    }
-    sealed_aad_values(
-        &binding.operation,
-        target,
+    anp::sealed_handoff::identity_material_import_item_aad(
+        &anp::sealed_handoff::SealedAuthorizationContext {
+            provider_instance_id: context.provider_instance_id.clone(),
+            parent_lease_id: context.parent_lease_id.clone(),
+            consumer: context.consumer.clone(),
+            capability: context.capability.clone(),
+            store_id: context.store_id.clone(),
+            expires_at: context.expires_at,
+        },
+        &anp::sealed_handoff::SealedOperationBinding {
+            capability: binding.capability.clone(),
+            identity_id: binding.identity_id.clone(),
+            operation: binding.operation.clone(),
+            kid: String::new(),
+            request_id: binding.request_id.clone(),
+            recipient_public_key: binding.recipient_public_key,
+            operation_input_digest: binding.operation_input_digest.clone(),
+        },
+        &sealed_identity_context(target),
+        index,
         kid,
-        &format!("{}:{index}", binding.request_id),
-        &binding.operation_input_digest,
-        &binding.recipient_public_key,
-        &context.provider_instance_id,
-        &context.parent_lease_id,
-        &context.consumer,
-        &context.capability,
-        context.expires_at,
     )
+    .map_err(|_| SealedProviderError::IdentityBinding)
 }
 
 pub fn sealed_provider_adoption_binding(
