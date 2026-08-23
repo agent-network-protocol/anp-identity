@@ -23,53 +23,50 @@ mod store_lock;
 
 pub mod host;
 
-pub use adoption::{
-    canonical_document_digest, AdoptDocumentOutcome, AdoptVerifiedDocumentSpec,
-    EnrollmentPublicKey, EnrollmentSpec, PreparedEnrollment, PreparedRequestSigningEnrollment,
-    RequestSigningEnrollmentSpec, VerifiedDocumentEvidence,
+pub(crate) use adoption::{
+    canonical_document_digest, AdoptDocumentOutcome, AdoptVerifiedDocumentSpec, EnrollmentSpec,
+    PreparedEnrollment, PreparedRequestSigningEnrollment, RequestSigningEnrollmentSpec,
+    VerifiedDocumentEvidence,
 };
-pub use anp::authentication::HttpSignatureOptions;
-pub use crypto_ops::SharedSecret;
-pub use error::{DidError, DidResult};
+pub(crate) use anp::authentication::HttpSignatureOptions;
+pub(crate) use error::{DidError, DidResult};
 pub use facade::{
-    CreateIdentityRequest, DeleteIdentityRequest, DeviceInput, DidDocument, DocumentChange,
-    DocumentChangeOutcome, DocumentChangeRequest, DocumentChangeSession, IdentityDescriptor,
-    IdentityError, IdentityManager, IdentityManagerConfig, IdentityRef, IdentityResult,
-    IdentityService, InjectedStoreKey, KeyAlgorithm, KeyPurpose, KeySelector, ManagedIdentity,
-    OriginProofOptions, OriginProofRequest, PreparedDocumentChange, PublicCapabilities,
-    PublicIdentity, PublicIdentityState, PublicKeyDescriptor, PublicKeyInput, PublicationAttempt,
+    CreateIdentityCapabilities, CreateIdentityExtension, CreateIdentityProfile,
+    CreateIdentityRequest, DeleteIdentityRequest, DeviceInput, DeviceManifestEntryInput,
+    DidDocument, DocumentChange, DocumentChangeOutcome, DocumentChangeRequest,
+    DocumentChangeSession, ExternalPublicKeyInput, ExternalPublicKeyInputMaterial,
+    IdentityDescriptor, IdentityError, IdentityManager, IdentityManagerConfig, IdentityRef,
+    IdentityResult, IdentityService, InjectedStoreKey, KeyAlgorithm, KeyPurpose, KeySelector,
+    ManagedIdentity, ManagedKeyInput, ManagedKeyRole, OkpPublicJwk, OriginProofOptions,
+    OriginProofRequest, PreparedDocumentChange, PublicCapabilities, PublicIdentity,
+    PublicIdentityState, PublicKeyDescriptor, PublicKeyInput, PublicationAttempt,
     PublicationResult, RecoveryReport, RootKeySource, SignRequest, Signature, SignedOriginProof,
     SigningPurpose, StoreHealth, StoreInfo, VerificationOutcome, VerifiedPublicationEvidence,
     VerifiedRemoteDocument, VerifyRequest,
 };
-pub use identity::{DidIdentity, DidStore};
-pub use input::{
+pub(crate) use identity::{DidIdentity, DidStore};
+pub(crate) use input::{
     Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidExtensionSpec,
     DidProfile, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyRole, ManagedKeySpec,
     PublicOkpJwk, ServiceSpec,
 };
 #[cfg(feature = "key-import")]
-pub use key_import::{
+pub(crate) use key_import::{
     DeviceIdentityImportSpec, IdentityImportSpec, ImportedPrivateKey, PrivateKeyEncoding,
     RequestSigningIdentityImportSpec,
 };
-pub use lifecycle::{
+pub(crate) use lifecycle::{
     DeviceAddSpec, DeviceMutationSpec, DevicePublicKeySpec, DocumentUpdateSpec,
-    PendingRevisionSummary, PreparedUpdate, PublicationState, ReconcileOutcome,
-    RequestSigningMutationSpec, RequestSigningPublicKeySpec, RequestSigningRotation,
+    PendingRevisionSummary, PublicationState, ReconcileOutcome, RequestSigningMutationSpec,
+    RequestSigningPublicKeySpec, RequestSigningRotation,
 };
-pub use manifest::{
+pub(crate) use manifest::{
     RootKeyProviderBinding, RootKeyProviderKind, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION,
 };
-pub use registry::{
+pub(crate) use registry::{
     DocumentCheckpoint, IdentityState, IdentitySummary, KeyMetadata, KeyOrigin, KeyState,
     RootCapabilityState,
 };
-#[cfg(feature = "root-export")]
-pub use root_transfer::ExportedRootPrivateKey;
 #[cfg(feature = "key-import")]
-pub use root_transfer::{LegacyRootTransferEvidence, LegacyRootTransferImportSpec};
-pub use root_transfer::{
-    RootPromotionSpec, RootTransferContext, RootTransferExportSpec, RootTransferImportOutcome,
-    WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE, WRAPPED_ROOT_ENVELOPE_VERSION,
-};
+pub(crate) use root_transfer::{LegacyRootTransferEvidence, LegacyRootTransferImportSpec};
+pub(crate) use root_transfer::{RootPromotionSpec, RootTransferImportOutcome, WrappedRootEnvelope};

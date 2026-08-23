@@ -18,8 +18,11 @@ pub use signing::{
     SigningPurpose, VerificationOutcome, VerifyRequest,
 };
 pub use types::{
-    CreateIdentityRequest, DeleteIdentityRequest, DidDocument, IdentityDescriptor,
+    CreateIdentityCapabilities, CreateIdentityExtension, CreateIdentityProfile,
+    CreateIdentityRequest, DeleteIdentityRequest, DeviceManifestEntryInput, DidDocument,
+    ExternalPublicKeyInput, ExternalPublicKeyInputMaterial, IdentityDescriptor,
     IdentityManagerConfig, IdentityRef, InjectedStoreKey, KeyAlgorithm, KeyPurpose,
-    PublicCapabilities, PublicIdentity, PublicIdentityState, PublicKeyDescriptor, RecoveryReport,
-    RootKeySource, StoreHealth, StoreInfo,
+    ManagedKeyInput, ManagedKeyRole, OkpPublicJwk, PublicCapabilities, PublicIdentity,
+    PublicIdentityState, PublicKeyDescriptor, RecoveryReport, RootKeySource, StoreHealth,
+    StoreInfo,
 };

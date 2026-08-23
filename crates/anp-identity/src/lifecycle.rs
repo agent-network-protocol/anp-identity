@@ -229,6 +229,7 @@ impl DidIdentity {
         Err(DidError::Conflict)
     }
 
+    #[cfg(test)]
     pub fn end_retirement(&mut self, kid: &str) -> DidResult<()> {
         let kid = canonicalize_kid(self.did(), kid)?;
         let guard = self.runtime().acquire_write()?;
@@ -252,6 +253,7 @@ impl DidIdentity {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn delete_revoked_key(&mut self, kid: &str) -> DidResult<()> {
         let kid = canonicalize_kid(self.did(), kid)?;
         let guard = self.runtime().acquire_write()?;
@@ -986,6 +988,7 @@ fn required_pending<'a>(
         .ok_or(DidError::PendingRevisionNotFound)
 }
 
+#[cfg(test)]
 fn reject_uncertain_mutation(record: &IdentityRecord) -> DidResult<()> {
     if record
         .pending_revision

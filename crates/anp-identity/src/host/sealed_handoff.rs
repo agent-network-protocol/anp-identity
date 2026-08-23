@@ -910,7 +910,7 @@ mod tests {
         })
         .unwrap();
         let identity = manager
-            .create(crate::CreateIdentityRequest {
+            .create_engine_for_test(crate::DidCreateSpec {
                 profile: crate::DidProfile::E1,
                 domain: "example.com".to_owned(),
                 port: None,
@@ -1263,7 +1263,9 @@ mod tests {
             )),
         })
         .unwrap();
-        let mut source = source_manager.create(create_spec_for_import()).unwrap();
+        let mut source = source_manager
+            .create_engine_for_test(create_spec_for_import())
+            .unwrap();
         let source_public = source.public_identity().unwrap();
         let source_status = source.host_status().unwrap();
         let checkpoint = source_status.checkpoint.unwrap();
@@ -1416,8 +1418,8 @@ mod tests {
     }
 
     #[cfg(all(feature = "key-import", feature = "root-export"))]
-    fn create_spec_for_import() -> crate::CreateIdentityRequest {
-        crate::CreateIdentityRequest {
+    fn create_spec_for_import() -> crate::DidCreateSpec {
+        crate::DidCreateSpec {
             profile: crate::DidProfile::E1,
             domain: "example.com".to_owned(),
             port: None,

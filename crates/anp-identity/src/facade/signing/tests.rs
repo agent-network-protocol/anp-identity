@@ -161,7 +161,7 @@ fn identity(duplicate_request: bool) -> (tempfile::TempDir, ManagedIdentity) {
         keys.push(managed("request-secondary", KeyRole::RequestSigning));
     }
     let identity = manager
-        .create(DidCreateSpec {
+        .create_engine_for_test(DidCreateSpec {
             profile: DidProfile::E1,
             domain: "example.com".to_owned(),
             port: None,

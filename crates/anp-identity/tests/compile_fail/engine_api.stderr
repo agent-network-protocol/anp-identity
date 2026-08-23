@@ -1,0 +1,47 @@
+error[E0603]: struct `DidIdentity` is private
+ --> tests/compile_fail/engine_api.rs:1:20
+  |
+1 | use anp_identity::{DidIdentity, DidStore, StoreManifest};
+  |                    ^^^^^^^^^^^ private struct
+  |
+note: the struct `DidIdentity` is defined here
+ --> src/lib.rs
+  |
+  | pub(crate) use identity::{DidIdentity, DidStore};
+  |                           ^^^^^^^^^^^
+help: import `DidIdentity` directly
+  |
+1 | use anp_identity::{anp_identity::identity::DidIdentity, DidStore, StoreManifest};
+  |                    ++++++++++++++++++++++++
+
+error[E0603]: struct `DidStore` is private
+ --> tests/compile_fail/engine_api.rs:1:33
+  |
+1 | use anp_identity::{DidIdentity, DidStore, StoreManifest};
+  |                                 ^^^^^^^^ private struct
+  |
+note: the struct `DidStore` is defined here
+ --> src/lib.rs
+  |
+  | pub(crate) use identity::{DidIdentity, DidStore};
+  |                                        ^^^^^^^^
+help: import `DidStore` directly
+  |
+1 | use anp_identity::{DidIdentity, anp_identity::identity::DidStore, StoreManifest};
+  |                                 ++++++++++++++++++++++++
+
+error[E0603]: struct `StoreManifest` is private
+ --> tests/compile_fail/engine_api.rs:1:43
+  |
+1 | use anp_identity::{DidIdentity, DidStore, StoreManifest};
+  |                                           ^^^^^^^^^^^^^ private struct
+  |
+note: the struct `StoreManifest` is defined here
+ --> src/lib.rs
+  |
+  |     RootKeyProviderBinding, RootKeyProviderKind, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION,
+  |                                                  ^^^^^^^^^^^^^
+help: import `StoreManifest` directly
+  |
+1 | use anp_identity::{DidIdentity, DidStore, anp_identity::manifest::StoreManifest};
+  |                                           ++++++++++++++++++++++++

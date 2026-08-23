@@ -4,10 +4,178 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zeroize::Zeroizing;
 
-use crate::{Capabilities, DidCreateSpec, IdentityState, KeyRole, KeyState};
+use super::IdentityResult;
+use crate::{IdentityState, KeyRole, KeyState};
 
-/// Existing validated creation DTO under its stable Facade name.
-pub type CreateIdentityRequest = DidCreateSpec;
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateIdentityProfile {
+    E1,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CreateIdentityCapabilities {
+    #[serde(default)]
+    pub did_wba: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ManagedKeyRole {
+    RootControl,
+    DeviceSigning,
+    RequestSigning,
+    E2eeSigning,
+    E2eeAgreement,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ManagedKeyInput {
+    pub fragment: String,
+    pub role: ManagedKeyRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct OkpPublicJwk {
+    pub kty: String,
+    pub crv: String,
+    pub x: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "format", rename_all = "snake_case")]
+pub enum ExternalPublicKeyInputMaterial {
+    Multibase { value: String },
+    Jwk { public_key_jwk: OkpPublicJwk },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalPublicKeyInput {
+    pub kid: String,
+    pub role: ManagedKeyRole,
+    pub material: ExternalPublicKeyInputMaterial,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceManifestEntryInput {
+    pub device_id: String,
+    pub signing_key_id: String,
+    pub e2ee_key_id: String,
+    #[serde(default)]
+    pub profiles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+pub enum CreateIdentityExtension {
+    DeviceManifest {
+        devices: Vec<DeviceManifestEntryInput>,
+    },
+}
+
+/// High-level input for creating one managed DID identity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CreateIdentityRequest {
+    pub profile: CreateIdentityProfile,
+    pub domain: String,
+    pub port: Option<u16>,
+    pub path_segments: Vec<String>,
+    #[serde(default)]
+    pub capabilities: CreateIdentityCapabilities,
+    pub managed_keys: Vec<ManagedKeyInput>,
+    #[serde(default)]
+    pub external_keys: Vec<ExternalPublicKeyInput>,
+    #[serde(default)]
+    pub services: Vec<super::IdentityService>,
+    pub agent_description_url: Option<String>,
+    #[serde(default)]
+    pub extensions: Vec<CreateIdentityExtension>,
+}
+
+impl From<CreateIdentityRequest> for crate::DidCreateSpec {
+    fn from(value: CreateIdentityRequest) -> Self {
+        Self {
+            profile: match value.profile {
+                CreateIdentityProfile::E1 => crate::DidProfile::E1,
+            },
+            domain: value.domain,
+            port: value.port,
+            path_segments: value.path_segments,
+            capabilities: crate::Capabilities {
+                did_wba: value.capabilities.did_wba,
+            },
+            managed_keys: value
+                .managed_keys
+                .into_iter()
+                .map(|key| crate::ManagedKeySpec {
+                    fragment: key.fragment,
+                    role: key.role.into(),
+                })
+                .collect(),
+            external_keys: value
+                .external_keys
+                .into_iter()
+                .map(|key| crate::ExternalPublicKeySpec {
+                    kid: key.kid,
+                    role: key.role.into(),
+                    material: match key.material {
+                        ExternalPublicKeyInputMaterial::Multibase { value } => {
+                            crate::ExternalPublicKeyMaterial::Multibase { value }
+                        }
+                        ExternalPublicKeyInputMaterial::Jwk { public_key_jwk } => {
+                            crate::ExternalPublicKeyMaterial::Jwk {
+                                public_key_jwk: crate::PublicOkpJwk {
+                                    kty: public_key_jwk.kty,
+                                    crv: public_key_jwk.crv,
+                                    x: public_key_jwk.x,
+                                },
+                            }
+                        }
+                    },
+                })
+                .collect(),
+            services: value.services.into_iter().map(Into::into).collect(),
+            agent_description_url: value.agent_description_url,
+            extensions: value
+                .extensions
+                .into_iter()
+                .map(|extension| match extension {
+                    CreateIdentityExtension::DeviceManifest { devices } => {
+                        crate::DidExtensionSpec::DeviceManifest(crate::DeviceManifestSpec {
+                            devices: devices
+                                .into_iter()
+                                .map(|device| crate::DeviceManifestEntrySpec {
+                                    device_id: device.device_id,
+                                    signing_key_id: device.signing_key_id,
+                                    e2ee_key_id: device.e2ee_key_id,
+                                    profiles: device.profiles,
+                                })
+                                .collect(),
+                        })
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<ManagedKeyRole> for KeyRole {
+    fn from(value: ManagedKeyRole) -> Self {
+        match value {
+            ManagedKeyRole::RootControl => Self::RootControl,
+            ManagedKeyRole::DeviceSigning => Self::DeviceSigning,
+            ManagedKeyRole::RequestSigning => Self::RequestSigning,
+            ManagedKeyRole::E2eeSigning => Self::E2eeSigning,
+            ManagedKeyRole::E2eeAgreement => Self::E2eeAgreement,
+        }
+    }
+}
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -104,6 +272,10 @@ impl DidDocument {
         self.0
     }
 
+    pub fn canonical_digest(&self) -> IdentityResult<String> {
+        crate::canonical_document_digest(&self.0).map_err(Into::into)
+    }
+
     pub(crate) fn from_verified(value: Value) -> Self {
         Self(value)
     }
@@ -169,8 +341,8 @@ pub struct PublicCapabilities {
     pub did_wba: bool,
 }
 
-impl From<&Capabilities> for PublicCapabilities {
-    fn from(value: &Capabilities) -> Self {
+impl From<&crate::Capabilities> for PublicCapabilities {
+    fn from(value: &crate::Capabilities) -> Self {
         Self {
             did_wba: value.did_wba,
         }

@@ -1,24 +1,25 @@
 use anp_identity::{
-    Capabilities, DeviceManifestEntrySpec, DeviceManifestSpec, DidCreateSpec, DidError,
-    DidExtensionSpec, DidProfile, ExternalPublicKeyMaterial, ExternalPublicKeySpec, KeyRole,
-    ManagedKeySpec, PublicOkpJwk,
+    CreateIdentityCapabilities, CreateIdentityExtension, CreateIdentityProfile,
+    CreateIdentityRequest, DeviceManifestEntryInput, ExternalPublicKeyInput,
+    ExternalPublicKeyInputMaterial, IdentityError, IdentityManager, IdentityManagerConfig,
+    InjectedStoreKey, ManagedKeyInput, ManagedKeyRole, OkpPublicJwk, RootKeySource,
 };
 
-fn valid_spec() -> DidCreateSpec {
-    DidCreateSpec {
-        profile: DidProfile::E1,
+fn valid_request() -> CreateIdentityRequest {
+    CreateIdentityRequest {
+        profile: CreateIdentityProfile::E1,
         domain: "example.com".to_string(),
         port: None,
         path_segments: vec!["agents".to_string(), "alice".to_string()],
-        capabilities: Capabilities { did_wba: true },
+        capabilities: CreateIdentityCapabilities { did_wba: true },
         managed_keys: vec![
-            ManagedKeySpec {
+            ManagedKeyInput {
                 fragment: "root".to_string(),
-                role: KeyRole::RootControl,
+                role: ManagedKeyRole::RootControl,
             },
-            ManagedKeySpec {
+            ManagedKeyInput {
                 fragment: "request".to_string(),
-                role: KeyRole::RequestSigning,
+                role: ManagedKeyRole::RequestSigning,
             },
         ],
         external_keys: Vec::new(),
@@ -28,30 +29,44 @@ fn valid_spec() -> DidCreateSpec {
     }
 }
 
+fn assert_invalid(request: CreateIdentityRequest) {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = IdentityManager::initialize(IdentityManagerConfig {
+        state_root: root.path().to_path_buf(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("validation", [0x41; 32])),
+    })
+    .unwrap();
+    assert_eq!(
+        manager.create(request).err(),
+        Some(IdentityError::InvalidRequest)
+    );
+}
+
 #[test]
 fn rejects_external_root_empty_path_and_missing_managed_request_key() {
-    let mut spec = valid_spec();
-    spec.external_keys.push(ExternalPublicKeySpec {
+    let mut request = valid_request();
+    request.external_keys.push(ExternalPublicKeyInput {
         kid: "#external-root".to_string(),
-        role: KeyRole::RootControl,
-        material: ExternalPublicKeyMaterial::Jwk {
-            public_key_jwk: PublicOkpJwk {
+        role: ManagedKeyRole::RootControl,
+        material: ExternalPublicKeyInputMaterial::Jwk {
+            public_key_jwk: OkpPublicJwk {
                 kty: "OKP".to_string(),
                 crv: "Ed25519".to_string(),
                 x: "11qYAYLefK3DUy1zSvP1cptC7Zb7e7S9F9ZAR4c7D0k".to_string(),
             },
         },
     });
-    assert_eq!(spec.validate(), Err(DidError::ExternalRootControl));
+    assert_invalid(request);
 
-    let mut spec = valid_spec();
-    spec.path_segments.clear();
-    assert_eq!(spec.validate(), Err(DidError::EmptyPath));
+    let mut request = valid_request();
+    request.path_segments.clear();
+    assert_invalid(request);
 
-    let mut spec = valid_spec();
-    spec.managed_keys
-        .retain(|key| key.role != KeyRole::RequestSigning);
-    assert_eq!(spec.validate(), Err(DidError::MissingManagedRequestSigning));
+    let mut request = valid_request();
+    request
+        .managed_keys
+        .retain(|key| key.role != ManagedKeyRole::RequestSigning);
+    assert_invalid(request);
 }
 
 #[test]
@@ -69,32 +84,32 @@ fn rejects_private_jwk_unknown_extension_and_oversized_input() {
             }
         }
     }"##;
-    assert!(serde_json::from_str::<ExternalPublicKeySpec>(private_jwk).is_err());
+    assert!(serde_json::from_str::<ExternalPublicKeyInput>(private_jwk).is_err());
 
     let unknown_extension = r#"{"type":"unknown","value":{}}"#;
-    assert!(serde_json::from_str::<anp_identity::DidExtensionSpec>(unknown_extension).is_err());
+    assert!(serde_json::from_str::<CreateIdentityExtension>(unknown_extension).is_err());
 
-    let mut spec = valid_spec();
-    spec.path_segments[0] = "x".repeat(129);
-    assert_eq!(spec.validate(), Err(DidError::InvalidPathSegment));
-    spec = valid_spec();
-    spec.managed_keys[0].fragment = "x".repeat(129);
-    assert_eq!(spec.validate(), Err(DidError::InvalidKidFragment));
-    spec = valid_spec();
-    spec.path_segments[0] = "bad/segment".to_string();
-    assert_eq!(spec.validate(), Err(DidError::InvalidPathSegment));
+    let mut request = valid_request();
+    request.path_segments[0] = "x".repeat(129);
+    assert_invalid(request);
+    let mut request = valid_request();
+    request.managed_keys[0].fragment = "x".repeat(129);
+    assert_invalid(request);
+    let mut request = valid_request();
+    request.path_segments[0] = "bad/segment".to_string();
+    assert_invalid(request);
 
     let unsupported_profile = r#""k1""#;
-    assert!(serde_json::from_str::<DidProfile>(unsupported_profile).is_err());
+    assert!(serde_json::from_str::<CreateIdentityProfile>(unsupported_profile).is_err());
 
-    let mut spec = valid_spec();
-    spec.extensions = vec![DidExtensionSpec::DeviceManifest(DeviceManifestSpec {
-        devices: vec![DeviceManifestEntrySpec {
+    let mut request = valid_request();
+    request.extensions = vec![CreateIdentityExtension::DeviceManifest {
+        devices: vec![DeviceManifestEntryInput {
             device_id: "device-1".to_string(),
             signing_key_id: "#request".to_string(),
             e2ee_key_id: "#agreement".to_string(),
             profiles: Vec::new(),
         }],
-    })];
-    assert_eq!(spec.validate(), Err(DidError::InvalidExtension));
+    }];
+    assert_invalid(request);
 }

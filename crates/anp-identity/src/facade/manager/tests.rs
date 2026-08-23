@@ -8,8 +8,8 @@ use crate::{Capabilities, DidCreateSpec, DidProfile, KeyRole, ManagedKeySpec};
 fn manager_preserves_multi_did_engine_behavior_and_checks_full_references() {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(config(root.path(), [0x51; 32])).unwrap();
-    let first = manager.create(spec("first")).unwrap();
-    let second = manager.create(spec("second")).unwrap();
+    let first = manager.create_engine_for_test(spec("first")).unwrap();
+    let second = manager.create_engine_for_test(spec("second")).unwrap();
     let first_public = first.public_identity().unwrap();
 
     assert_eq!(manager.info().unwrap().identity_count, 2);
@@ -50,7 +50,9 @@ fn manager_preserves_multi_did_engine_behavior_and_checks_full_references() {
 fn manager_and_engine_open_each_others_store_without_schema_changes() {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(config(root.path(), [0x61; 32])).unwrap();
-    let identity = manager.create(spec("schema-parity")).unwrap();
+    let identity = manager
+        .create_engine_for_test(spec("schema-parity"))
+        .unwrap();
     let reference = identity.reference();
     drop(manager);
 

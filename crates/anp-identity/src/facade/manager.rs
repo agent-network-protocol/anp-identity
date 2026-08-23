@@ -84,6 +84,15 @@ impl IdentityManager {
     }
 
     pub fn create(&mut self, request: CreateIdentityRequest) -> IdentityResult<ManagedIdentity> {
+        let engine = self.engine.create_identity(request.into())?;
+        Ok(self.wrap(engine))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn create_engine_for_test(
+        &mut self,
+        request: crate::DidCreateSpec,
+    ) -> IdentityResult<ManagedIdentity> {
         let engine = self.engine.create_identity(request)?;
         Ok(self.wrap(engine))
     }

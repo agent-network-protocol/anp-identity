@@ -11,6 +11,11 @@ mod root_transfer;
 mod sealed_handoff;
 mod status;
 
+pub use crate::registry::DocumentCheckpoint;
+pub use crate::root_transfer::{
+    RootTransferContext, WrappedRootEnvelope, WRAPPED_ROOT_ENVELOPE_TYPE,
+    WRAPPED_ROOT_ENVELOPE_VERSION,
+};
 pub use convergence::{ConvergenceOutcome, ConvergenceWorkflow};
 pub use document_change::{DocumentChangeRecoveryPort, HostDocumentChangePhase};
 pub use enrollment::{

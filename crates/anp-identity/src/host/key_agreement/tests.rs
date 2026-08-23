@@ -11,7 +11,7 @@ fn key_agreement_is_role_scoped_and_matches_x25519() {
     })
     .unwrap();
     let identity = manager
-        .create(DidCreateSpec {
+        .create_engine_for_test(DidCreateSpec {
             profile: DidProfile::E1,
             domain: "example.com".to_owned(),
             port: None,

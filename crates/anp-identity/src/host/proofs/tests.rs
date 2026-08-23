@@ -11,7 +11,7 @@ fn typed_proofs_match_engine_semantics_and_enforce_key_roles() {
     })
     .unwrap();
     let identity = manager
-        .create(DidCreateSpec {
+        .create_engine_for_test(DidCreateSpec {
             profile: DidProfile::E1,
             domain: "example.com".to_owned(),
             port: None,

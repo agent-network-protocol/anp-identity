@@ -3,7 +3,9 @@ use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hkdf::Hkdf;
+#[cfg(test)]
 use rand::rngs::OsRng;
+#[cfg(test)]
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -168,6 +170,7 @@ impl DidIdentity {
         Ok(ExportedRootPrivateKey { pkcs8_der })
     }
 
+    #[cfg(test)]
     pub fn export_wrapped_root(
         &self,
         spec: RootTransferExportSpec,
@@ -261,6 +264,7 @@ impl DidIdentity {
         )
     }
 
+    #[cfg(test)]
     fn export_wrapped_root_inner(
         &self,
         spec: RootTransferExportSpec,
@@ -533,6 +537,7 @@ impl DidIdentity {
     }
 }
 
+#[cfg(test)]
 fn validate_export_recipient(
     identity: &DidIdentity,
     spec: &RootTransferExportSpec,
@@ -598,6 +603,7 @@ fn push_replay(
     }
 }
 
+#[cfg(test)]
 fn relationship_contains(document: &Value, name: &str, kid: &str) -> bool {
     document
         .get(name)
@@ -788,6 +794,7 @@ fn derive_transfer_key(shared: &[u8], aad: &[u8]) -> DidResult<Zeroizing<[u8; 32
     Ok(key)
 }
 
+#[cfg(test)]
 fn root_signing_key(secret: &SecretBytes) -> DidResult<ed25519_dalek::SigningKey> {
     let raw: [u8; 32] = secret
         .expose()

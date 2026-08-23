@@ -166,7 +166,7 @@ fn source_identity() -> (tempfile::TempDir, ManagedIdentity) {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(config(root.path(), [0xc1; 32])).unwrap();
     let identity = manager
-        .create(DidCreateSpec {
+        .create_engine_for_test(DidCreateSpec {
             profile: DidProfile::E1,
             domain: "example.com".to_owned(),
             port: None,

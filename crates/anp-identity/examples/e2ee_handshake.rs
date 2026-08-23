@@ -1,5 +1,10 @@
 use anp::authentication::find_verification_method;
-use anp_identity::{Capabilities, DidCreateSpec, DidProfile, DidStore, KeyRole, ManagedKeySpec};
+use anp_identity::host::{KeyAgreementPort, KeyAgreementRequest};
+use anp_identity::{
+    CreateIdentityCapabilities, CreateIdentityProfile, CreateIdentityRequest, IdentityManager,
+    IdentityManagerConfig, InjectedStoreKey, KeySelector, ManagedIdentity, ManagedKeyInput,
+    ManagedKeyRole, RootKeySource,
+};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use hkdf::Hkdf;
@@ -10,23 +15,43 @@ use zeroize::Zeroizing;
 fn main() {
     let alice_root = tempfile::tempdir().expect("Alice store directory");
     let bob_root = tempfile::tempdir().expect("Bob store directory");
-    let mut alice_store = DidStore::initialize_injected(alice_root.path(), "example", [41_u8; 32])
-        .expect("Alice store");
-    let mut bob_store =
-        DidStore::initialize_injected(bob_root.path(), "example", [42_u8; 32]).expect("Bob store");
-    let alice = alice_store
-        .create_identity(identity_spec("alice"))
+    let mut alice_manager = IdentityManager::initialize(IdentityManagerConfig {
+        state_root: alice_root.path().to_path_buf(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("example", [41_u8; 32])),
+    })
+    .expect("Alice store");
+    let mut bob_manager = IdentityManager::initialize(IdentityManagerConfig {
+        state_root: bob_root.path().to_path_buf(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("example", [42_u8; 32])),
+    })
+    .expect("Bob store");
+    let alice = alice_manager
+        .create(identity_spec("alice"))
         .expect("Alice identity");
-    let bob = bob_store
-        .create_identity(identity_spec("bob"))
+    let bob = bob_manager
+        .create(identity_spec("bob"))
         .expect("Bob identity");
 
     let alice_public = agreement_public(&alice);
     let bob_public = agreement_public(&bob);
-    let alice_shared = alice.ecdh("#agreement", &bob_public).expect("Alice ECDH");
-    let bob_shared = bob.ecdh("#agreement", &alice_public).expect("Bob ECDH");
+    let alice_shared = alice
+        .derive_shared_secret(KeyAgreementRequest {
+            key: KeySelector::Kid("#agreement".to_owned()),
+            peer_public: bob_public,
+        })
+        .expect("Alice ECDH");
+    let bob_shared = bob
+        .derive_shared_secret(KeyAgreementRequest {
+            key: KeySelector::Kid("#agreement".to_owned()),
+            peer_public: alice_public,
+        })
+        .expect("Bob ECDH");
 
-    let context = format!("anp-identity:e2ee-example:v1:{}:{}", alice.did(), bob.did());
+    let context = format!(
+        "anp-identity:e2ee-example:v1:{}:{}",
+        alice.reference().did,
+        bob.reference().did
+    );
     let alice_session = derive_session_key(alice_shared.as_bytes(), context.as_bytes());
     let bob_session = derive_session_key(bob_shared.as_bytes(), context.as_bytes());
     assert_eq!(&*alice_session, &*bob_session);
@@ -54,34 +79,40 @@ fn derive_session_key(shared: &[u8; 32], context: &[u8]) -> Zeroizing<[u8; 32]> 
     output
 }
 
-fn agreement_public(identity: &anp_identity::DidIdentity) -> [u8; 32] {
-    let kid = identity
-        .key_metadata("#agreement")
+fn agreement_public(identity: &ManagedIdentity) -> [u8; 32] {
+    let public = identity.public_identity().expect("public identity");
+    let kid = public
+        .active_keys
+        .iter()
+        .find(|key| {
+            key.purposes
+                .contains(&anp_identity::KeyPurpose::KeyAgreement)
+        })
         .expect("agreement metadata")
         .kid
         .clone();
-    let method = find_verification_method(identity.document(), &kid).expect("agreement VM");
+    let method = find_verification_method(public.document.as_value(), &kid).expect("agreement VM");
     match anp::authentication::extract_public_key(&method).expect("agreement public key") {
         anp::PublicKeyMaterial::X25519(bytes) => bytes,
         _ => panic!("agreement key must be X25519"),
     }
 }
 
-fn identity_spec(name: &str) -> DidCreateSpec {
-    DidCreateSpec {
-        profile: DidProfile::E1,
+fn identity_spec(name: &str) -> CreateIdentityRequest {
+    CreateIdentityRequest {
+        profile: CreateIdentityProfile::E1,
         domain: "example.com".to_string(),
         port: None,
         path_segments: vec!["agents".to_string(), name.to_string()],
-        capabilities: Capabilities::default(),
+        capabilities: CreateIdentityCapabilities::default(),
         managed_keys: vec![
-            ManagedKeySpec {
+            ManagedKeyInput {
                 fragment: "root".to_string(),
-                role: KeyRole::RootControl,
+                role: ManagedKeyRole::RootControl,
             },
-            ManagedKeySpec {
+            ManagedKeyInput {
                 fragment: "agreement".to_string(),
-                role: KeyRole::E2eeAgreement,
+                role: ManagedKeyRole::E2eeAgreement,
             },
         ],
         external_keys: Vec::new(),

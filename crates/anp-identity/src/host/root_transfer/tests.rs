@@ -10,7 +10,7 @@ fn legacy_root_export_requires_explicit_user_presence_and_matches_engine() {
         root_key: RootKeySource::Injected(InjectedStoreKey::new("root-export", [0xd1; 32])),
     })
     .unwrap();
-    let identity = manager.create(spec()).unwrap();
+    let identity = manager.create_engine_for_test(spec()).unwrap();
     assert_eq!(
         identity
             .export_root_for_legacy_envelope(UserConfirmedRootExportRequest {
@@ -42,11 +42,11 @@ fn wrapped_root_import_is_available_only_through_the_host_port() {
         root_key: RootKeySource::Injected(InjectedStoreKey::new("wrapped-import", [0xd2; 32])),
     })
     .unwrap();
-    let mut identity = manager.create(spec()).unwrap();
+    let mut identity = manager.create_engine_for_test(spec()).unwrap();
     let envelope = crate::WrappedRootEnvelope {
-        envelope_type: crate::WRAPPED_ROOT_ENVELOPE_TYPE.to_owned(),
-        version: crate::WRAPPED_ROOT_ENVELOPE_VERSION,
-        context: crate::RootTransferContext {
+        envelope_type: crate::host::WRAPPED_ROOT_ENVELOPE_TYPE.to_owned(),
+        version: crate::host::WRAPPED_ROOT_ENVELOPE_VERSION,
+        context: crate::host::RootTransferContext {
             source_did: identity.reference().did.clone(),
             target_did: identity.reference().did.clone(),
             sender_device_id: "sender".to_owned(),

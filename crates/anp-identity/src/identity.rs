@@ -139,19 +139,6 @@ impl DidStore {
         Self::from_runtime(runtime)
     }
 
-    pub fn open_keyring(
-        root: impl Into<PathBuf>,
-        service: impl Into<String>,
-        account: impl Into<String>,
-    ) -> DidResult<Self> {
-        let root = root.into();
-        let keyring = KeyringRootKeyProvider::new(service, account);
-        let file =
-            FileRootKeyProvider::new("local-private-file", default_file_root_key_path(&root));
-        let runtime = StoreRuntime::open(root, &[&keyring, &file])?;
-        Self::from_runtime(runtime)
-    }
-
     pub fn generation(&self) -> u64 {
         self.registry_generation
     }
@@ -383,6 +370,7 @@ impl DidIdentity {
             .ok_or(DidError::KeyNotFound)
     }
 
+    #[cfg(test)]
     pub fn public_key_bytes(&self, kid: &str) -> DidResult<Vec<u8>> {
         let metadata = self.key_metadata(kid)?;
         let method = anp::authentication::find_verification_method(self.document(), &metadata.kid)

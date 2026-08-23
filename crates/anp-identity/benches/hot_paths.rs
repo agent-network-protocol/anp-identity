@@ -1,21 +1,29 @@
+use anp_identity::host::{
+    ExactHttpRequest, HttpRequestSigningOptions, HttpRequestSigningPort, KeyAgreementPort,
+    KeyAgreementRequest,
+};
 use anp_identity::{
-    Capabilities, DidCreateSpec, DidExtensionSpec, DidProfile, DidStore, KeyRole, ManagedKeySpec,
+    CreateIdentityCapabilities, CreateIdentityProfile, CreateIdentityRequest, IdentityManager,
+    IdentityManagerConfig, InjectedStoreKey, KeyPurpose, KeySelector, ManagedIdentity,
+    ManagedKeyInput, ManagedKeyRole, OriginProofOptions, OriginProofRequest, RootKeySource,
+    SignRequest, SigningPurpose,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn hot_paths(criterion: &mut Criterion) {
     let root = tempfile::tempdir().expect("create benchmark root");
     let root_key = [0x51; 32];
-    let mut store = DidStore::initialize_injected(root.path(), "benchmark", root_key)
-        .expect("initialize benchmark store");
-    let identity = store
-        .create_identity(identity_spec())
+    let config = || IdentityManagerConfig {
+        state_root: root.path().to_path_buf(),
+        root_key: RootKeySource::Injected(InjectedStoreKey::new("benchmark", root_key)),
+    };
+    let mut manager = IdentityManager::initialize(config()).expect("initialize benchmark store");
+    let identity = manager
+        .create(identity_request())
         .expect("create benchmark identity");
-    let agreement_public = identity
-        .public_key_bytes("#agreement")
-        .expect("read agreement public key");
+    let agreement_public = agreement_public(&identity);
     let meta = serde_json::json!({
-        "sender_did": identity.did(),
+        "sender_did": identity.reference().did,
         "timestamp": 1_787_403_600_i64,
         "target": {
             "kind": "agent",
@@ -27,89 +35,108 @@ fn hot_paths(criterion: &mut Criterion) {
     });
     let body = serde_json::json!({"message": "benchmark"});
 
-    criterion.bench_function("store_open_injected", |bencher| {
-        bencher.iter(|| {
-            black_box(
-                DidStore::open_injected(root.path(), "benchmark", root_key)
-                    .expect("open benchmark store"),
-            )
-        });
+    criterion.bench_function("manager_open_injected", |bencher| {
+        bencher.iter(|| black_box(IdentityManager::open(config()).expect("open benchmark store")))
     });
 
     criterion.bench_function("sign_request", |bencher| {
         bencher.iter(|| {
             black_box(
                 identity
-                    .sign("#request", black_box(b"anp-identity benchmark payload"))
+                    .sign(SignRequest {
+                        purpose: SigningPurpose::Authentication,
+                        key: KeySelector::Kid("#request".to_owned()),
+                        payload: black_box(b"anp-identity benchmark payload".to_vec()),
+                    })
                     .expect("sign benchmark payload"),
             )
-        });
+        })
     });
 
     criterion.bench_function("sign_origin_proof", |bencher| {
         bencher.iter(|| {
             black_box(
                 identity
-                    .sign_origin_proof(
-                        "message.send",
-                        black_box(&meta),
-                        black_box(&body),
-                        "#request",
-                        Default::default(),
-                    )
+                    .sign_origin_proof(OriginProofRequest {
+                        method: "message.send".to_owned(),
+                        meta: black_box(meta.clone()),
+                        body: black_box(body.clone()),
+                        key: KeySelector::Kid("#request".to_owned()),
+                        options: OriginProofOptions::default(),
+                    })
                     .expect("sign benchmark Origin Proof"),
             )
-        });
+        })
     });
 
-    criterion.bench_function("http_signature_headers", |bencher| {
+    criterion.bench_function("prepare_http_signature", |bencher| {
         bencher.iter(|| {
             black_box(
                 identity
-                    .http_signature_headers(
-                        "#request",
-                        "https://api.example.com/messages",
-                        "POST",
-                        None,
-                        Some(black_box(br#"{"message":"benchmark"}"#)),
-                    )
+                    .prepare_http_signature(ExactHttpRequest {
+                        key: KeySelector::Kid("#request".to_owned()),
+                        url: "https://api.example.com/messages".to_owned(),
+                        method: "POST".to_owned(),
+                        headers: Vec::new(),
+                        body: Some(black_box(br#"{"message":"benchmark"}"#.to_vec())),
+                        options: HttpRequestSigningOptions::default(),
+                    })
                     .expect("sign benchmark HTTP request"),
             )
-        });
+        })
     });
 
     criterion.bench_function("ecdh", |bencher| {
         bencher.iter(|| {
             black_box(
                 identity
-                    .ecdh("#agreement", black_box(&agreement_public))
+                    .derive_shared_secret(KeyAgreementRequest {
+                        key: KeySelector::Kid("#agreement".to_owned()),
+                        peer_public: black_box(agreement_public),
+                    })
                     .expect("derive benchmark shared secret"),
             )
-        });
+        })
     });
 }
 
-fn identity_spec() -> DidCreateSpec {
-    DidCreateSpec {
-        profile: DidProfile::E1,
+fn agreement_public(identity: &ManagedIdentity) -> [u8; 32] {
+    let public = identity.public_identity().expect("public identity");
+    let key = public
+        .active_keys
+        .iter()
+        .find(|key| key.purposes.contains(&KeyPurpose::KeyAgreement))
+        .expect("agreement key");
+    let method =
+        anp::authentication::find_verification_method(public.document.as_value(), &key.kid)
+            .expect("agreement verification method");
+    match anp::authentication::extract_public_key(&method).expect("agreement public key") {
+        anp::PublicKeyMaterial::X25519(bytes) => bytes,
+        _ => panic!("agreement key must be X25519"),
+    }
+}
+
+fn identity_request() -> CreateIdentityRequest {
+    CreateIdentityRequest {
+        profile: CreateIdentityProfile::E1,
         domain: "example.com".to_owned(),
         port: None,
         path_segments: vec!["agents".to_owned(), "benchmark".to_owned()],
-        capabilities: Capabilities { did_wba: true },
+        capabilities: CreateIdentityCapabilities { did_wba: true },
         managed_keys: vec![
-            managed_key("root", KeyRole::RootControl),
-            managed_key("request", KeyRole::RequestSigning),
-            managed_key("agreement", KeyRole::E2eeAgreement),
+            managed_key("root", ManagedKeyRole::RootControl),
+            managed_key("request", ManagedKeyRole::RequestSigning),
+            managed_key("agreement", ManagedKeyRole::E2eeAgreement),
         ],
         external_keys: Vec::new(),
         services: Vec::new(),
         agent_description_url: None,
-        extensions: Vec::<DidExtensionSpec>::new(),
+        extensions: Vec::new(),
     }
 }
 
-fn managed_key(fragment: &str, role: KeyRole) -> ManagedKeySpec {
-    ManagedKeySpec {
+fn managed_key(fragment: &str, role: ManagedKeyRole) -> ManagedKeyInput {
+    ManagedKeyInput {
         fragment: fragment.to_owned(),
         role,
     }

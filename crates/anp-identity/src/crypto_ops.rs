@@ -161,6 +161,7 @@ impl DidIdentity {
         Ok(signing_key.sign(message).to_bytes().to_vec())
     }
 
+    #[cfg(test)]
     pub fn sign_device_assertion(&self, kid: &str, message: &[u8]) -> DidResult<Vec<u8>> {
         self.require_operational()?;
         let metadata = self.managed_key_metadata(kid)?;
@@ -289,6 +290,7 @@ impl DidIdentity {
         complete_legacy_did_wba_auth_header(prepared, &signature).map_err(|_| DidError::Crypto)
     }
 
+    #[cfg(test)]
     pub fn http_signature_headers(
         &self,
         kid: &str,
