@@ -1,4 +1,4 @@
-# anp-identity
+# ANP Identity
 
 [![CI](https://github.com/agent-network-protocol/anp-identity/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-network-protocol/anp-identity/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/anp-identity.svg)](https://crates.io/crates/anp-identity)
@@ -6,193 +6,226 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 
-Secure, vendor-neutral identity custody and lifecycle management for ANP E1 DIDs.
+ANP Identity is a multi-DID identity manager for applications built on the
+[Agent Network Protocol](https://github.com/agent-network-protocol/anp). It
+stores DID documents and managed private keys together, enforces what each key
+may do, and makes document publication and recovery explicit.
 
-`anp-identity` creates and manages DID documents while keeping ordinary managed
-key operations behind a role-scoped Rust/FFI API boundary. Applications ask for
-an operation by KID—sign, verify, derive a shared secret, or authenticate an HTTP
-request—without reading private key material. The explicit exception is the
-default-off Rust `root-export` feature for the existing, user-confirmed
-`RootKeyEnvelopeV1` transfer flow.
+Applications use a small, purpose-oriented API:
 
-The project is available as a Rust crate with asynchronous Node.js/TypeScript
-bindings.
+- manage one or more DIDs through `IdentityManager`;
+- read public identity snapshots through `ManagedIdentity`;
+- request authentication, device, application, or Origin Proof signatures;
+- coordinate DID document changes through `DocumentChangeSession`;
+- use privileged Host SPI capabilities for HTTP signing, device enrollment,
+  key agreement, migration, and Root Transfer.
 
-> **Release status:** the Rust crate `anp-identity 0.1.0` is published on
-> [crates.io](https://crates.io/crates/anp-identity) and depends on `anp 0.9.4`.
-> The Node/TypeScript package is not published yet; see
-> [Building from source](#building-from-source) for the local binding.
+The ordinary API does not expose private keys, raw ECDH results, storage
+records, generations, journals, or the internal Store engine. The one explicit
+plaintext exception is the default-off Rust `root-export` feature required by
+the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-## The problem
+> **Release status:** `0.2.0` is the first public API release candidate. The
+> Rust crate and Node package have not been published yet; build them from this
+> repository until release artifacts are available.
 
-An ANP application needs more than a function that generates a DID document.
-It also needs to answer operational questions safely:
+## Why this project exists
 
-- Where do the private keys live, and how does the application avoid exporting
-  them through every adapter and FFI boundary?
-- Which KID is allowed to sign HTTP authentication, sign E2EE assertions, or
+Generating a DID document is easy. Operating a DID safely over time is not.
+A production host must also answer questions such as:
+
+- Where are private keys stored, and which code is allowed to use them?
+- Which key may authenticate an HTTP request, sign an application object, or
   perform X25519 agreement?
-- How can multiple DIDs share one process without crossing identity boundaries?
+- How can one Store manage several DIDs without crossing identity boundaries?
 - What happens when two processes update the same identity concurrently?
-- How does a key rotation survive a crash between generating a candidate DID
-  document and publishing it?
-- What happens when publication times out and the caller cannot tell whether
-  the old or new DID document is live?
+- How does a key rotation survive a crash between local preparation and remote
+  publication?
+- What should happen when publication times out and the host cannot tell which
+  document is live?
+- How can native mobile code and a DSH TypeScript plugin share one identity
+  contract without passing secret material through JavaScript?
 
-`anp-identity` turns those concerns into one stateful identity runtime instead
-of leaving every application to build its own keystore, concurrency protocol,
-and DID update state machine.
+ANP Identity provides those operational guarantees as one reusable component,
+instead of requiring each application to invent its own keystore, role checks,
+update journal, recovery protocol, and FFI boundary.
 
 ## How it works
 
 ```text
-Application
-    │
-    ├── DidStore ── encrypted records + provider-pinned root key
-    │      │
-    │      ├── DidIdentity (DID A) ── KID-scoped operations
-    │      └── DidIdentity (DID B) ── isolated namespace
-    │
-    ├── DID document / signatures / public metadata
-    │
-    └── Publisher or resolver owned by the application
+Application or DSH plugin
+          │
+          ├── IdentityManager ── Store lifecycle and multi-DID lookup
+          │          │
+          │          ├── ManagedIdentity (DID A)
+          │          └── ManagedIdentity (DID B)
+          │
+          ├── DocumentChangeSession ── prepare / publish / reconcile
+          │
+          └── Host SPI ── narrowly authorized privileged workflows
+                         HTTP signing, sealed ECDH, enrollment,
+                         migration, Root Transfer
+
+Encrypted Store
+  ├── public DID documents and metadata
+  ├── encrypted private-key records
+  ├── transaction journals
+  └── root-key provider binding
 ```
 
-The runtime combines five pieces:
+The implementation combines five responsibilities:
 
-1. **Typed E1 document construction** — managed and external public keys are
-   validated against a role matrix before a root-bound DID document is created.
-2. **Encrypted key custody** — managed private keys are sealed with
-   ChaCha20-Poly1305 using record-specific HKDF-derived keys and authenticated
-   metadata.
-3. **Role-aware cryptography** — signing, verification, ECDH, DID-WBA, and HTTP
-   Message Signatures require an explicit KID and enforce its role, origin, and
-   lifecycle state.
-4. **Transactional persistence** — creation, enrollment, verified document
-   adoption, root transfer, namespace deletion, recovery, rotation,
-   retirement, and crypto-erasure run under a cross-process exclusive store
-   lock with generation checks.
-5. **Publication reconciliation** — DID updates use a two-phase state machine,
-   including an explicit `PublicationUncertain` state that can only be resolved
-   by comparing a verified remote document with the old and candidate digests.
+1. **Typed ANP E1 identity creation.** Managed keys and external public keys
+   are validated against a fixed role matrix before a DID is created.
+2. **Encrypted key custody.** Managed private keys are encrypted with
+   ChaCha20-Poly1305. Record keys are derived with HKDF and authenticated
+   metadata binds ciphertext to its Store, identity, KID, and key role.
+3. **Purpose-scoped cryptography.** Callers ask to authenticate, sign a device
+   assertion, sign a domain-separated application payload, or create an Origin
+   Proof. ANP Identity selects or validates an eligible active key.
+4. **Transactional lifecycle management.** Store-wide locking, generation
+   checks, journals, and recovery protect creation, enrollment, rotation,
+   revocation, deletion, and migration from lost updates and partial writes.
+5. **Explicit publication reconciliation.** A DID update is not committed
+   merely because an HTTP call returned. Unknown publication outcomes must be
+   reconciled against a verified remote document.
 
-The lower-level [`anp`](https://github.com/agent-network-protocol/anp) crate
-provides stateless protocol primitives. `anp-identity` adds private-key custody,
-durable state, multi-identity isolation, recovery, and lifecycle policy.
+The lower-level `anp 0.9.5` crate supplies stateless document, proof, and
+authentication primitives. ANP Identity adds custody, durable state,
+multi-identity isolation, lifecycle policy, and application-facing APIs.
 
-## Capabilities
+## What it provides
 
-| Capability | What the module provides |
+| Area | Capability |
 |---|---|
-| DID creation | Root-bound ANP E1 DID documents from managed and external public keys |
-| Private-key custody | Encrypted records; only the Rust root-transfer export may return private bytes |
-| Device enrollment | Rootless pending device keys, public enrollment material, and verified activation |
-| Remote convergence | Monotonic verified-document adoption and local revocation fencing |
-| Root transfer | Default-off Rust `root-export` for `RootKeyEnvelopeV1`; wrapped transfer remains available |
-| Multi-identity storage | `DidStore` → isolated `DidIdentity` handles |
-| Signing | Ed25519 signatures by explicit managed KID |
-| Verification | Managed or registered external public KIDs |
-| Key agreement | X25519 ECDH with invalid/low-order peer rejection |
-| HTTP authentication | Legacy DID-WBA and HTTP Message Signature headers |
-| DID updates | Prepare, publish, reconcile, commit, abort, and crash recovery |
-| Device document updates | Root-authorized add/remove mutations for exact manifest devices |
-| Controlled migration | Default-off Rust `key-import` feature for one-way raw/DER import |
-| Namespace retirement | Generation-checked, recoverable deletion without affecting sibling DIDs |
-| Key lifecycle | Active, retired, revoked, and explicit local crypto-erasure |
-| Concurrency | Cross-process locking plus optimistic generation conflicts |
-| Language support | Rust and asynchronous Node.js/TypeScript bindings |
+| Multi-DID management | One Store can create, list, open, recover, and delete multiple isolated identities |
+| DID documents | ANP E1 creation, public snapshots, external public keys, services, and device manifests |
+| Private-key custody | Encrypted managed-key records tied to a pinned root-key provider |
+| Signing | Purpose-scoped Ed25519 authentication, device assertion, application assertion, and Origin Proof signing |
+| Verification | Purpose and DID-relationship checks before signature verification |
+| HTTP authentication | Host-only exact-request signing for DID-WBA and RFC 9421-style HTTP Message Signatures |
+| Key agreement | Host-only X25519 agreement; external mode transports only sealed results through TypeScript |
+| DID updates | Prepare, publish, complete, abort-before-acceptance, uncertain-result reconciliation, and recovery |
+| Enrollment | Rootless device or request-signing enrollment with verified remote-document activation |
+| Root Transfer | Wrapped transfer support plus a feature-gated legacy `RootKeyEnvelopeV1` export/import path |
+| Migration | Feature-gated, one-way key import for trusted hosts |
+| Concurrency | Cross-process Store lock and optimistic generation conflict detection |
+| Language support | Rust Facade, asynchronous Node.js bindings, and a separate trusted Provider entry |
 
-## Supported key roles
+## What it deliberately does not provide
 
-The v1 E1 profile uses a deliberately small key matrix:
+ANP Identity is not:
 
-| Role | Algorithm | Managed private-key use | DID relationship |
-|---|---|---|---|
-| `root_control` | Ed25519 | Internal DID document proof only | `authentication`, `assertionMethod` |
-| `device_signing` | Ed25519 | Device assertions, generic device signing, DID-WBA, and HTTP signing | `authentication`, `assertionMethod` |
-| `request_signing` | Ed25519 | Generic signing, DID-WBA, and HTTP request signing | `authentication` |
-| `e2ee_signing` | Ed25519 | Generic application payload signing | `assertionMethod` |
-| `e2ee_agreement` | X25519 | ECDH | `keyAgreement` |
+- a DID registry, resolver, hosting service, or publication transport;
+- an instant-messaging ratchet or per-message encryption engine;
+- an OAuth/Bearer-token cache or a general HTTP client;
+- an HSM, Secure Enclave, process sandbox, or remote KMS;
+- a password-to-key derivation system;
+- a policy engine that grants arbitrary plugins unrestricted signing access.
 
-Every natively created identity has exactly one managed `root_control` key.
-An enrolled device or daemon can instead hold a rootless identity view with the
-same pinned root public-key fingerprint; root-only operations then fail closed.
-Enabling DID-WBA requires a managed `device_signing` or `request_signing` key.
-External public keys do not grant the module access to a private-key operation.
+The host remains responsible for verifying remote registry evidence, obtaining
+user confirmation for sensitive Root Transfer, choosing authorization policy,
+dispatching network requests, and deriving protocol-specific session keys.
+
+## Public API and Host SPI
+
+The API is split by trust level.
+
+### Public Facade
+
+The default Rust and Node entry points expose:
+
+- `IdentityManager` — initialize/open a Store, inspect it, list identities,
+  create/get/delete identities, and run recovery;
+- `ManagedIdentity` — obtain a public snapshot, sign or verify by purpose,
+  generate an Origin Proof, and start or resume a document change;
+- `DocumentChangeSession` — bind publication attempts to the exact candidate
+  document and reconcile ambiguous results.
+
+Internal Engine types such as `DidStore`, `DidIdentity`, raw lifecycle states,
+manifest structures, and journal records are not public API.
+
+### Trusted Host SPI
+
+`anp_identity::host` and the Node `./provider` entry contain capabilities that
+ordinary application code should not receive directly:
+
+- exact HTTP request signing;
+- device enrollment and remote-document convergence;
+- key agreement;
+- one-way migration import;
+- wrapped and legacy Root Transfer workflows.
+
+In DSH External mode, Root keys, imported private keys, and ECDH shared secrets
+cross the TypeScript bridge only as fixed-suite HPKE ciphertext. A bounded,
+request-specific capability token authorizes each privileged operation.
 
 ## Installation
 
-The Rust crate is on crates.io:
+Until `0.2.0` is published, clone this repository and use a local dependency:
 
-```bash
-cargo add anp-identity
+```toml
+[dependencies]
+anp-identity = { path = "../anp-identity/crates/anp-identity" }
 ```
 
-This crate depends on [`anp`](https://crates.io/crates/anp) `0.9.4` with
-`default-features = false`. Optional Rust features:
+Optional Rust features are default-off:
 
-- `key-import` — one-way raw/DER private-key import for migration
-- `root-export` — explicit `RootKeyEnvelopeV1` root-key export
+| Feature | Intended caller |
+|---|---|
+| `key-import` | A trusted one-way migration host |
+| `root-export` | A trusted, user-confirmed legacy `RootKeyEnvelopeV1` sender |
 
-The Node/TypeScript package `@agent-network-protocol/anp-identity` is not
-published yet. Build it from this repository:
-
-```bash
-git clone https://github.com/agent-network-protocol/anp-identity.git
-cd anp-identity
-cargo build --workspace --all-features
-cd bindings/node
-npm ci
-npm run build
-npm test
-```
-
-Node.js 18 or newer is required. The Rust minimum supported version is 1.88.
+Rust 1.88 or newer is required. The Node package requires Node.js 18 or newer.
 
 ## Quick start: Rust
 
-The following example creates a local-file-backed store, creates an E1 DID, and
-signs a payload with its request-signing key.
+This example initializes a local Store, creates an E1 DID, and signs a payload
+with an authentication-capable key:
 
 ```rust
-use std::path::Path;
+use std::path::PathBuf;
 
 use anp_identity::{
-    Capabilities, DidCreateSpec, DidError, DidProfile, DidStore, KeyRole,
-    ManagedKeySpec,
+    CreateIdentityCapabilities, CreateIdentityProfile, CreateIdentityRequest,
+    IdentityError, IdentityManager, IdentityManagerConfig, IdentityResult,
+    KeySelector, ManagedKeyInput, ManagedKeyRole, RootKeySource, SignRequest,
+    SigningPurpose, VerifyRequest, VerificationOutcome,
 };
 
-fn open_or_create_store(path: &Path) -> Result<DidStore, DidError> {
-    match DidStore::open_local_file(path) {
-        Ok(store) => Ok(store),
-        Err(DidError::StoreNotFound) => DidStore::initialize_local_file(path),
+fn config() -> IdentityManagerConfig {
+    IdentityManagerConfig {
+        state_root: PathBuf::from("./identity-store"),
+        root_key: RootKeySource::LocalPrivateFile,
+    }
+}
+
+fn open_or_initialize() -> IdentityResult<IdentityManager> {
+    match IdentityManager::open(config()) {
+        Ok(manager) => Ok(manager),
+        Err(IdentityError::StoreNotFound) => IdentityManager::initialize(config()),
         Err(error) => Err(error),
     }
 }
 
-fn main() -> Result<(), DidError> {
-    let mut store = open_or_create_store(Path::new("./identity-store"))?;
-    let existing = store.list_identities()?.into_iter().next();
-    let identity = match existing {
-        Some(summary) => store.open_identity(&summary.did)?,
-        None => store.create_identity(DidCreateSpec {
-            profile: DidProfile::E1,
-            domain: "example.com".to_string(),
+fn main() -> IdentityResult<()> {
+    let mut manager = open_or_initialize()?;
+    let identity = match manager.list()?.into_iter().next() {
+        Some(descriptor) => manager.get(&descriptor.reference)?,
+        None => manager.create(CreateIdentityRequest {
+            profile: CreateIdentityProfile::E1,
+            domain: "example.com".to_owned(),
             port: None,
-            path_segments: vec!["agents".to_string(), "alice".to_string()],
-            capabilities: Capabilities { did_wba: true },
+            path_segments: vec!["agents".to_owned(), "alice".to_owned()],
+            capabilities: CreateIdentityCapabilities { did_wba: true },
             managed_keys: vec![
-                ManagedKeySpec {
-                    fragment: "root".to_string(),
-                    role: KeyRole::RootControl,
+                ManagedKeyInput {
+                    fragment: "root".to_owned(),
+                    role: ManagedKeyRole::RootControl,
                 },
-                ManagedKeySpec {
-                    fragment: "request".to_string(),
-                    role: KeyRole::RequestSigning,
-                },
-                ManagedKeySpec {
-                    fragment: "agreement".to_string(),
-                    role: KeyRole::E2eeAgreement,
+                ManagedKeyInput {
+                    fragment: "request".to_owned(),
+                    role: ManagedKeyRole::RequestSigning,
                 },
             ],
             external_keys: Vec::new(),
@@ -202,295 +235,258 @@ fn main() -> Result<(), DidError> {
         })?,
     };
 
-    println!("DID: {}", identity.did());
-    println!("Document: {}", identity.document());
+    let payload = b"hello ANP".to_vec();
+    let signature = identity.sign(SignRequest {
+        purpose: SigningPurpose::Authentication,
+        key: KeySelector::Default,
+        payload: payload.clone(),
+    })?;
+    let outcome = identity.verify(VerifyRequest {
+        purpose: SigningPurpose::Authentication,
+        kid: signature.kid.clone(),
+        payload,
+        signature: signature.bytes,
+    })?;
+    assert_eq!(outcome, VerificationOutcome::Valid);
 
-    let signature = identity.sign("#request", b"hello ANP")?;
-    identity.verify("#request", b"hello ANP", &signature)?;
+    let public = identity.public_identity()?;
+    println!("DID: {}", public.reference.did);
+    println!("revision: {}", public.revision);
     Ok(())
 }
 ```
 
-`initialize_local_file` creates a random 32-byte root key and stores it in a
-private local file. Applications that already own their root key can instead
-use `initialize_injected`, `initialize_env`, or `initialize_keyring`.
+`LocalPrivateFile` creates a random 32-byte Store root key in a private local
+file. Hosts that already manage a root key can use `Injected`, `Environment`,
+or `Keyring` instead.
 
 ## Quick start: Node.js
 
-The Node API mirrors the Rust ownership model and keeps filesystem, keyring,
-lock, and cryptographic work off the JavaScript event loop.
+The default Node entry mirrors the same Facade and performs filesystem,
+keyring, lock, and cryptographic work outside the JavaScript event loop:
 
 ```js
-const { DidStore } = require('@agent-network-protocol/anp-identity')
-
-async function openOrCreateStore(root) {
-  try {
-    return await DidStore.openLocalFile(root)
-  } catch (error) {
-    if (error.code !== 'store_not_found') throw error
-    return DidStore.initializeLocalFile(root)
-  }
-}
+const {
+  IdentityManager,
+} = require('@agent-network-protocol/anp-identity')
 
 async function main() {
-  const store = await openOrCreateStore('./identity-store')
-  const identities = await store.listIdentities()
-  const identity = identities.length
-    ? await store.openIdentity(identities[0].did)
-    : await store.createIdentity({
-        profile: 'e1',
-        domain: 'example.com',
-        pathSegments: ['agents', 'alice'],
-        capabilities: { didWba: true },
-        managedKeys: [
-          { fragment: 'root', role: 'root_control' },
-          { fragment: 'request', role: 'request_signing' },
-          { fragment: 'agreement', role: 'e2ee_agreement' },
-        ],
-        externalKeys: [],
-        services: [],
-        extensions: [],
-      })
+  const manager = await IdentityManager.initialize({
+    stateRoot: './identity-store',
+    rootKeyKind: 'local_private_file',
+  })
 
-  const snapshot = await identity.snapshot()
-  console.log(snapshot.did)
-  console.log(snapshot.document)
+  const identity = await manager.create({
+    profile: 'e1',
+    domain: 'example.com',
+    pathSegments: ['agents', 'alice'],
+    capabilities: { didWba: true },
+    managedKeys: [
+      { fragment: 'root', role: 'root_control' },
+      { fragment: 'request', role: 'request_signing' },
+    ],
+  })
 
-  const message = Buffer.from('hello ANP')
-  const signature = await identity.sign('#request', message)
-  console.log(await identity.verify('#request', message, signature))
+  const publicIdentity = await identity.publicIdentity()
+  console.log(publicIdentity.reference.did)
+
+  const signature = await identity.sign({
+    purpose: 'authentication',
+    payload: Buffer.from('hello ANP'),
+  })
+  console.log(signature.kid, signature.bytes.length)
 }
 
 main().catch(console.error)
 ```
 
-The JavaScript API exports only `DidStore` and `DidIdentity`. Private DID keys
-never appear in a Node value, serialized DTO, TypeScript declaration, or public
-API output. The Rust-only, default-off `key-import` feature accepts zeroizing
-raw/DER private bytes as a one-way migration input. The separate default-off
-`root-export` feature permits only the user-confirmed `RootKeyEnvelopeV1`
-egress. Both features are deliberately absent from the default Node build.
+Use `IdentityManager.open(...)` after the Store has been initialized. Keep the
+manager and active identity handles for the lifetime of the host instead of
+reopening files for every signature.
 
-## Sign an outbound HTTP request
+## Signing model
 
-`http_signature_headers` signs the exact request method, URL, selected headers,
-and optional body with an active managed `device_signing` or
-`request_signing` key. `http_signature_headers_with_options` additionally
-accepts a server nonce, fixed creation/expiry values, and covered components.
+The Facade does not expose a generic “use any KID for any bytes” oracle. A
+signature request declares its purpose:
 
-```rust
-use std::collections::BTreeMap;
-
-let body = br#"{"message":"hello"}"#;
-let mut headers = BTreeMap::new();
-headers.insert("content-type".to_string(), "application/json".to_string());
-
-let signed_headers = identity.http_signature_headers(
-    "#request",
-    "https://api.example.com/messages",
-    "POST",
-    Some(&headers),
-    Some(body),
-)?;
-```
-
-Send the returned headers with the same method, URL, and body. Changing a
-covered component after signing will make verification fail. Request transport
-is intentionally outside this crate; use the HTTP client appropriate for your
-application.
-
-The corresponding verifier is provided by the `anp` crate and requires the KID
-to be authorized by the DID document's `authentication` relationship.
-
-## Derive a shared secret
-
-ECDH is available only to an active managed `e2ee_agreement` key:
-
-```rust
-let shared = identity.ecdh("#agreement", &peer_x25519_public_key)?;
-let raw_x25519_result = shared.as_bytes();
-```
-
-The returned value is **not a session key**. Feed it into a domain-separated
-HKDF together with the identities and protocol context, then use the derived
-key in the caller-owned session. `SharedSecret` zeroizes its Rust buffer on
-drop. A Node.js `Buffer` copy must be overwritten by the JavaScript caller.
-
-See [`e2ee_handshake.rs`](crates/anp-identity/examples/e2ee_handshake.rs) for a
-complete two-party ECDH, HKDF, and ChaCha20-Poly1305 round trip.
-
-## Update a DID document safely
-
-DID hosting is owned by the application. `anp-identity` coordinates the local
-key and document state with that external publisher:
-
-```text
-prepare_update
-    │
-    ├── abort_update                     (publication has not started)
-    │
-    └── begin_publication
-            │
-            ├── mark_published → commit_update
-            │
-            └── mark_publication_uncertain
-                    └── reconcile_update(observed_remote_document)
-```
-
-After publication starts, a timeout or ambiguous failure must be marked
-`PublicationUncertain`. In that state, direct abort, commit, retirement, and
-deletion are rejected. `reconcile_update` verifies the observed DID document
-and compares its canonical digest:
-
-| Remote observation | Result |
-|---|---|
-| Old active document | Return to `Prepared`; the caller may safely abort or retry |
-| Candidate document | Commit the candidate locally |
-| Any other valid document | Return `Conflict`; never import unknown remote state |
-
-This prevents a timeout from deleting a private key that the remote DID
-document may already reference.
-
-## Storage and root-key providers
-
-| Provider | Initialization | Intended use |
+| Purpose | Eligible managed key | Additional binding |
 |---|---|---|
-| Local private file | `initialize_local_file` | Standalone applications; generated key in a `0600` file on Unix |
-| Injected bytes | `initialize_injected` | Hosts that already manage a uniformly random 32-byte key |
-| Environment variable | `initialize_env` | Deployment secret injection; unpadded base64url-encoded 32-byte key |
-| OS keyring | `initialize_keyring` | Desktop or platform credential stores, with optional new-store file fallback |
+| `authentication` | request-signing or device-signing | DID `authentication` relationship |
+| `device_assertion` | device-signing | DID assertion authorization |
+| `application_assertion` | request-signing or E2EE-signing | caller-provided domain separator |
+| Origin Proof | request-signing | canonical method, metadata, body, and proof options |
 
-The chosen provider and root-key fingerprint are pinned in the store manifest.
-Opening an existing store never silently selects a different provider or
-generates a replacement key. Provider unavailability and root-key mismatch are
-distinct errors.
+The selected key must be active, managed by the identity, authorized by the DID
+document, and compatible with the requested purpose. A caller may select an
+exact KID or request the unique eligible default.
 
-An injected or environment-provided root key must be 32 uniformly random bytes,
-not a password. Password-based key derivation is outside the v1 API.
+For message-oriented applications, Origin Proof signing is usually the hot
+path. Public identity snapshots and active KIDs should be cached in memory and
+refreshed after a document change, recovery, or conflict.
 
-## Concurrency and crash recovery
+## HTTP request signing
 
-Every mutating operation, including recovery and orphan cleanup, takes the
-store-wide cross-process exclusive lock. Registry and identity records use
-monotonic generations to detect stale handles rather than overwrite concurrent
-work.
+HTTP authentication belongs to the Host SPI because reusable signature headers
+would turn an ordinary consumer lease into a signing oracle. A trusted host
+provides the exact method, URL, selected headers, and optional body, then sends
+the returned patch only with that request.
 
-When an operation returns `Conflict`:
+A DSH dispatcher should preserve these invariants:
 
-1. Call `DidStore::reload()` or `DidIdentity::reload()`.
-2. Inspect the newly committed state.
-3. Decide whether the original operation is still valid.
-4. Retry with the refreshed handle if appropriate.
+- reject bodies above its configured limit before signing (the AWiki plugin
+  uses a 4 MiB ceiling);
+- use `redirect: 'manual'` and re-authorize every redirect target;
+- bind an explicitly empty body as a body and include `Content-Digest`;
+- never reuse a header patch for another URL, method, body, or attempt;
+- keep Bearer-token caching and network transport outside ANP Identity.
 
-Reload is not a cheap polling read: it takes the store-wide exclusive lock and
-runs crash recovery.
+The `anp` verifier checks the signature against the DID document and requires
+the selected KID to be authorized by its `authentication` relationship.
 
-Creation and update journals make interrupted operations converge on reopen or
-reload. The implementation never treats a partial identity as active merely
-because one file exists.
+## DID document changes
 
-## Security model
-
-The private-key guarantee is a **logical API and FFI boundary**:
-
-- Managed private-key bytes cannot be obtained from the public Rust API, napi
-  exports, DTOs, debug output, errors, or `.d.ts` declarations.
-- Secret-bearing Rust values use zeroizing memory and are not serialized as
-  public models.
-- KID role, origin, state, DID ownership, and verification relationships are
-  checked before cryptographic operations.
-- X25519 rejects malformed, low-order, and all-zero peer results.
-- Public API and TypeScript snapshots are reviewed in CI, including the
-  declarations generated directly from Rust napi exports.
-
-The module does **not** provide process isolation. The native addon shares an
-address space with its Node.js host. A compromised process, malicious native
-addon, debugger, core dump, or local memory reader is outside the v1 threat
-model. This project is not an HSM, Secure Enclave, or independent KMS.
-
-The local-file provider protects permissions and accidental disclosure. An
-attacker who obtains both the root-key file and encrypted records can decrypt
-them offline.
-
-Read the complete [security and ownership boundary](docs/boundary.md) before
-integrating the module into a security-sensitive host.
-
-## Scope and compatibility
-
-Version 0.1 supports the ANP **E1** DID profile only.
-
-Out of scope for v1:
-
-- general-purpose private-key export or backup outside the controlled
-  `root-export` Root Transfer exception;
-- root-provider rekey;
-- root-control rotation;
-- K1, PlainLegacy, or P-256 legacy E2EE identities;
-- DID hosting or resolver caching;
-- E2EE session and message orchestration;
-- browser WASM;
-- process-isolated signing.
-
-The repository is pre-release and does not provide a compatibility layer for
-stores created under earlier development-only project names or cryptographic
-domain separators.
-
-## Building from source
-
-Prerequisites:
-
-- Rust 1.88 or newer;
-- Node.js 18 or newer for the Node binding;
-- `anp 0.9.4` from crates.io, or a sibling checkout of the `anp` repository for
-  local path-based development.
-
-Published crate consumers only need the crates.io dependency. Local workspace
-development can keep this layout so the pinned path dependency resolves:
+The host owns DID publication. ANP Identity owns the local transaction:
 
 ```text
-anp-workspace/
-├── anp/
-└── anp-identity/
+prepare_document_change
+        │
+        ├── rejected before publication ──> abort locally
+        │
+        └── begin_publication
+                │
+                ├── confirmed + verified evidence ──> commit
+                │
+                └── result unknown ──> publication_uncertain
+                                           │
+                                           └── reconcile(verified remote)
 ```
 
-Build and test Rust:
+`DocumentChangeSession` binds an operation ID, candidate digest, and publication
+generation. When the network result is unknown, the identity cannot silently
+abort or commit. The host must resolve the DID through a trusted path and pass
+verified version, registry version, and digest evidence to `reconcile`.
+
+This prevents a timeout from deleting a key that a remotely published document
+may already reference.
+
+## Store root-key sources
+
+| Source | Intended use | Important property |
+|---|---|---|
+| Local private file | Standalone native applications | Random key stored separately with private file permissions |
+| Injected 32-byte key | Mobile secure storage or an existing host vault | Input is consumed and zeroized by Rust |
+| Named environment variable | Controlled deployment secret injection | Value must be unpadded base64url for exactly 32 bytes |
+| OS keyring | Desktop/native applications | Provider identity is pinned in the Store manifest |
+
+The Store records the chosen provider binding and a root-key fingerprint.
+Opening it with another provider or key fails closed. An injected or environment
+key must be uniformly random; do not pass a password.
+
+Copying both a local root-key file and the encrypted Store permits offline
+decryption. Use a platform vault or keyring when the threat model requires the
+root key to be protected separately from application data.
+
+## Multiple DIDs, concurrency, and recovery
+
+One `IdentityManager` can own multiple DIDs. Each `IdentityRef` contains the
+Store ID, local identity ID, and DID; a reference from another Store is rejected.
+Private-key records and lifecycle state remain namespaced per identity.
+
+Mutations acquire a Store-wide cross-process lock and use monotonic generation
+checks. A stale handle receives `Conflict` instead of overwriting newer state.
+Call `IdentityManager::recover()` (or Node `manager.recover()`) after a conflict
+or interrupted write, then obtain fresh handles. Recovery is a Store-wide
+exclusive operation, not a cheap polling read.
+
+Long-lived applications should:
+
+1. open one manager during startup;
+2. cache public identity snapshots and active handles;
+3. serialize management workflows at the application boundary;
+4. recover only after a conflict, crash, or explicit health action.
+
+## Direct native mode and DSH External mode
+
+ANP Identity supports two deployment shapes with the same identity semantics:
+
+| Mode | Typical host | Integration |
+|---|---|---|
+| Direct | Rust services and mobile native libraries | Link the Rust crate and call the Facade/Host SPI directly |
+| External | Node-based AWiki CLI through DSH | Load the native Node Provider from a trusted DSH plugin and inject a bounded provider lease into IM Core |
+
+The External mode does not require IM Core's Node build to statically link ANP
+Identity. TypeScript carries public DTOs and HPKE envelopes; privileged plaintext
+stays in native code. Mobile builds may continue to link the Rust implementation
+directly.
+
+The Node package exposes two entries:
+
+```js
+require('@agent-network-protocol/anp-identity')          // public Facade
+require('@agent-network-protocol/anp-identity/provider') // trusted Host adapter
+```
+
+See [the Node binding guide](bindings/node/README.md) and
+[security boundary](docs/boundary.md) before using the Provider entry.
+
+## Security boundary
+
+ANP Identity provides a logical Rust/FFI boundary, not process isolation. A
+native addon shares the Node process address space. Compromised native code,
+a debugger with sufficient privilege, or a copied local root-key file may
+bypass application-level policy.
+
+Security-sensitive rules include:
+
+- no private-key fields in public snapshots, logs, errors, or serializable DTOs;
+- no raw ECDH on the public Node API;
+- injected JavaScript buffers are consumed and overwritten, but unrelated JS
+  copies are outside Rust zeroization;
+- migration import and legacy Root export are default-off Rust features;
+- legacy Root export requires explicit user-presence confirmation;
+- DSH privileged operations require bounded capabilities and one-time tokens;
+- unknown document publication outcomes fail closed until reconciliation.
+
+Read [docs/boundary.md](docs/boundary.md) for the complete trust model and
+[AGENTS.md](AGENTS.md) for repository-level invariants.
+
+## Building and testing
+
+Rust workspace:
 
 ```bash
 cargo fmt --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
+cargo clippy --workspace --all-features --all-targets -- -D warnings
 ./scripts/check-public-api.sh
-cargo run --example e2ee_handshake
 ```
 
-Build and test Node.js:
+Node binding:
 
 ```bash
-npm --prefix bindings/node ci
-npm --prefix bindings/node run build
-npm --prefix bindings/node test
+cd bindings/node
+npm ci
+npm run build
+npm test
 ```
 
-The Node build currently verifies the build-host platform. The package contains
-target definitions for Linux, macOS, and Windows on x64 and arm64, but a
-platform should be declared supported only after its native CI build passes.
+The repository checks generated TypeScript declarations, public API snapshots,
+secret-free DTO boundaries, cross-process conflict behavior, recovery fault
+points, and feature-gated key import/export surfaces.
 
-## Documentation
+Declaring a native target in build metadata is not a support guarantee. A
+platform is supported only after its native package and tests pass there.
 
-- [Security and ownership boundary](docs/boundary.md)
-- [Node.js binding notes](bindings/node/README.md)
-- [Caller-owned ECDH/HKDF example](crates/anp-identity/examples/e2ee_handshake.rs)
-- [ANP protocol and stateless SDK](https://github.com/agent-network-protocol/anp)
+## Repository layout
 
-## Contributing
-
-Issues and pull requests are welcome. Changes that affect storage, key
-lifecycle, publication state, public APIs, or napi exports should include tests
-for failure and recovery paths. Keep the v1 E1-only boundary explicit and run
-the full Rust and Node verification commands before opening a pull request.
+```text
+crates/anp-identity/   Rust Facade, Host SPI, custody engine, tests, examples
+bindings/node/        asynchronous Node Facade and trusted Provider entry
+docs/                 security boundary and protocol notes
+api/                  reviewed Rust and TypeScript public API snapshots
+scripts/              API and release verification gates
+```
 
 ## License
-
-Copyright 2026 Agent Network Protocol.
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
