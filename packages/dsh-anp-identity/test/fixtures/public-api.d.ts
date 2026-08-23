@@ -50,6 +50,7 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     private revokeConsumer;
     private createForHost;
     private deleteForHost;
+    private createNativeWithRecovery;
     private removeLease;
     private initializeSlot;
     private reconcile;
