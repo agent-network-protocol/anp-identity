@@ -108,6 +108,12 @@ export interface SealedSecretEnvelope {
   ciphertext: string
 }
 
+export interface SealedSecretDelivery {
+  envelope: SealedSecretEnvelope
+  authorization: AuthorizationContext
+  aad: string
+}
+
 export interface SealedKeyAgreementRequest {
   identity: IdentityReference
   kid: string
@@ -336,8 +342,8 @@ export interface ProviderLease {
     reference: IdentityReference,
     request: ObjectProofRequest,
   ): Promise<JsonValue>
-  ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretEnvelope>
-  exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretEnvelope>
+  ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretDelivery>
+  exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretDelivery>
   prepareLegacyRootImport(request: SealedRootImportPreparation): Promise<PreparedRootImport>
   prepareIdentityMaterialImport(
     request: SealedIdentityImportPreparation,
@@ -363,7 +369,7 @@ export interface ProviderEnrollmentSession {
   signDeviceAssertion(payload: Buffer): Promise<Buffer>
   deriveDeviceSharedSecretSealed(
     request: SealedEnrollmentKeyAgreementRequest,
-  ): Promise<SealedSecretEnvelope>
+  ): Promise<SealedSecretDelivery>
   activate(remote: VerifiedRemoteDocument): Promise<'activated'>
   cancel(): Promise<void>
 }

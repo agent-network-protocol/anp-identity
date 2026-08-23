@@ -34,6 +34,19 @@ pub struct SealedSecretEnvelope {
     pub ciphertext_b64u: String,
 }
 
+/// Token-bound HPKE delivery returned from an External Provider to its native host.
+///
+/// `aad` is the unpadded base64url encoding of the exact AAD used to seal
+/// `envelope`. The host validates it against `authorization` and its request
+/// before opening the ciphertext.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SealedSecretDelivery {
+    pub envelope: SealedSecretEnvelope,
+    pub authorization: IssuedAuthorizationContext,
+    pub aad: String,
+}
+
 impl SealedSecretEnvelope {
     pub fn from_handoff(handoff: &anp::sealed_handoff::SealedHandoff) -> Self {
         Self {
@@ -515,7 +528,7 @@ pub trait SealedKeyAgreementPort {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedKeyAgreementRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError>;
+    ) -> Result<SealedSecretDelivery, SealedProviderError>;
 }
 
 pub trait SealedEnrollmentKeyAgreementPort {
@@ -523,7 +536,7 @@ pub trait SealedEnrollmentKeyAgreementPort {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedEnrollmentKeyAgreementRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError>;
+    ) -> Result<SealedSecretDelivery, SealedProviderError>;
 }
 
 #[cfg(feature = "root-export")]
@@ -532,7 +545,7 @@ pub trait SealedRootExportPort {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedRootExportRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError>;
+    ) -> Result<SealedSecretDelivery, SealedProviderError>;
 }
 
 impl SealedKeyAgreementPort for ManagedIdentity {
@@ -540,7 +553,7 @@ impl SealedKeyAgreementPort for ManagedIdentity {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedKeyAgreementRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError> {
+    ) -> Result<SealedSecretDelivery, SealedProviderError> {
         let binding = request.operation_binding()?;
         let consumed = authorization.consume_for_operation(&request.token, &binding)?;
         validate_identity_binding(&self.reference(), &request.identity, &consumed)?;
@@ -564,7 +577,7 @@ impl SealedKeyAgreementPort for ManagedIdentity {
             shared.as_bytes(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
-        Ok(SealedSecretEnvelope::from_handoff(&sealed))
+        Ok(sealed_delivery(&sealed, &aad, consumed))
     }
 }
 
@@ -573,7 +586,7 @@ impl SealedEnrollmentKeyAgreementPort for super::EnrollmentSession {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedEnrollmentKeyAgreementRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError> {
+    ) -> Result<SealedSecretDelivery, SealedProviderError> {
         let binding = request.operation_binding()?;
         let consumed = authorization.consume_for_operation(&request.token, &binding)?;
         let proposal = self.proposal();
@@ -604,7 +617,7 @@ impl SealedEnrollmentKeyAgreementPort for super::EnrollmentSession {
             shared.as_bytes(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
-        Ok(SealedSecretEnvelope::from_handoff(&sealed))
+        Ok(sealed_delivery(&sealed, &aad, consumed))
     }
 }
 
@@ -614,7 +627,7 @@ impl SealedRootExportPort for ManagedIdentity {
         &self,
         authorization: &ProviderAuthorization,
         request: SealedRootExportRequest,
-    ) -> Result<SealedSecretEnvelope, SealedProviderError> {
+    ) -> Result<SealedSecretDelivery, SealedProviderError> {
         use super::{RootExportPort, UserConfirmedRootExportRequest};
 
         let binding = request.operation_binding()?;
@@ -640,7 +653,26 @@ impl SealedRootExportPort for ManagedIdentity {
             exported.as_pkcs8_der(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
-        Ok(SealedSecretEnvelope::from_handoff(&sealed))
+        Ok(sealed_delivery(&sealed, &aad, consumed))
+    }
+}
+
+fn sealed_delivery(
+    sealed: &anp::sealed_handoff::SealedHandoff,
+    aad: &[u8],
+    consumed: ConsumedOneTimeAuthorization,
+) -> SealedSecretDelivery {
+    SealedSecretDelivery {
+        envelope: SealedSecretEnvelope::from_handoff(sealed),
+        authorization: IssuedAuthorizationContext {
+            provider_instance_id: consumed.provider_instance_id,
+            parent_lease_id: consumed.parent_lease_id,
+            consumer: consumed.consumer,
+            capability: consumed.capability,
+            store_id: consumed.store_id,
+            expires_at: consumed.expires_at,
+        },
+        aad: URL_SAFE_NO_PAD.encode(aad),
     }
 }
 
@@ -1179,7 +1211,7 @@ mod tests {
         )
         .unwrap();
         let token = authority.issue_one_time(&lease, &binding, 60).unwrap();
-        let envelope = identity
+        let delivery = identity
             .derive_shared_secret_sealed(
                 &authority,
                 SealedKeyAgreementRequest {
@@ -1192,25 +1224,14 @@ mod tests {
                 },
             )
             .unwrap();
-        let consumed = ConsumedOneTimeAuthorization {
-            provider_instance_id: authority.provider_instance_id().to_owned(),
-            parent_lease_id: lease.lease_id().to_owned(),
-            consumer: "dsh-awiki".to_owned(),
-            capability: capability::IDENTITY_ECDH_SEALED.to_owned(),
-            store_id: reference.store_id.clone(),
-        };
-        let aad = sealed_aad(
-            ECDH_SEALED_OPERATION,
-            &reference,
-            &kid,
-            "request-1",
-            &binding.operation_input_digest,
-            recipient.public_key(),
-            &consumed,
-        )
-        .unwrap();
+        let aad = sealed_operation_aad(&delivery.authorization, &binding, &reference).unwrap();
+        assert_eq!(delivery.aad, URL_SAFE_NO_PAD.encode(&aad));
         let plaintext = recipient
-            .open(&envelope.to_handoff().unwrap(), SEALED_SECRET_INFO, &aad)
+            .open(
+                &delivery.envelope.to_handoff().unwrap(),
+                SEALED_SECRET_INFO,
+                &aad,
+            )
             .unwrap();
         assert_eq!(plaintext.len(), 32);
 
@@ -1218,7 +1239,7 @@ mod tests {
         wrong_aad.push(0);
         assert!(recipient
             .open(
-                &envelope.to_handoff().unwrap(),
+                &delivery.envelope.to_handoff().unwrap(),
                 SEALED_SECRET_INFO,
                 &wrong_aad,
             )
@@ -1534,7 +1555,7 @@ mod tests {
         )
         .unwrap();
         let token = authority.issue_one_time(&lease, &binding, 60).unwrap();
-        let envelope = identity
+        let delivery = identity
             .export_root_key_sealed(
                 &authority,
                 SealedRootExportRequest {
@@ -1547,26 +1568,15 @@ mod tests {
                 },
             )
             .unwrap();
-        assert!(!envelope.ciphertext_b64u.contains("PRIVATE"));
-        let consumed = ConsumedOneTimeAuthorization {
-            provider_instance_id: authority.provider_instance_id().to_owned(),
-            parent_lease_id: lease.lease_id().to_owned(),
-            consumer: "dsh-awiki".to_owned(),
-            capability: capability::AWIKI_LEGACY_ROOT_TRANSFER_V1.to_owned(),
-            store_id: reference.store_id.clone(),
-        };
-        let aad = sealed_aad(
-            ROOT_EXPORT_SEALED_OPERATION,
-            &reference,
-            &kid,
-            "root-transfer-1",
-            &binding.operation_input_digest,
-            recipient.public_key(),
-            &consumed,
-        )
-        .unwrap();
+        assert!(!delivery.envelope.ciphertext_b64u.contains("PRIVATE"));
+        let aad = sealed_operation_aad(&delivery.authorization, &binding, &reference).unwrap();
+        assert_eq!(delivery.aad, URL_SAFE_NO_PAD.encode(&aad));
         let plaintext = recipient
-            .open(&envelope.to_handoff().unwrap(), SEALED_SECRET_INFO, &aad)
+            .open(
+                &delivery.envelope.to_handoff().unwrap(),
+                SEALED_SECRET_INFO,
+                &aad,
+            )
             .unwrap();
         ed25519_dalek::SigningKey::from_pkcs8_der(&plaintext).unwrap();
     }

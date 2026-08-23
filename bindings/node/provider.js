@@ -191,11 +191,11 @@ class ProviderLease {
   }
 
   async ecdhSealed(request) {
-    return sealedEnvelope(await call(this.#inner.ecdhSealed(request)))
+    return sealedDelivery(await call(this.#inner.ecdhSealed(request)))
   }
 
   async exportRootKeySealed(request) {
-    return sealedEnvelope(await call(this.#inner.exportRootKeySealed(request)))
+    return sealedDelivery(await call(this.#inner.exportRootKeySealed(request)))
   }
 
   async prepareLegacyRootImport(request) {
@@ -284,7 +284,7 @@ class ProviderEnrollmentSession {
   }
 
   async deriveDeviceSharedSecretSealed(request) {
-    return sealedEnvelope(await call(this.#inner.deriveDeviceSharedSecretSealed(request)))
+    return sealedDelivery(await call(this.#inner.deriveDeviceSharedSecretSealed(request)))
   }
 
   activate(remote) {
@@ -396,6 +396,14 @@ function sealedEnvelope(value) {
     suite: value.suite,
     encappedKey: value.encapped_key_b64u,
     ciphertext: value.ciphertext_b64u,
+  }
+}
+
+function sealedDelivery(value) {
+  return {
+    envelope: sealedEnvelope(value.envelope),
+    authorization: authorizationContext(value.authorization),
+    aad: value.aad,
   }
 }
 

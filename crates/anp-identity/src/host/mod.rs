@@ -56,7 +56,8 @@ pub use sealed_handoff::{
     sealed_provider_adoption_binding, PreparedSealedProviderAdoption,
     SealedEnrollmentKeyAgreementPort, SealedEnrollmentKeyAgreementRequest, SealedKeyAgreementPort,
     SealedKeyAgreementRequest, SealedProviderAdoptionOffer, SealedProviderAdoptionPreparation,
-    SealedProviderError, SealedSecretEnvelope, SEALED_SECRET_INFO, SEALED_SECRET_PROTOCOL,
+    SealedProviderError, SealedSecretDelivery, SealedSecretEnvelope, SEALED_SECRET_INFO,
+    SEALED_SECRET_PROTOCOL,
 };
 #[cfg(feature = "key-import")]
 pub use sealed_handoff::{

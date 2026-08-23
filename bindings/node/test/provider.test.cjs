@@ -106,8 +106,11 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
     recipientPublicKey: recipientPublic,
     requestId: 'provider-ecdh-1',
   })
-  assert.equal(ecdh.protocol, 'anp-sealed-secret/1')
-  assert.ok(ecdh.ciphertext.length > 32)
+  assert.equal(ecdh.envelope.protocol, 'anp-sealed-secret/1')
+  assert.ok(ecdh.envelope.ciphertext.length > 32)
+  assert.equal(ecdh.authorization.consumer, 'dsh-awiki')
+  assert.equal(ecdh.authorization.capability, 'IDENTITY_ECDH_SEALED')
+  assert.ok(Buffer.from(ecdh.aad, 'base64url').length > 0)
   assert.equal(Object.hasOwn(ecdh, 'sharedSecret'), false)
 
   await assert.rejects(
@@ -127,7 +130,9 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
     requestId: 'root-transfer-1',
     userPresenceConfirmed: true,
   })
-  assert.equal(rootEnvelope.protocol, 'anp-sealed-secret/1')
+  assert.equal(rootEnvelope.envelope.protocol, 'anp-sealed-secret/1')
+  assert.equal(rootEnvelope.authorization.capability, 'AWIKI_LEGACY_ROOT_TRANSFER_V1')
+  assert.ok(Buffer.from(rootEnvelope.aad, 'base64url').length > 0)
   assert.equal(Object.hasOwn(rootEnvelope, 'rootKey'), false)
 
   const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-identity-node-enrollment-'))
@@ -168,7 +173,9 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
     recipientPublicKey: recipientPublic,
     requestId: 'enrollment-ecdh-1',
   })
-  assert.equal(enrollmentEcdh.protocol, 'anp-sealed-secret/1')
+  assert.equal(enrollmentEcdh.envelope.protocol, 'anp-sealed-secret/1')
+  assert.equal(enrollmentEcdh.authorization.capability, 'IDENTITY_ECDH_SEALED')
+  assert.ok(Buffer.from(enrollmentEcdh.aad, 'base64url').length > 0)
   assert.equal(Object.hasOwn(enrollmentEcdh, 'sharedSecret'), false)
 
   const change = await lease.prepareDocumentChange(created.reference, {

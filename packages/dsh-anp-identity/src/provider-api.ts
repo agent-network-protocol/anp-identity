@@ -29,6 +29,7 @@ import type {
   SealedProviderAdoptionPreparation,
   SealedRootExportRequest,
   SealedRootImportPreparation,
+  SealedSecretDelivery,
   SealedSecretEnvelope,
   WrappedRootEnvelope,
 } from '@agent-network-protocol/anp-identity/provider'
@@ -67,6 +68,7 @@ export type {
   SealedProviderAdoptionPreparation,
   SealedRootExportRequest,
   SealedRootImportPreparation,
+  SealedSecretDelivery,
   SealedSecretEnvelope,
   WrappedRootEnvelope,
 }
@@ -126,8 +128,8 @@ export interface HostProviderLease {
   importWrappedRoot(reference: IdentityReference, envelope: WrappedRootEnvelope): Promise<'pending' | 'active'>
   confirmRootPromotion(reference: IdentityReference, request: RootPromotionRequest): Promise<void>
   signPendingRootObjectProof(reference: IdentityReference, request: ObjectProofRequest): Promise<unknown>
-  ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretEnvelope>
-  exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretEnvelope>
+  ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretDelivery>
+  exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretDelivery>
   prepareLegacyRootImport(request: SealedRootImportPreparation): Promise<PreparedRootImport>
   prepareIdentityMaterialImport(request: SealedIdentityImportPreparation): Promise<PreparedIdentityMaterialImport>
   prepareProviderAdoption(request: SealedProviderAdoptionPreparation): Promise<PreparedProviderAdoption>

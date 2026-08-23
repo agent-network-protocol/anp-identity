@@ -102,7 +102,7 @@ pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret(&self,
 pub fn anp_identity::host::EnrollmentSession::proposal(&self) -> &anp_identity::host::EnrollmentProposal
 pub fn anp_identity::host::EnrollmentSession::sign_device_assertion(&self, &[u8]) -> anp_identity::IdentityResult<alloc::vec::Vec<u8>>
 impl anp_identity::host::SealedEnrollmentKeyAgreementPort for anp_identity::host::EnrollmentSession
-pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 pub struct anp_identity::host::ExactHttpRequest
 pub anp_identity::host::ExactHttpRequest::body: core::option::Option<alloc::vec::Vec<u8>>
 pub anp_identity::host::ExactHttpRequest::headers: alloc::vec::Vec<anp_identity::host::HttpHeader>
@@ -228,6 +228,10 @@ pub struct anp_identity::host::SealedProviderAdoptionPreparation
 pub anp_identity::host::SealedProviderAdoptionPreparation::request_id: alloc::string::String
 pub anp_identity::host::SealedProviderAdoptionPreparation::state_root: std::path::PathBuf
 pub anp_identity::host::SealedProviderAdoptionPreparation::target: anp_identity::host::ProviderAdoptionTarget
+pub struct anp_identity::host::SealedSecretDelivery
+pub anp_identity::host::SealedSecretDelivery::aad: alloc::string::String
+pub anp_identity::host::SealedSecretDelivery::authorization: anp_identity::host::IssuedAuthorizationContext
+pub anp_identity::host::SealedSecretDelivery::envelope: anp_identity::host::SealedSecretEnvelope
 pub struct anp_identity::host::SealedSecretEnvelope
 pub anp_identity::host::SealedSecretEnvelope::ciphertext_b64u: alloc::string::String
 pub anp_identity::host::SealedSecretEnvelope::encapped_key_b64u: alloc::string::String
@@ -283,13 +287,13 @@ impl anp_identity::host::RootPromotionPort for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::confirm_root_promotion(&mut self, anp_identity::host::RootPromotionRequest) -> anp_identity::IdentityResult<()>
 pub fn anp_identity::ManagedIdentity::sign_pending_root_object_proof(&self, anp_identity::host::PendingRootObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
 pub trait anp_identity::host::SealedEnrollmentKeyAgreementPort
-pub fn anp_identity::host::SealedEnrollmentKeyAgreementPort::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::SealedEnrollmentKeyAgreementPort::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 impl anp_identity::host::SealedEnrollmentKeyAgreementPort for anp_identity::host::EnrollmentSession
-pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::EnrollmentSession::derive_device_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedEnrollmentKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 pub trait anp_identity::host::SealedKeyAgreementPort
-pub fn anp_identity::host::SealedKeyAgreementPort::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::host::SealedKeyAgreementPort::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 impl anp_identity::host::SealedKeyAgreementPort for anp_identity::ManagedIdentity
-pub fn anp_identity::ManagedIdentity::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::ManagedIdentity::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 pub trait anp_identity::host::TypedProofPort
 pub fn anp_identity::host::TypedProofPort::sign_document_proof(&self, anp_identity::host::DocumentProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
 pub fn anp_identity::host::TypedProofPort::sign_object_proof(&self, anp_identity::host::ObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
@@ -738,7 +742,7 @@ impl anp_identity::host::RootPromotionPort for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::confirm_root_promotion(&mut self, anp_identity::host::RootPromotionRequest) -> anp_identity::IdentityResult<()>
 pub fn anp_identity::ManagedIdentity::sign_pending_root_object_proof(&self, anp_identity::host::PendingRootObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
 impl anp_identity::host::SealedKeyAgreementPort for anp_identity::ManagedIdentity
-pub fn anp_identity::ManagedIdentity::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretEnvelope, anp_identity::host::SealedProviderError>
+pub fn anp_identity::ManagedIdentity::derive_shared_secret_sealed(&self, &anp_identity::host::ProviderAuthorization, anp_identity::host::SealedKeyAgreementRequest) -> core::result::Result<anp_identity::host::SealedSecretDelivery, anp_identity::host::SealedProviderError>
 impl anp_identity::host::TypedProofPort for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::sign_document_proof(&self, anp_identity::host::DocumentProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
 pub fn anp_identity::ManagedIdentity::sign_object_proof(&self, anp_identity::host::ObjectProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>

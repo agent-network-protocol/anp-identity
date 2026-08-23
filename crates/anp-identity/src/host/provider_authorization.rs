@@ -154,6 +154,7 @@ pub(super) struct ConsumedOneTimeAuthorization {
     pub(super) consumer: String,
     pub(super) capability: String,
     pub(super) store_id: String,
+    pub(super) expires_at: i64,
 }
 
 impl ProviderAuthorization {
@@ -439,6 +440,7 @@ impl ProviderAuthorization {
             consumer: claims.consumer,
             capability: claims.capability,
             store_id: claims.store_id,
+            expires_at: claims.expires_at,
         })
     }
 

@@ -85,9 +85,9 @@ export declare function openNativeProvider(config: Config): Promise<NativeProvid
 
 // ===== provider-api.d.ts =====
 import type { CreateIdentityRequest, IdentityDescriptor, IdentityReference, PublicIdentity, RecoveryReport, StoreInfo } from '@agent-network-protocol/anp-identity';
-import type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedProviderAdoption, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLease, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedProviderAdoptionPreparation, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretEnvelope, WrappedRootEnvelope } from '@agent-network-protocol/anp-identity/provider';
+import type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedProviderAdoption, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLease, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedProviderAdoptionPreparation, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope } from '@agent-network-protocol/anp-identity/provider';
 import type { DocumentChangeOutcome, DocumentChangeRequest, OriginProofRequest, PublicationAttempt, PublicationResult, SignRequest, Signature, SignedOriginProof, VerifiedRemoteDocument, VerifyRequest } from './types.js';
-export type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedProviderAdoption, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedProviderAdoptionPreparation, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretEnvelope, WrappedRootEnvelope, };
+export type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedProviderAdoption, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedProviderAdoptionPreparation, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope, };
 export declare const ANP_IDENTITY_SERVICE_PROTOCOL: "anp-identity-service/1";
 export declare const ANP_IDENTITY_PROVIDER_PROTOCOL: "anp-identity-provider-ts/1";
 export declare const ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL: "anp-identity-node-provider/1";
@@ -133,8 +133,8 @@ export interface HostProviderLease {
     importWrappedRoot(reference: IdentityReference, envelope: WrappedRootEnvelope): Promise<'pending' | 'active'>;
     confirmRootPromotion(reference: IdentityReference, request: RootPromotionRequest): Promise<void>;
     signPendingRootObjectProof(reference: IdentityReference, request: ObjectProofRequest): Promise<unknown>;
-    ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretEnvelope>;
-    exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretEnvelope>;
+    ecdhSealed(request: SealedKeyAgreementRequest): Promise<SealedSecretDelivery>;
+    exportRootKeySealed(request: SealedRootExportRequest): Promise<SealedSecretDelivery>;
     prepareLegacyRootImport(request: SealedRootImportPreparation): Promise<PreparedRootImport>;
     prepareIdentityMaterialImport(request: SealedIdentityImportPreparation): Promise<PreparedIdentityMaterialImport>;
     prepareProviderAdoption(request: SealedProviderAdoptionPreparation): Promise<PreparedProviderAdoption>;

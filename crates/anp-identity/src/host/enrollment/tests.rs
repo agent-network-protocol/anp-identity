@@ -8,6 +8,8 @@ use crate::host::{
     SealedEnrollmentKeyAgreementPort, SealedEnrollmentKeyAgreementRequest, SEALED_SECRET_INFO,
 };
 use crate::{Capabilities, DidCreateSpec, DidProfile, KeyRole, ManagedKeySpec};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 
 #[test]
 fn device_enrollment_scopes_pending_crypto_and_resumes_then_cancels() {
@@ -88,7 +90,7 @@ fn pending_device_ecdh_crosses_provider_boundary_only_as_ciphertext() {
         .unwrap();
     let aad =
         crate::host::sealed_operation_aad(&issued.context, &binding, &proposal.identity).unwrap();
-    let envelope = session
+    let delivery = session
         .derive_device_shared_secret_sealed(
             &authority,
             SealedEnrollmentKeyAgreementRequest {
@@ -102,8 +104,14 @@ fn pending_device_ecdh_crosses_provider_boundary_only_as_ciphertext() {
             },
         )
         .unwrap();
+    assert_eq!(delivery.authorization, issued.context);
+    assert_eq!(delivery.aad, URL_SAFE_NO_PAD.encode(&aad));
     let plaintext = recipient
-        .open(&envelope.to_handoff().unwrap(), SEALED_SECRET_INFO, &aad)
+        .open(
+            &delivery.envelope.to_handoff().unwrap(),
+            SEALED_SECRET_INFO,
+            &aad,
+        )
         .unwrap();
     assert_eq!(plaintext.len(), 32);
 
