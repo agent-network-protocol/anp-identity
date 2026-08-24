@@ -1,0 +1,1560 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ANP Identity 项目介绍：问题、架构、模块、边界、集成方式与 DSH 插件化路线。">
+  <meta name="theme-color" content="#102a43">
+  <title>ANP Identity｜项目介绍与 DSH 插件化指南</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #102a43;
+      --ink-soft: #486581;
+      --paper: #f4f7f9;
+      --surface: #ffffff;
+      --surface-soft: #edf3f7;
+      --line: #d8e2e9;
+      --brand: #0f6f69;
+      --brand-dark: #095651;
+      --brand-soft: #d9f2ef;
+      --accent: #c96d24;
+      --accent-soft: #fff0df;
+      --danger: #a03c43;
+      --danger-soft: #fdebed;
+      --code: #0b1f33;
+      --shadow: 0 14px 42px rgba(16, 42, 67, 0.08);
+      --radius: 18px;
+      --content: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 88px;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 88% 3%, rgba(15, 111, 105, 0.11), transparent 28rem),
+        var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.72;
+    }
+
+    a { color: var(--brand-dark); }
+    a:hover { color: var(--accent); }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 10px;
+      left: 10px;
+      transform: translateY(-160%);
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .topbar {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      border-bottom: 1px solid rgba(216, 226, 233, 0.86);
+      background: rgba(244, 247, 249, 0.9);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(calc(100% - 36px), var(--content));
+      min-height: 68px;
+      margin: 0 auto;
+      gap: 24px;
+    }
+
+    .wordmark {
+      color: var(--ink);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .wordmark span { color: var(--brand); }
+
+    .topnav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .topnav::-webkit-scrollbar { display: none; }
+
+    .topnav a {
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 650;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .topnav a:hover {
+      background: var(--surface);
+      color: var(--brand-dark);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, #102a43 0%, #173f52 52%, #0b625d 100%);
+      color: #f7fbfc;
+    }
+
+    .hero::after {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 34px 34px;
+      content: "";
+      mask-image: linear-gradient(to bottom, black, transparent 92%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.75fr);
+      gap: 72px;
+      width: min(calc(100% - 36px), var(--content));
+      margin: 0 auto;
+      padding: 88px 0 82px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: #9ee6dd;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 840px;
+      margin: 0;
+      font-size: clamp(42px, 7vw, 78px);
+      line-height: 1.02;
+      letter-spacing: -0.055em;
+    }
+
+    .hero-lead {
+      max-width: 780px;
+      margin: 26px 0 0;
+      color: #dcebef;
+      font-size: clamp(18px, 2vw, 22px);
+      line-height: 1.65;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 28px;
+    }
+
+    .badge {
+      padding: 6px 11px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #eef9fa;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .hero-card {
+      align-self: end;
+      padding: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius);
+      background: rgba(7, 28, 43, 0.34);
+      box-shadow: 0 22px 56px rgba(0, 0, 0, 0.16);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-card p:first-child {
+      margin-top: 0;
+      color: #9ee6dd;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .hero-card blockquote {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 730;
+      line-height: 1.55;
+    }
+
+    .hero-card .small {
+      margin-bottom: 0;
+      color: #c7dce3;
+      font-size: 13px;
+    }
+
+    main {
+      width: min(calc(100% - 36px), var(--content));
+      margin: 0 auto;
+      padding: 34px 0 96px;
+    }
+
+    section {
+      padding: 54px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:last-child { border-bottom: 0; }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: 34px;
+      margin-bottom: 30px;
+    }
+
+    .section-index {
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.13;
+      letter-spacing: -0.038em;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 21px;
+      line-height: 1.35;
+      letter-spacing: -0.018em;
+    }
+
+    h4 {
+      margin: 20px 0 6px;
+      font-size: 16px;
+    }
+
+    p { margin: 0 0 15px; }
+    p:last-child { margin-bottom: 0; }
+
+    .section-intro {
+      max-width: 850px;
+      margin: 16px 0 0;
+      color: var(--ink-soft);
+      font-size: 18px;
+    }
+
+    .grid-2,
+    .grid-3,
+    .grid-4 {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 8px 24px rgba(16, 42, 67, 0.035);
+    }
+
+    .card.accent {
+      border-color: #f2c89f;
+      background: var(--accent-soft);
+    }
+
+    .card.good {
+      border-color: #b7dfd9;
+      background: var(--brand-soft);
+    }
+
+    .card.danger {
+      border-color: #efc3c7;
+      background: var(--danger-soft);
+    }
+
+    .card p,
+    .card li { color: var(--ink-soft); }
+
+    .number {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 18px;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--brand-soft);
+      color: var(--brand-dark);
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .callout {
+      margin: 24px 0;
+      padding: 20px 22px;
+      border-left: 4px solid var(--brand);
+      border-radius: 0 12px 12px 0;
+      background: var(--surface);
+      color: var(--ink-soft);
+    }
+
+    .callout strong { color: var(--ink); }
+    .callout.warn { border-left-color: var(--accent); background: var(--accent-soft); }
+    .callout.danger { border-left-color: var(--danger); background: var(--danger-soft); }
+
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 1.25em;
+    }
+
+    li { margin: 6px 0; }
+
+    .check-list,
+    .cross-list {
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .check-list li,
+    .cross-list li {
+      position: relative;
+      padding-left: 28px;
+    }
+
+    .check-list li::before,
+    .cross-list li::before {
+      position: absolute;
+      left: 0;
+      top: 1px;
+      font-weight: 900;
+    }
+
+    .check-list li::before { color: var(--brand); content: "✓"; }
+    .cross-list li::before { color: var(--danger); content: "×"; }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: minmax(170px, 0.8fr) 38px minmax(300px, 1.35fr) 38px minmax(190px, 0.9fr);
+      align-items: stretch;
+      gap: 10px;
+      margin: 30px 0;
+    }
+
+    .arch-box {
+      display: flex;
+      min-height: 160px;
+      flex-direction: column;
+      justify-content: center;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .arch-box.core {
+      border-color: #86c9c1;
+      background: linear-gradient(150deg, #e7f7f5, #ffffff);
+      box-shadow: var(--shadow);
+    }
+
+    .arch-box strong { font-size: 18px; }
+    .arch-box span { margin-top: 6px; color: var(--ink-soft); font-size: 13px; }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: var(--brand);
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .mini-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      margin: 22px 0;
+      overflow-x: auto;
+      padding-bottom: 5px;
+    }
+
+    .flow-node {
+      min-width: 145px;
+      flex: 1;
+      padding: 14px 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      text-align: center;
+      font-size: 13px;
+      font-weight: 720;
+    }
+
+    .flow-arrow {
+      display: grid;
+      min-width: 22px;
+      place-items: center;
+      color: var(--ink-soft);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface-soft);
+      color: var(--ink);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    code {
+      padding: 0.14em 0.38em;
+      border-radius: 5px;
+      background: #e6edf2;
+      color: #173f52;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+    }
+
+    pre {
+      margin: 16px 0 24px;
+      overflow-x: auto;
+      padding: 20px;
+      border: 1px solid #17354d;
+      border-radius: 14px;
+      background: var(--code);
+      color: #e7f2f5;
+      font-size: 13px;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    .muted { color: var(--ink-soft); }
+    .small { font-size: 13px; }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+
+    .tag {
+      display: inline-block;
+      margin: 2px 3px 2px 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--ink-soft);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .tag.done { background: var(--brand-soft); color: var(--brand-dark); }
+    .tag.todo { background: var(--accent-soft); color: #8b4b18; }
+    .tag.no { background: var(--danger-soft); color: var(--danger); }
+
+    .timeline {
+      display: grid;
+      gap: 0;
+      margin-top: 24px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 20px;
+      padding: 0 0 28px;
+    }
+
+    .timeline-mark {
+      position: relative;
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      border: 2px solid var(--brand);
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--brand-dark);
+      font-weight: 850;
+    }
+
+    .timeline-item:not(:last-child) .timeline-mark::after {
+      position: absolute;
+      top: 48px;
+      left: 21px;
+      width: 2px;
+      height: 44px;
+      background: var(--line);
+      content: "";
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 24px 0;
+    }
+
+    .decision .card { position: relative; padding-top: 50px; }
+
+    .decision .label {
+      position: absolute;
+      top: 18px;
+      left: 22px;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      width: min(calc(100% - 36px), var(--content));
+      margin: 0 auto;
+      padding: 30px 0 44px;
+      gap: 24px;
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 34px; padding: 68px 0; }
+      .hero-card { max-width: 620px; }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: 1fr; }
+      .architecture { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); min-height: 26px; }
+      .decision { grid-template-columns: 1fr; }
+      .topnav { display: none; }
+    }
+
+    @media (max-width: 660px) {
+      main { width: min(calc(100% - 26px), var(--content)); padding-top: 12px; }
+      .topbar-inner, .hero-inner, .footer-inner { width: min(calc(100% - 26px), var(--content)); }
+      .hero-inner { padding: 56px 0; }
+      .grid-2, .grid-4 { grid-template-columns: 1fr; }
+      .section-head { grid-template-columns: 1fr; gap: 6px; }
+      section { padding: 42px 0; }
+      .footer-inner { flex-direction: column; }
+      .mini-flow { align-items: center; flex-direction: column; overflow: visible; }
+      .flow-node { width: 100%; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+
+    @media print {
+      :root { --paper: #fff; --shadow: none; }
+      body { background: #fff; font-size: 11pt; }
+      .topbar { display: none; }
+      .hero { color: #102a43; background: #eef5f5; }
+      .hero::after { display: none; }
+      .hero-lead, .hero-card .small { color: #486581; }
+      .hero-card { border-color: #b9c9d3; background: #fff; box-shadow: none; }
+      .hero-card p:first-child, .eyebrow { color: #0f6f69; }
+      .badge { border-color: #8ba5b3; color: #102a43; background: #fff; }
+      section { break-inside: auto; }
+      .card, .table-wrap, pre { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="#top">ANP <span>Identity</span></a>
+      <nav class="topnav" aria-label="页面导航">
+        <a href="#problem">问题</a>
+        <a href="#solution">方案</a>
+        <a href="#modules">模块</a>
+        <a href="#boundaries">边界</a>
+        <a href="#integration">集成</a>
+        <a href="#dsh">DSH 插件化</a>
+      </nav>
+    </div>
+  </header>
+
+  <header class="hero" id="top">
+    <div class="hero-inner">
+      <div>
+        <p class="eyebrow">ANP E1 identity runtime</p>
+        <h1>让应用使用身份，<br>而不是搬运私钥。</h1>
+        <p class="hero-lead">
+          ANP Identity 是面向 ANP E1 DID 的安全身份托管与生命周期运行时。它把密钥保管、
+          KID 权限、并发写入、故障恢复和 DID 更新协调收进同一个边界，向应用提供按 KID
+          调用的签名、验证、密钥协商与 HTTP 请求认证能力。
+        </p>
+        <div class="badges" aria-label="项目属性">
+          <span class="badge">E1 only</span>
+          <span class="badge">Rust + Node.js / TypeScript</span>
+          <span class="badge">Non-exportable private keys</span>
+          <span class="badge">Apache-2.0</span>
+          <span class="badge">v0.1.0 pre-release</span>
+        </div>
+      </div>
+      <aside class="hero-card" aria-label="一句话定位">
+        <p>一句话定位</p>
+        <blockquote>
+          它是“身份密钥与 DID 状态的本地控制面”，不是 DID 托管服务，也不是消息系统。
+        </blockquote>
+        <p class="small">
+          应用提交 KID 和操作意图；模块在内部完成授权检查和密码学操作，仅返回签名、
+          公钥、共享秘密或公开文档，不返回托管私钥。
+        </p>
+      </aside>
+    </div>
+  </header>
+
+  <main id="main">
+    <section aria-labelledby="summary-title">
+      <div class="section-head">
+        <div class="section-index">Overview</div>
+        <div>
+          <h2 id="summary-title">项目概览</h2>
+          <p class="section-intro">
+            ANP Identity 将“生成一份 DID 文档”升级为“长期、安全、可恢复地运营一个或多个 DID”。
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <article class="card">
+          <div class="number">01</div>
+          <h3>它管理什么</h3>
+          <p>ANP E1 DID、托管密钥、外部公钥、服务条目、版本、待发布修订和密钥生命周期。</p>
+        </article>
+        <article class="card">
+          <div class="number">02</div>
+          <h3>它输出什么</h3>
+          <p>DID 文档、公开元数据、签名、验证结果、HTTP 签名头，以及调用方继续派生的 X25519 共享秘密。</p>
+        </article>
+        <article class="card">
+          <div class="number">03</div>
+          <h3>它保护什么</h3>
+          <p>托管私钥不会出现在公开 Rust API、Node 对象、DTO、声明文件、日志、调试输出或错误消息中。</p>
+        </article>
+        <article class="card">
+          <div class="number">04</div>
+          <h3>谁适合使用</h3>
+          <p>ANP Agent、CLI、桌面端、服务进程、消息核心，以及需要在本机长期运营 E1 DID 的 DSH 插件。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="problem" aria-labelledby="problem-title">
+      <div class="section-head">
+        <div class="section-index">01 · Problem</div>
+        <div>
+          <h2 id="problem-title">它要解决的问题</h2>
+          <p class="section-intro">
+            DID SDK 通常可以生成密钥和文档，但生产环境真正困难的是：私钥之后放在哪里、谁能用、
+            多进程如何不互相覆盖，以及发布到一半失败时如何恢复。
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <article class="card">
+          <h3>私钥扩散</h3>
+          <p>如果每个业务模块、FFI 适配器和脚本都接触私钥，任何序列化、日志或错误路径都可能成为泄漏点。</p>
+        </article>
+        <article class="card">
+          <h3>权限语义模糊</h3>
+          <p>“有一把 Ed25519 私钥”不等于它能签任意内容。HTTP 认证、文档根证明和 E2EE 断言需要不同角色约束。</p>
+        </article>
+        <article class="card">
+          <h3>状态与发布不一致</h3>
+          <p>本地生成了新密钥，并不代表远端 DID 文档已经发布。超时后贸然回滚，可能删除远端已引用的密钥。</p>
+        </article>
+        <article class="card">
+          <h3>跨进程竞争</h3>
+          <p>CLI、守护进程或多个 Worker 同时写同一身份时，普通文件写入很容易造成丢更新和部分状态。</p>
+        </article>
+        <article class="card">
+          <h3>崩溃后的半成品</h3>
+          <p>创建身份或轮换密钥包含多次持久化；在任一点崩溃，都需要在下次打开时收敛到可解释状态。</p>
+        </article>
+        <article class="card">
+          <h3>多身份串线</h3>
+          <p>同一进程托管多个 DID 时，需要保证某个身份的 KID 不能被另一个身份借用或错误解析。</p>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>核心问题不是“怎么生成一把密钥”，而是“怎么把身份作为长期状态安全地运营”。</strong>
+        ANP Identity 将这些通用但高风险的逻辑集中实现，避免每个产品重复建设一套自制 keystore 和发布状态机。
+      </div>
+    </section>
+
+    <section id="solution" aria-labelledby="solution-title">
+      <div class="section-head">
+        <div class="section-index">02 · Solution</div>
+        <div>
+          <h2 id="solution-title">它怎么解决</h2>
+          <p class="section-intro">
+            以 <code>DidStore</code> 作为持久化与并发边界，以 <code>DidIdentity</code> 作为单个 DID 的能力句柄，
+            底层复用 <code>anp</code> 的无状态协议原语，上层把网络发布与业务流程留给宿主。
+          </p>
+        </div>
+      </div>
+
+      <div class="architecture" role="img" aria-label="应用、ANP Identity 和外部系统之间的架构关系">
+        <div class="arch-box">
+          <strong>宿主应用</strong>
+          <span>CLI · Agent · DSH 插件 · 消息核心</span>
+          <span>表达操作意图，不读取私钥</span>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="arch-box core">
+          <strong>ANP Identity</strong>
+          <span>DidStore → 多个隔离的 DidIdentity</span>
+          <span>角色校验 · 加密存储 · 锁/CAS · 恢复 · 生命周期</span>
+        </div>
+        <div class="arrow" aria-hidden="true">↔</div>
+        <div class="arch-box">
+          <strong>外部协作模块</strong>
+          <span>DID Publisher / Resolver</span>
+          <span>HTTP Client · E2EE Session · Secret Provider</span>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>1. 强类型 E1 输入与角色矩阵</h3>
+          <p>
+            创建前校验 profile、域名、KID、服务和扩展。每类密钥固定算法、来源和 DID relationship，
+            例如 <code>request_signing</code> 必须是 Ed25519，并被授权在 <code>authentication</code> 中。
+          </p>
+        </article>
+        <article class="card">
+          <h3>2. 加密托管且不可导出</h3>
+          <p>
+            托管密钥记录使用 ChaCha20-Poly1305 加密；每条记录的密钥通过 HKDF 派生，并把元数据纳入认证数据。
+            对外只暴露基于 KID 的操作。
+          </p>
+        </article>
+        <article class="card">
+          <h3>3. 并发控制与事务恢复</h3>
+          <p>
+            所有变更和恢复都取得 store 级跨进程独占锁；generation/CAS 拒绝陈旧句柄覆盖新状态；
+            journal 使中断的创建和更新在 reload/open 时恢复。
+          </p>
+        </article>
+        <article class="card">
+          <h3>4. 两阶段 DID 更新</h3>
+          <p>
+            模块先准备候选文档，再由宿主发布。若发布结果不确定，必须读取并验证远端文档后 reconcile，
+            不允许盲目 commit 或 abort。
+          </p>
+        </article>
+      </div>
+
+      <h3 style="margin-top: 34px;">一次典型调用如何经过边界</h3>
+      <div class="mini-flow" aria-label="典型签名调用流程">
+        <div class="flow-node">应用指定<br><code>DID + KID + 操作</code></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node">检查身份归属、角色、来源与状态</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node">内部解封托管密钥并完成密码学操作</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node">只返回签名或公开结果</div>
+      </div>
+    </section>
+
+    <section id="modules" aria-labelledby="modules-title">
+      <div class="section-head">
+        <div class="section-index">03 · Modules</div>
+        <div>
+          <h2 id="modules-title">核心模块与重点功能</h2>
+          <p class="section-intro">
+            当前实现刻意保持单一职责：输入、文档、密钥、存储、生命周期和绑定边界可以独立审查。
+          </p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>职责</th>
+              <th>关键保证</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>input.rs</code></td>
+              <td>E1 创建/更新输入、角色矩阵、KID、服务与扩展校验</td>
+              <td>拒绝不支持的 profile、角色/算法组合和含私钥参数的 JWK</td>
+            </tr>
+            <tr>
+              <td><code>document.rs</code></td>
+              <td>构造 DID 文档、统一编码公开密钥、验证根证明</td>
+              <td>外部输入先解析为公钥材料，再由本模块生成规范化 VM JSON</td>
+            </tr>
+            <tr>
+              <td><code>platform.rs</code></td>
+              <td>Injected、环境变量、本地文件与 OS keyring 根密钥提供者</td>
+              <td>provider 与 fingerprint 固定到 manifest；错误 provider 不会静默回退</td>
+            </tr>
+            <tr>
+              <td><code>keystore.rs</code></td>
+              <td>托管私钥的加密记录、HKDF 派生、AAD 和 secret reference</td>
+              <td>磁盘不保存明文私钥；每条记录独立派生；篡改可检测</td>
+            </tr>
+            <tr>
+              <td><code>store_lock.rs</code></td>
+              <td>跨进程文件锁与私有锁文件</td>
+              <td>所有状态变更与 recovery 在同一个独占写边界内完成</td>
+            </tr>
+            <tr>
+              <td><code>store.rs</code> / <code>registry.rs</code></td>
+              <td>manifest、身份注册表、generation、元数据、journal</td>
+              <td>provider pinning、CAS 冲突检测、多 DID 注册与崩溃收敛</td>
+            </tr>
+            <tr>
+              <td><code>identity.rs</code></td>
+              <td><code>DidStore</code> / <code>DidIdentity</code> 聚合接口、创建事务、打开与 reload</td>
+              <td>一个身份句柄只能访问自己的命名空间；冲突必须刷新后重试</td>
+            </tr>
+            <tr>
+              <td><code>lifecycle.rs</code></td>
+              <td>更新准备、发布协调、reconcile、退役、吊销与本地 crypto-erasure</td>
+              <td><code>PublicationUncertain</code> 只允许通过远端观察来消解</td>
+            </tr>
+            <tr>
+              <td><code>crypto_ops.rs</code></td>
+              <td>Ed25519 sign/verify、X25519 ECDH、DID-WBA、HTTP Message Signatures</td>
+              <td>每次调用执行 KID 角色/来源/状态校验；拒绝无效和低阶 X25519 输入</td>
+            </tr>
+            <tr>
+              <td><code>secret.rs</code></td>
+              <td>crate-private、zeroizing 的秘密值类型</td>
+              <td>秘密类型不进入公共 API，也不实现会泄漏内容的展示与序列化路径</td>
+            </tr>
+            <tr>
+              <td><code>bindings/node</code></td>
+              <td>异步 Node.js / TypeScript N-API 绑定与错误映射</td>
+              <td>阻塞 IO/锁/密码学进入 blocking pool；公共声明面不出现私钥类型</td>
+            </tr>
+            <tr>
+              <td><code>api/</code> + 快照测试</td>
+              <td>Rust API、N-API 与 TypeScript 声明的边界门禁</td>
+              <td>新增导出必须显式进入评审，降低无意泄露和兼容性漂移风险</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top: 32px;">E1 v1 的密钥角色</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>角色</th>
+              <th>算法</th>
+              <th>允许的托管操作</th>
+              <th>DID relationship</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>root_control</code></td>
+              <td>Ed25519</td>
+              <td>仅模块内部的 DID 文档根证明</td>
+              <td><code>authentication</code>, <code>assertionMethod</code></td>
+            </tr>
+            <tr>
+              <td><code>request_signing</code></td>
+              <td>Ed25519</td>
+              <td>通用签名、DID-WBA、HTTP 请求签名</td>
+              <td><code>authentication</code></td>
+            </tr>
+            <tr>
+              <td><code>e2ee_signing</code></td>
+              <td>Ed25519</td>
+              <td>应用负载签名</td>
+              <td><code>assertionMethod</code></td>
+            </tr>
+            <tr>
+              <td><code>e2ee_agreement</code></td>
+              <td>X25519</td>
+              <td>ECDH</td>
+              <td><code>keyAgreement</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small muted">
+        每个身份必须有且只有一个托管的 <code>root_control</code>。外部公钥可用于验证，
+        但不会使 ANP Identity 获得对应的私钥能力。
+      </p>
+    </section>
+
+    <section id="collaboration" aria-labelledby="collaboration-title">
+      <div class="section-head">
+        <div class="section-index">04 · Collaboration</div>
+        <div>
+          <h2 id="collaboration-title">怎样与其他模块配合</h2>
+          <p class="section-intro">
+            ANP Identity 负责本地身份控制面；协议原语、网络传输、远端发布、消息会话和产品交互由相邻模块完成。
+          </p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>协作方</th>
+              <th>向 ANP Identity 提供</th>
+              <th>从 ANP Identity 获得</th>
+              <th>边界说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong><code>anp</code> crate</strong></td>
+              <td>无状态 DID/签名/验证协议原语</td>
+              <td>状态托管、密钥隔离和生命周期层</td>
+              <td>ANP Identity 复用它，不复制协议实现</td>
+            </tr>
+            <tr>
+              <td><strong>宿主应用 / DSH</strong></td>
+              <td>存储路径、策略、用户意图、审批、网络调用</td>
+              <td>公开文档和受控密码学操作</td>
+              <td>宿主不应把任意字节签名开放给模型或不可信 UI</td>
+            </tr>
+            <tr>
+              <td><strong>DID Publisher</strong></td>
+              <td>把候选文档发布到 DID 对应位置</td>
+              <td><code>candidateDocument</code> 与发布状态机</td>
+              <td>模块不发 HTTP，也不托管 <code>did.json</code></td>
+            </tr>
+            <tr>
+              <td><strong>DID Resolver</strong></td>
+              <td>经验证的远端 DID 文档</td>
+              <td>reconcile 结果或冲突</td>
+              <td>不确定发布必须先 resolve，再 reconcile</td>
+            </tr>
+            <tr>
+              <td><strong>HTTP Client</strong></td>
+              <td>方法、URL、头、body，并负责实际发送</td>
+              <td>HTTP Message Signature headers</td>
+              <td>签名后不能改变被覆盖的请求组件</td>
+            </tr>
+            <tr>
+              <td><strong>E2EE Session</strong></td>
+              <td>对端 X25519 公钥、协议上下文、HKDF 参数</td>
+              <td>原始 X25519 共享秘密</td>
+              <td>会话密钥派生、ratchet、加密消息均由调用方负责</td>
+            </tr>
+            <tr>
+              <td><strong>Secret Provider</strong></td>
+              <td>随机 32 字节根密钥或平台凭据</td>
+              <td>根密钥加密保护的身份记录</td>
+              <td>可选 injected/env/local file/OS keyring；provider 固定在 manifest</td>
+            </tr>
+            <tr>
+              <td><strong>AWiki IM Core</strong></td>
+              <td>账号、消息、群组、附件与端到端业务编排</td>
+              <td>底层 DID 身份与密钥操作</td>
+              <td>完整 AWiki 插件应通过 IM Core 组合，而不是让本项目重做业务层</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warn">
+        <strong>关于原始 ECDH 结果：</strong>它不是可直接使用的会话密钥。调用方必须把双方身份、协议版本和用途作为上下文，
+        使用域分离的 HKDF 派生会话密钥；Node.js 调用方还应在派生后主动覆盖返回的 <code>Buffer</code>。
+      </div>
+    </section>
+
+    <section id="boundaries" aria-labelledby="boundaries-title">
+      <div class="section-head">
+        <div class="section-index">05 · Scope</div>
+        <div>
+          <h2 id="boundaries-title">它解决什么，不解决什么</h2>
+          <p class="section-intro">
+            明确边界比列出更多能力更重要。下面是 v0.1 / E1 v1 的承诺，不代表未来路线图。
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <article class="card good">
+          <h3>解决</h3>
+          <ul class="check-list">
+            <li>ANP E1 DID 文档创建与公开元数据管理</li>
+            <li>托管私钥的加密持久化与不可导出 API</li>
+            <li>多 DID 隔离和按 KID 的角色授权</li>
+            <li>Ed25519 签名/验证、X25519 ECDH</li>
+            <li>DID-WBA 与对外 HTTP 请求签名</li>
+            <li>请求签名密钥轮换和服务条目更新</li>
+            <li>跨进程锁、generation/CAS、崩溃恢复</li>
+            <li>退役、吊销与显式本地 crypto-erasure</li>
+            <li>Rust 与异步 Node.js/TypeScript 调用</li>
+          </ul>
+        </article>
+
+        <article class="card danger">
+          <h3>不解决</h3>
+          <ul class="cross-list">
+            <li>DID 文档的网络托管、发布和 resolver 缓存</li>
+            <li>HTTP 传输、重试、证书与服务端验签部署</li>
+            <li>E2EE 会话、消息协议、ratchet 和消息存储</li>
+            <li>AWiki 注册、Handle、OTP、会话、群组或附件</li>
+            <li>私钥导出、备份、root provider rekey</li>
+            <li><code>root_control</code> 轮换</li>
+            <li>K1、PlainLegacy、P-256 legacy profile</li>
+            <li>浏览器 WASM 或纯前端使用</li>
+            <li>HSM / Secure Enclave / 独立 KMS 或进程隔离</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="callout danger">
+        <strong>威胁模型边界：</strong>“私钥不可导出”是 Rust 公共 API 与 FFI 的逻辑边界，不是独立安全进程。
+        恶意 native addon、被攻陷的宿主进程、调试器、core dump 或本机内存读取者不在 v1 防护范围内。
+        同时拿到本地 root-key 文件和加密记录的攻击者可离线解密。
+      </div>
+    </section>
+
+    <section id="integration" aria-labelledby="integration-title">
+      <div class="section-head">
+        <div class="section-index">06 · Usage</div>
+        <div>
+          <h2 id="integration-title">其他程序怎么使用</h2>
+          <p class="section-intro">
+            集成遵循同一模式：选择 root provider → 打开或初始化 store → 创建/打开 identity → 按 KID 调用能力。
+          </p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>当前发布状态：</strong><code>0.1.0</code> 仍是 pre-release；registry 发布等待协调发布 <code>anp 0.9.4</code>。
+        当前源码构建需要把 <code>anp</code> 与 <code>anp-identity</code> 作为同级目录检出。不要把尚未发布的安装命令写进生产部署脚本。
+      </div>
+
+      <h3>Rust：打开已有身份并按 KID 调用</h3>
+      <pre><code>use std::path::Path;
+
+use anp_identity::{DidError, DidStore};
+
+fn main() -&gt; Result&lt;(), DidError&gt; {
+    let store = DidStore::open_local_file(Path::new("./identity-store"))?;
+    let identity = store.open_identity(
+        "did:wba:agent.example.com:agents:alice",
+    )?;
+
+    let message = b"application payload";
+    let signature = identity.sign("#request", message)?;
+    identity.verify("#request", message, &amp;signature)?;
+    Ok(())
+}</code></pre>
+
+      <h3>Node.js / TypeScript：创建身份并签名</h3>
+      <pre><code>const { DidStore } = require('@agent-network-protocol/anp-identity')
+
+async function openOrCreateStore(root) {
+  try {
+    return await DidStore.openLocalFile(root)
+  } catch (error) {
+    if (error.code !== 'store_not_found') throw error
+    return DidStore.initializeLocalFile(root)
+  }
+}
+
+const store = await openOrCreateStore('./identity-store')
+const identity = await store.createIdentity({
+  profile: 'e1',
+  domain: 'agent.example.com',
+  pathSegments: ['agents', 'alice'],
+  capabilities: { didWba: true },
+  managedKeys: [
+    { fragment: 'root', role: 'root_control' },
+    { fragment: 'request', role: 'request_signing' },
+    { fragment: 'agreement', role: 'e2ee_agreement' },
+  ],
+  externalKeys: [],
+  services: [],
+  extensions: [],
+})
+
+const signature = await identity.sign(
+  '#request',
+  Buffer.from('application payload'),
+)</code></pre>
+
+      <h3>为对外 HTTP 请求生成签名头</h3>
+      <pre><code>const method = 'POST'
+const url = 'https://api.example.com/messages'
+const body = Buffer.from(JSON.stringify({ message: 'hello' }))
+const originalHeaders = [
+  { name: 'content-type', value: 'application/json' },
+]
+
+const authHeaders = await identity.httpSignatureHeaders(
+  '#request',
+  url,
+  method,
+  originalHeaders,
+  body,
+)
+
+// 由你的 HTTP client 使用同一个 method、url、headers 和 body 发出请求。
+// 任何被签名的组件在这里被修改，服务端验证都会失败。</code></pre>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>Root provider 怎么选</h3>
+          <ul>
+            <li><strong>Injected bytes：</strong>宿主已有 secret manager/KMS 取密能力时优先。</li>
+            <li><strong>Environment：</strong>适合由部署系统注入 base64url 32 字节随机密钥。</li>
+            <li><strong>Local private file：</strong>适合单机 CLI/服务；Unix 上创建为 <code>0600</code>。</li>
+            <li><strong>OS keyring：</strong>适合有稳定系统凭据服务的桌面环境。</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>并发冲突怎么处理</h3>
+          <ol>
+            <li>收到 <code>conflict</code> 后调用 store 或 identity 的 <code>reload()</code>。</li>
+            <li>检查其他进程已提交的新状态。</li>
+            <li>重新判断原操作是否仍然有效。</li>
+            <li>仅在仍有效时重试。</li>
+          </ol>
+          <p class="small">Reload 会取得 store 级独占锁并执行 recovery，不应作为高频廉价轮询。</p>
+        </article>
+      </div>
+
+      <h3 style="margin-top: 34px;">DID 更新与远端发布</h3>
+      <div class="mini-flow" aria-label="DID 更新状态机">
+        <div class="flow-node"><code>prepareUpdate</code><br>生成候选文档</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node"><code>beginPublication</code><br>宿主开始发布</div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node">成功：<code>markPublished</code><br>不确定：<code>markPublicationUncertain</code></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-node">成功后 commit<br>不确定时 resolve + reconcile</div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>不确定发布时看到的远端文档</th>
+              <th>ANP Identity 的处理</th>
+              <th>调用方下一步</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>仍是旧文档</td>
+              <td>回到 <code>Prepared</code></td>
+              <td>可以安全 abort 或重新发布</td>
+            </tr>
+            <tr>
+              <td>正是候选文档</td>
+              <td>提交候选状态</td>
+              <td>继续后续生命周期操作</td>
+            </tr>
+            <tr>
+              <td>其他有效文档</td>
+              <td>返回 <code>Conflict</code></td>
+              <td>停止自动化，交给冲突处置流程</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="dsh" aria-labelledby="dsh-title">
+      <div class="section-head">
+        <div class="section-index">07 · DSH Plugin</div>
+        <div>
+          <h2 id="dsh-title">作为 DSH 插件，还需要做什么</h2>
+          <p class="section-intro">
+            ANP Identity 已经是可供 Node 宿主调用的 native identity runtime，但它还不是一个完整 DSH 插件。
+            插件化的重点不是再写一遍密码学，而是定义安全的产品级服务边界、生命周期与可分发产物。
+          </p>
+        </div>
+      </div>
+
+      <h3>先决定插件范围</h3>
+      <div class="decision">
+        <article class="card good">
+          <span class="label">Recommended for identity-only</span>
+          <h3>只提供本地身份能力</h3>
+          <p>
+            DSH/Cordis adapter 直接依赖 <code>@agent-network-protocol/anp-identity</code>，提供身份状态、
+            公开 DID 文档、受控 HTTP 认证和审批后的轮换。
+          </p>
+        </article>
+        <article class="card">
+          <span class="label">Recommended for full AWiki</span>
+          <h3>提供完整 AWiki 能力</h3>
+          <p>
+            DSH 插件依赖 <code>@awiki/im-core-node</code>；由 <code>awiki-im-core</code> 在内部组合 ANP Identity。
+            注册、Handle、消息、群组和附件不应在本项目重复实现。
+          </p>
+        </article>
+        <article class="card danger">
+          <span class="label">Not supported</span>
+          <h3>纯浏览器身份插件</h3>
+          <p>
+            当前实现是 Rust N-API native addon，没有 WASM/浏览器运行时。浏览器 UI 只能通过 DSH Remote
+            调用 host 侧服务，不能直接导入 native package。
+          </p>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>建议：</strong>如果目标是“DSH 中可复用的 ANP 身份服务”，做薄的 identity-only 插件；
+        如果目标是“DSH 中使用完整 AWiki”，继续走 <code>dsh-awiki → @awiki/im-core-node → awiki-im-core → anp-identity</code>，
+        不要让 UI 或工具绕过 IM Core 直接操纵底层身份状态。
+      </div>
+
+      <h3 style="margin-top: 34px;">推荐架构</h3>
+      <div class="architecture" role="img" aria-label="DSH identity-only 插件推荐架构">
+        <div class="arch-box">
+          <strong>DSH UI / Model Tools</strong>
+          <span>只访问安全 DTO 和窄能力工具</span>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="arch-box core">
+          <strong>Cordis Service + Provider</strong>
+          <span>审批 · 生命周期 · 多租户映射 · 错误策略</span>
+          <span>host-only adapter 调用 ANP Identity Node binding</span>
+        </div>
+        <div class="arrow" aria-hidden="true">↔</div>
+        <div class="arch-box">
+          <strong>Host resources</strong>
+          <span>stateRoot · Secret provider</span>
+          <span>DID publisher / resolver · native package</span>
+        </div>
+      </div>
+
+      <h3>需要补齐的工程项</h3>
+      <div class="timeline">
+        <article class="timeline-item">
+          <div class="timeline-mark">1</div>
+          <div>
+            <h3>冻结插件契约</h3>
+            <p class="muted">
+              定义 Cordis service、provider、consumer、配置 schema、Remote DTO、错误码和 model tools。
+              明确 identity-only 还是 full AWiki；动态配置错误应 fail-loud，不能静默回退到另一身份或另一 provider。
+            </p>
+          </div>
+        </article>
+        <article class="timeline-item">
+          <div class="timeline-mark">2</div>
+          <div>
+            <h3>把 native binding 做成可安装产物</h3>
+            <p class="muted">
+              为 DSH 支持的 Node <code>^22.19.0 || ≥24</code> 验证 ABI，并按 Linux/macOS/Windows、x64/arm64、
+              必要的 libc 组合产出预编译包。运行时安装不能要求 Rust、同级 <code>anp</code> checkout 或联网下载构建依赖。
+            </p>
+          </div>
+        </article>
+        <article class="timeline-item">
+          <div class="timeline-mark">3</div>
+          <div>
+            <h3>实现 host-only 生命周期</h3>
+            <p class="muted">
+              每个 deployment/tenant 建立明确的 <code>stateRoot</code> 与 <code>DidStore</code> 所有权；
+              用 <code>ctx.effect</code> 注册和清理 provider。插件关闭时拒绝新调用、等待 in-flight 操作完成、
+              释放引用，且 close/dispose 必须幂等。
+            </p>
+          </div>
+        </article>
+        <article class="timeline-item">
+          <div class="timeline-mark">4</div>
+          <div>
+            <h3>接入发布与解析</h3>
+            <p class="muted">
+              配置 DID 域名和发布凭据，提供 publisher/resolver adapter；把发布超时写入
+              <code>PublicationUncertain</code>，由后台任务或用户操作 resolve + reconcile，绝不盲目 abort。
+            </p>
+          </div>
+        </article>
+        <article class="timeline-item">
+          <div class="timeline-mark">5</div>
+          <div>
+            <h3>设计安全工具面和审批</h3>
+            <p class="muted">
+              默认只开放读取状态、读取公开文档和预定义 HTTP 认证流程。创建身份、轮换、发布、吊销、
+              crypto-erasure 等改变状态或不可逆操作必须经过 user presence/approval。
+            </p>
+          </div>
+        </article>
+        <article class="timeline-item">
+          <div class="timeline-mark">6</div>
+          <div>
+            <h3>补齐验证、供应链与运维</h3>
+            <p class="muted">
+              增加插件契约/快照测试、真实 Harness 装载与热重载、跨进程 state lock、打包后 clean install、
+              native 平台矩阵和远端发布 E2E；同时产出 LICENSE/NOTICE、SBOM、checksum 与 provenance。
+            </p>
+          </div>
+        </article>
+      </div>
+
+      <h3>模型工具面：应该开放什么</h3>
+      <div class="grid-2">
+        <article class="card good">
+          <h3>适合开放</h3>
+          <ul class="check-list">
+            <li>查询 identity 列表与健康状态</li>
+            <li>读取 DID、公开文档和公开 KID metadata</li>
+            <li>通过固定 endpoint/purpose 的 HTTP 认证适配器发起请求</li>
+            <li>查看 pending revision 和 publication 状态</li>
+            <li>生成更新预览，在审批后执行发布</li>
+          </ul>
+        </article>
+        <article class="card danger">
+          <h3>不应直接开放</h3>
+          <ul class="cross-list">
+            <li><code>sign(kid, arbitraryBytes)</code> 任意签名 oracle</li>
+            <li>任意 URL、任意 header 的无约束 HTTP 签名</li>
+            <li>root-control 的直接调用或根密钥读取</li>
+            <li>未审批的吊销、删除和 crypto-erasure</li>
+            <li>把 stateRoot、root key、env 名称或本机路径返回 UI</li>
+          </ul>
+        </article>
+      </div>
+
+      <h3 style="margin-top: 34px;">DSH 就绪度</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>能力</th>
+              <th>当前状态</th>
+              <th>插件化前要求</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>身份核心与私钥边界</td>
+              <td><span class="tag done">已有</span></td>
+              <td>保持 API/FFI 快照门禁，不绕过 DidIdentity</td>
+            </tr>
+            <tr>
+              <td>Node 异步绑定</td>
+              <td><span class="tag done">已有</span></td>
+              <td>验证 DSH Node 22/24 运行矩阵</td>
+            </tr>
+            <tr>
+              <td>跨平台 native 分发</td>
+              <td><span class="tag todo">待完成</span></td>
+              <td>预编译平台包、wrapper、clean install 与 checksum</td>
+            </tr>
+            <tr>
+              <td>Cordis service/provider</td>
+              <td><span class="tag todo">待实现</span></td>
+              <td>契约、配置、生命周期、dispose、错误映射</td>
+            </tr>
+            <tr>
+              <td>安全的 model tools</td>
+              <td><span class="tag todo">待设计</span></td>
+              <td>意图化工具、allowlist、审批与审计</td>
+            </tr>
+            <tr>
+              <td>DID publisher / resolver</td>
+              <td><span class="tag no">项目外</span></td>
+              <td>由插件或宿主注入 adapter，并实现 reconcile worker</td>
+            </tr>
+            <tr>
+              <td>DSH UI / Remote DTO</td>
+              <td><span class="tag todo">待实现</span></td>
+              <td>仅公开非敏感状态；client bundle 不导入 native 依赖</td>
+            </tr>
+            <tr>
+              <td>完整 AWiki 业务</td>
+              <td><span class="tag no">不属于本项目</span></td>
+              <td>通过 <code>@awiki/im-core-node</code> / <code>awiki-im-core</code> 组合</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warn">
+        <strong>Headless DSH 部署的 root provider 建议：</strong>优先使用部署 secret manager 注入的随机 32 字节根密钥，
+        或权限严格的本地私有文件。OS keyring 在容器和无桌面会话环境中可能不存在；provider 选择必须显式、稳定，且不能把秘密配置暴露给 UI。
+      </div>
+    </section>
+
+    <section id="adoption" aria-labelledby="adoption-title">
+      <div class="section-head">
+        <div class="section-index">08 · Adoption</div>
+        <div>
+          <h2 id="adoption-title">建议的落地顺序</h2>
+          <p class="section-intro">
+            先证明最小身份插件闭环，再扩大工具面；不要从“把全部 DidIdentity 方法映射成工具”开始。
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <article class="card">
+          <div class="number">P0</div>
+          <h3>范围与威胁模型</h3>
+          <p>冻结 identity-only/full-AWiki 选择、tenant 隔离、root provider、审批策略和不支持项。</p>
+        </article>
+        <article class="card">
+          <div class="number">P1</div>
+          <h3>可分发 native 包</h3>
+          <p>完成 <code>anp 0.9.4</code> 协调发布、平台 CI、预编译产物、离线 clean install 与供应链元数据。</p>
+        </article>
+        <article class="card">
+          <div class="number">P2</div>
+          <h3>只读插件骨架</h3>
+          <p>实现 Cordis service/provider、store 生命周期、公开 identity 状态和 DID 文档查询，不开放变更。</p>
+        </article>
+        <article class="card">
+          <div class="number">P3</div>
+          <h3>受控认证流程</h3>
+          <p>为固定业务 endpoint 提供意图化 HTTP 认证 adapter，加入域名/方法/头 allowlist 和审计。</p>
+        </article>
+        <article class="card">
+          <div class="number">P4</div>
+          <h3>发布与生命周期</h3>
+          <p>接入 publisher/resolver、审批、冲突处理、PublicationUncertain UX 和 reconcile worker。</p>
+        </article>
+        <article class="card">
+          <div class="number">P5</div>
+          <h3>真实环境验收</h3>
+          <p>Harness 装载/卸载、崩溃恢复、跨进程竞争、远端发布、平台矩阵和安全回归全部通过后再扩大使用。</p>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>完成定义：</strong>DSH 能在无 Rust 工具链的干净环境安装插件；秘密只存在 host 侧；
+        UI 和模型拿不到通用签名 oracle；插件可安全 reload/dispose；发布不确定性可恢复；
+        身份、租户和存储路径不会串线。
+      </div>
+    </section>
+
+    <section aria-labelledby="facts-title">
+      <div class="section-head">
+        <div class="section-index">Reference</div>
+        <div>
+          <h2 id="facts-title">项目事实与进一步阅读</h2>
+          <p class="section-intro">本文基于当前源码与公共 API 编写；集成前仍应以仓库测试、类型声明和安全边界文档为准。</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <article class="card">
+          <h3>运行与兼容性</h3>
+          <ul>
+            <li>项目版本：<code>0.1.0</code> pre-release</li>
+            <li>Rust MSRV：<code>1.88</code></li>
+            <li>Node binding 最低版本：<code>18</code></li>
+            <li>Profile：仅 ANP <code>E1</code></li>
+            <li>License：Apache License 2.0</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>仓库文档</h3>
+          <ul>
+            <li><a href="../README.md">项目 README</a></li>
+            <li><a href="boundary.md">安全与所有权边界</a></li>
+            <li><a href="../bindings/node/README.md">Node.js binding 说明</a></li>
+            <li><a href="../bindings/node/index.d.ts">TypeScript 公共 API</a></li>
+            <li><a href="../crates/anp-identity/examples/e2ee_handshake.rs">ECDH + HKDF 示例</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div>
+        <strong>ANP Identity</strong><br>
+        Secure identity custody and lifecycle management for ANP E1 DIDs.
+      </div>
+      <div>
+        文档快照：2026-08-20 · Apache-2.0<br>
+        本页无外部字体、脚本或网络资源，可离线浏览与打印。
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
