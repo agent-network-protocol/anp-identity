@@ -354,6 +354,23 @@ pub anp_identity::IdentityError::Unsupported
 pub anp_identity::IdentityError::VerificationFailed
 impl core::convert::From<anp_identity::IdentityError> for anp_identity::host::SealedProviderError
 pub fn anp_identity::host::SealedProviderError::from(anp_identity::IdentityError) -> Self
+pub enum anp_identity::IdentityTransitionOutcome
+pub anp_identity::IdentityTransitionOutcome::Aborted
+pub anp_identity::IdentityTransitionOutcome::Committed
+pub anp_identity::IdentityTransitionOutcome::Committed::current_did: alloc::string::String
+pub anp_identity::IdentityTransitionOutcome::PublicationUncertain
+pub anp_identity::IdentityTransitionOutcome::ReadyForPublication
+pub enum anp_identity::IdentityTransitionPublicationResult
+pub anp_identity::IdentityTransitionPublicationResult::Confirmed
+pub anp_identity::IdentityTransitionPublicationResult::Confirmed::evidence: anp_identity::IdentityTransitionPublicationEvidence
+pub anp_identity::IdentityTransitionPublicationResult::RejectedBeforeAcceptance
+pub anp_identity::IdentityTransitionPublicationResult::Unknown
+pub enum anp_identity::IdentityTransitionRemoteObservation
+pub anp_identity::IdentityTransitionRemoteObservation::Published
+pub anp_identity::IdentityTransitionRemoteObservation::Published::predecessor_document: anp_identity::DidDocument
+pub anp_identity::IdentityTransitionRemoteObservation::Published::successor_document: anp_identity::DidDocument
+pub anp_identity::IdentityTransitionRemoteObservation::RemoteOld
+pub anp_identity::IdentityTransitionRemoteObservation::RemoteOld::current_document: anp_identity::DidDocument
 pub enum anp_identity::KeyAlgorithm
 pub anp_identity::KeyAlgorithm::Ed25519
 pub anp_identity::KeyAlgorithm::X25519
@@ -458,6 +475,9 @@ pub fn anp_identity::IdentityManager::initialize(anp_identity::IdentityManagerCo
 pub fn anp_identity::IdentityManager::list(&self) -> anp_identity::IdentityResult<alloc::vec::Vec<anp_identity::IdentityDescriptor>>
 pub fn anp_identity::IdentityManager::open(anp_identity::IdentityManagerConfig) -> anp_identity::IdentityResult<Self>
 pub fn anp_identity::IdentityManager::recover(&mut self) -> anp_identity::IdentityResult<anp_identity::RecoveryReport>
+impl anp_identity::IdentityManager
+pub fn anp_identity::IdentityManager::prepare_identity_transition(&mut self, anp_identity::IdentityTransitionRequest) -> anp_identity::IdentityResult<anp_identity::IdentityTransitionSession>
+pub fn anp_identity::IdentityManager::resume_identity_transition(&mut self, &str) -> anp_identity::IdentityResult<core::option::Option<anp_identity::IdentityTransitionSession>>
 impl anp_identity::host::EnrollmentWorkflow for anp_identity::IdentityManager
 pub fn anp_identity::IdentityManager::begin_device_enrollment(&mut self, anp_identity::host::DeviceEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
 pub fn anp_identity::IdentityManager::begin_request_signing_enrollment(&mut self, anp_identity::host::RequestSigningEnrollmentRequest) -> anp_identity::IdentityResult<anp_identity::host::EnrollmentSession>
@@ -476,6 +496,26 @@ pub anp_identity::IdentityService::security_profiles: alloc::vec::Vec<alloc::str
 pub anp_identity::IdentityService::service_did: core::option::Option<alloc::string::String>
 pub anp_identity::IdentityService::service_endpoint: alloc::string::String
 pub anp_identity::IdentityService::service_type: alloc::string::String
+pub struct anp_identity::IdentityTransitionPublicationAttempt
+impl anp_identity::IdentityTransitionPublicationAttempt
+pub fn anp_identity::IdentityTransitionPublicationAttempt::operation_id(&self) -> &str
+pub fn anp_identity::IdentityTransitionPublicationAttempt::predecessor_digest(&self) -> &str
+pub fn anp_identity::IdentityTransitionPublicationAttempt::successor_digest(&self) -> &str
+pub struct anp_identity::IdentityTransitionPublicationEvidence
+pub anp_identity::IdentityTransitionPublicationEvidence::predecessor_digest: alloc::string::String
+pub anp_identity::IdentityTransitionPublicationEvidence::successor_digest: alloc::string::String
+pub struct anp_identity::IdentityTransitionRequest
+pub anp_identity::IdentityTransitionRequest::expected_current_did: alloc::string::String
+pub anp_identity::IdentityTransitionRequest::operation_id: alloc::string::String
+pub anp_identity::IdentityTransitionRequest::provider_document: core::option::Option<anp_identity::DidDocument>
+pub anp_identity::IdentityTransitionRequest::successor: anp_identity::IdentityRef
+pub anp_identity::IdentityTransitionRequest::transition_document: core::option::Option<anp_identity::DidDocument>
+pub struct anp_identity::IdentityTransitionSession
+impl anp_identity::IdentityTransitionSession
+pub fn anp_identity::IdentityTransitionSession::begin_publication(&mut self) -> anp_identity::IdentityResult<anp_identity::IdentityTransitionPublicationAttempt>
+pub fn anp_identity::IdentityTransitionSession::candidate(&self) -> &anp_identity::PreparedIdentityTransition
+pub fn anp_identity::IdentityTransitionSession::complete(&mut self, anp_identity::IdentityTransitionPublicationAttempt, anp_identity::IdentityTransitionPublicationResult) -> anp_identity::IdentityResult<anp_identity::IdentityTransitionOutcome>
+pub fn anp_identity::IdentityTransitionSession::reconcile(&mut self, anp_identity::IdentityTransitionRemoteObservation) -> anp_identity::IdentityResult<anp_identity::IdentityTransitionOutcome>
 pub struct anp_identity::InjectedStoreKey
 impl anp_identity::InjectedStoreKey
 pub fn anp_identity::InjectedStoreKey::new(impl core::convert::Into<alloc::string::String>, [u8; 32]) -> Self
@@ -532,6 +572,15 @@ pub struct anp_identity::PreparedDocumentChange
 pub anp_identity::PreparedDocumentChange::candidate_digest: alloc::string::String
 pub anp_identity::PreparedDocumentChange::candidate_document: anp_identity::DidDocument
 pub anp_identity::PreparedDocumentChange::operation_id: alloc::string::String
+pub struct anp_identity::PreparedIdentityTransition
+pub anp_identity::PreparedIdentityTransition::assurance: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::expected_current_did: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::operation_id: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::predecessor_digest: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::predecessor_document: anp_identity::DidDocument
+pub anp_identity::PreparedIdentityTransition::successor_did: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::successor_digest: alloc::string::String
+pub anp_identity::PreparedIdentityTransition::successor_document: anp_identity::DidDocument
 pub struct anp_identity::PublicCapabilities
 pub anp_identity::PublicCapabilities::did_wba: bool
 pub struct anp_identity::PublicIdentity

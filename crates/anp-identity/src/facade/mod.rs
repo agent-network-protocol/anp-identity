@@ -1,6 +1,7 @@
 mod document_change;
 mod error;
 mod identity;
+mod identity_transition;
 mod manager;
 pub(crate) mod signing;
 mod types;
@@ -12,6 +13,12 @@ pub use document_change::{
 };
 pub use error::{IdentityError, IdentityResult};
 pub use identity::ManagedIdentity;
+pub use identity_transition::{
+    IdentityTransitionOutcome, IdentityTransitionPublicationAttempt,
+    IdentityTransitionPublicationEvidence, IdentityTransitionPublicationResult,
+    IdentityTransitionRemoteObservation, IdentityTransitionRequest, IdentityTransitionSession,
+    PreparedIdentityTransition,
+};
 pub use manager::IdentityManager;
 pub use signing::{
     KeySelector, OriginProofOptions, OriginProofRequest, SignRequest, Signature, SignedOriginProof,

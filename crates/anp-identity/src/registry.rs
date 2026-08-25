@@ -21,6 +21,7 @@ const REGISTRY_SCHEMA_VERSION: u32 = 1;
 const IDENTITY_SCHEMA_VERSION: u32 = 1;
 const JOURNAL_SCHEMA_VERSION: u32 = 1;
 const UPDATE_JOURNAL_SCHEMA_VERSION: u32 = 1;
+const IDENTITY_TRANSITION_JOURNAL_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -180,6 +181,81 @@ pub(crate) struct UpdateJournal {
     pub(crate) secret_refs: Vec<SecretRef>,
     pub(crate) kind: UpdateJournalKind,
     pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum IdentityTransitionJournalState {
+    Prepared,
+    PublicationInFlight,
+    PublicationUncertain,
+    Committed,
+    Aborted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct IdentityTransitionJournal {
+    schema_version: u32,
+    pub(crate) operation_id: String,
+    pub(crate) expected_current_did: String,
+    pub(crate) predecessor_identity_id: String,
+    pub(crate) predecessor_generation: u64,
+    pub(crate) successor_did: String,
+    pub(crate) successor_identity_id: String,
+    pub(crate) successor_generation: u64,
+    pub(crate) trusted_predecessor_document: Value,
+    pub(crate) predecessor_document: Value,
+    pub(crate) successor_document: Value,
+    pub(crate) provider_document: Option<Value>,
+    pub(crate) predecessor_digest: String,
+    pub(crate) successor_digest: String,
+    pub(crate) assurance: String,
+    pub(crate) state: IdentityTransitionJournalState,
+    pub(crate) generation: u64,
+    pub(crate) created_at: String,
+}
+
+impl IdentityTransitionJournal {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        operation_id: String,
+        expected_current_did: String,
+        predecessor_identity_id: String,
+        predecessor_generation: u64,
+        successor_did: String,
+        successor_identity_id: String,
+        successor_generation: u64,
+        trusted_predecessor_document: Value,
+        predecessor_document: Value,
+        successor_document: Value,
+        provider_document: Option<Value>,
+        predecessor_digest: String,
+        successor_digest: String,
+        assurance: String,
+        created_at: String,
+    ) -> Self {
+        Self {
+            schema_version: IDENTITY_TRANSITION_JOURNAL_SCHEMA_VERSION,
+            operation_id,
+            expected_current_did,
+            predecessor_identity_id,
+            predecessor_generation,
+            successor_did,
+            successor_identity_id,
+            successor_generation,
+            trusted_predecessor_document,
+            predecessor_document,
+            successor_document,
+            provider_document,
+            predecessor_digest,
+            successor_digest,
+            assurance,
+            state: IdentityTransitionJournalState::Prepared,
+            generation: 1,
+            created_at,
+        }
+    }
 }
 
 impl UpdateJournal {
@@ -457,6 +533,68 @@ pub(crate) fn remove_update_journal(
     remove_if_exists(&update_journal_path(root, revision_id))
 }
 
+pub(crate) fn write_identity_transition_journal(
+    root: &Path,
+    guard: &StoreWriteGuard,
+    journal: &IdentityTransitionJournal,
+) -> DidResult<()> {
+    guard.require_store(root)?;
+    ensure_private_dir(&root.join("identity-transitions"))?;
+    let bytes = serde_json::to_vec_pretty(journal).map_err(|_| DidError::InvalidIdentity)?;
+    write_atomic_private(
+        &identity_transition_journal_path(root, &journal.operation_id),
+        &bytes,
+    )
+}
+
+pub(crate) fn read_identity_transition_journal(
+    root: &Path,
+    operation_id: &str,
+) -> DidResult<IdentityTransitionJournal> {
+    let bytes =
+        fs::read(identity_transition_journal_path(root, operation_id)).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                DidError::PendingRevisionNotFound
+            } else {
+                DidError::Io(error.to_string())
+            }
+        })?;
+    let journal: IdentityTransitionJournal =
+        serde_json::from_slice(&bytes).map_err(|_| DidError::InvalidIdentity)?;
+    if journal.schema_version != IDENTITY_TRANSITION_JOURNAL_SCHEMA_VERSION
+        || journal.operation_id != operation_id
+    {
+        return Err(DidError::InvalidIdentity);
+    }
+    Ok(journal)
+}
+
+pub(crate) fn list_identity_transition_journals(
+    root: &Path,
+) -> DidResult<Vec<IdentityTransitionJournal>> {
+    let entries = match fs::read_dir(root.join("identity-transitions")) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(DidError::Io(error.to_string())),
+    };
+    let mut journals = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| DidError::Io(error.to_string()))?;
+        if entry.path().extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let bytes = fs::read(entry.path()).map_err(|_| DidError::InvalidIdentity)?;
+        let journal: IdentityTransitionJournal =
+            serde_json::from_slice(&bytes).map_err(|_| DidError::InvalidIdentity)?;
+        if journal.schema_version != IDENTITY_TRANSITION_JOURNAL_SCHEMA_VERSION {
+            return Err(DidError::InvalidIdentity);
+        }
+        journals.push(journal);
+    }
+    journals.sort_by(|left, right| left.operation_id.cmp(&right.operation_id));
+    Ok(journals)
+}
+
 pub(crate) struct NewIdentityRecord {
     pub(crate) identity_id: String,
     pub(crate) did: String,
@@ -512,6 +650,11 @@ fn journal_path(root: &Path, transaction_id: &str) -> PathBuf {
 fn update_journal_path(root: &Path, revision_id: &str) -> PathBuf {
     root.join("update-transactions")
         .join(format!("{}.json", storage_key(revision_id)))
+}
+
+fn identity_transition_journal_path(root: &Path, operation_id: &str) -> PathBuf {
+    root.join("identity-transitions")
+        .join(format!("{}.json", storage_key(operation_id)))
 }
 
 fn storage_key(value: &str) -> String {

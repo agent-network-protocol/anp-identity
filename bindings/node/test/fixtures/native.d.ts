@@ -17,6 +17,8 @@ export declare class IdentityManager {
   get(identity: JsIdentityRef): Promise<JsManagedIdentity>
   delete(identity: JsIdentityRef): Promise<void>
   recover(): Promise<any>
+  prepareIdentityTransition(request: any): Promise<JsIdentityTransitionSession>
+  resumeIdentityTransition(expectedCurrentDid: string): Promise<JsIdentityTransitionSession | null>
 }
 export type JsIdentityManager = IdentityManager
 
@@ -26,6 +28,14 @@ export declare class IdentityProvider {
   acquireLease(request: JsProviderLeaseRequest): JsProviderLease
 }
 export type JsIdentityProvider = IdentityProvider
+
+export declare class IdentityTransitionSession {
+  candidate(): Promise<any>
+  beginPublication(): Promise<any>
+  complete(attempt: any, result: any): Promise<any>
+  reconcile(observation: any): Promise<any>
+}
+export type JsIdentityTransitionSession = IdentityTransitionSession
 
 export declare class ManagedIdentity {
   reference(): Promise<JsIdentityRef>

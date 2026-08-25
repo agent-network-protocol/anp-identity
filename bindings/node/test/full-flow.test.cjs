@@ -119,6 +119,7 @@ test('default Node Facade manages multiple identities and purpose-scoped signing
   assert.deepEqual(Object.keys(binding).sort(), [
     'DocumentChangeSession',
     'IdentityManager',
+    'IdentityTransitionSession',
     'ManagedIdentity',
   ])
   assert.equal('DidStore' in binding, false)

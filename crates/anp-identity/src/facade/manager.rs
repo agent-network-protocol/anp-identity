@@ -9,7 +9,7 @@ use crate::DidStore;
 use std::sync::{Arc, Mutex};
 
 pub struct IdentityManager {
-    engine: DidStore,
+    pub(crate) engine: DidStore,
 }
 
 impl IdentityManager {

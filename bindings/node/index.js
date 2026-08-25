@@ -60,6 +60,17 @@ class IdentityManager {
     const value = await call(this.#inner.recover())
     return { identityCount: value.identity_count }
   }
+
+  async prepareIdentityTransition(request) {
+    return new IdentityTransitionSession(
+      await call(this.#inner.prepareIdentityTransition(identityTransitionRequest(request))),
+    )
+  }
+
+  async resumeIdentityTransition(expectedCurrentDid) {
+    const session = await call(this.#inner.resumeIdentityTransition(expectedCurrentDid))
+    return session == null ? undefined : new IdentityTransitionSession(session)
+  }
 }
 
 class ManagedIdentity {
@@ -125,6 +136,39 @@ class DocumentChangeSession {
   async reconcile(observation) {
     return documentChangeOutcome(
       await call(this.#inner.reconcile(verifiedRemoteDocument(observation))),
+    )
+  }
+}
+
+class IdentityTransitionSession {
+  #inner
+
+  constructor(inner) {
+    this.#inner = inner
+  }
+
+  async candidate() {
+    return preparedIdentityTransition(await call(this.#inner.candidate()))
+  }
+
+  async beginPublication() {
+    return identityTransitionAttempt(await call(this.#inner.beginPublication()))
+  }
+
+  async complete(attempt, result) {
+    return identityTransitionOutcome(
+      await call(
+        this.#inner.complete(
+          nativeIdentityTransitionAttempt(attempt),
+          identityTransitionPublicationResult(result),
+        ),
+      ),
+    )
+  }
+
+  async reconcile(observation) {
+    return identityTransitionOutcome(
+      await call(this.#inner.reconcile(identityTransitionObservation(observation))),
     )
   }
 }
@@ -209,6 +253,20 @@ function documentChangeRequest(value) {
   }
 }
 
+function identityTransitionRequest(value) {
+  return {
+    expected_current_did: value.expectedCurrentDid,
+    operation_id: value.operationId,
+    successor: {
+      store_id: value.successor.storeId,
+      identity_id: value.successor.identityId,
+      did: value.successor.did,
+    },
+    transition_document: value.transitionDocument,
+    provider_document: value.providerDocument,
+  }
+}
+
 function publicKeyInput(value) {
   return { kid: value.kid, public_key_multibase: value.publicKeyMultibase }
 }
@@ -282,4 +340,67 @@ function documentChangeOutcome(value) {
   return { outcome: 'committed', identity: publicIdentity(value.identity) }
 }
 
-module.exports = { DocumentChangeSession, IdentityManager, ManagedIdentity }
+function preparedIdentityTransition(value) {
+  return {
+    operationId: value.operation_id,
+    expectedCurrentDid: value.expected_current_did,
+    successorDid: value.successor_did,
+    predecessorDocument: value.predecessor_document,
+    successorDocument: value.successor_document,
+    predecessorDigest: value.predecessor_digest,
+    successorDigest: value.successor_digest,
+    assurance: value.assurance,
+  }
+}
+
+function identityTransitionAttempt(value) {
+  return {
+    operationId: value.operation_id,
+    predecessorDigest: value.predecessor_digest,
+    successorDigest: value.successor_digest,
+    publicationGeneration: value.publication_generation,
+  }
+}
+
+function nativeIdentityTransitionAttempt(value) {
+  return {
+    operation_id: value.operationId,
+    predecessor_digest: value.predecessorDigest,
+    successor_digest: value.successorDigest,
+    publication_generation: value.publicationGeneration,
+  }
+}
+
+function identityTransitionPublicationResult(value) {
+  if (value.result !== 'confirmed') return value
+  return {
+    result: 'confirmed',
+    evidence: {
+      predecessor_digest: value.evidence.predecessorDigest,
+      successor_digest: value.evidence.successorDigest,
+    },
+  }
+}
+
+function identityTransitionObservation(value) {
+  if (value.observation === 'remote_old') {
+    return { observation: 'remote_old', current_document: value.currentDocument }
+  }
+  return {
+    observation: 'published',
+    predecessor_document: value.predecessorDocument,
+    successor_document: value.successorDocument,
+  }
+}
+
+function identityTransitionOutcome(value) {
+  if (value.outcome !== 'committed') return value
+  return { outcome: 'committed', currentDid: value.current_did }
+}
+
+module.exports = {
+  DocumentChangeSession,
+  IdentityManager,
+  IdentityTransitionSession,
+  ManagedIdentity,
+}

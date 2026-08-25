@@ -213,6 +213,64 @@ export type DocumentChangeOutcome =
   | { outcome: 'committed'; identity: PublicIdentity }
   | { outcome: 'aborted' }
 
+export interface IdentityTransitionRequest {
+  expectedCurrentDid: string
+  operationId: string
+  successor: IdentityReference
+  /** Optional externally produced recovery/provider/unverified transition evidence. */
+  transitionDocument?: JsonValue
+  /** Required only when transitionDocument contains a provider transition assertion. */
+  providerDocument?: JsonValue
+}
+
+export type TransitionAssurance =
+  | 'verified'
+  | 'recovery_verified'
+  | 'provider_asserted'
+  | 'unverified'
+
+export interface PreparedIdentityTransition {
+  operationId: string
+  expectedCurrentDid: string
+  successorDid: string
+  predecessorDocument: JsonValue
+  successorDocument: JsonValue
+  predecessorDigest: string
+  successorDigest: string
+  assurance: TransitionAssurance
+}
+
+export interface IdentityTransitionPublicationAttempt {
+  operationId: string
+  predecessorDigest: string
+  successorDigest: string
+  publicationGeneration: number
+}
+
+export interface IdentityTransitionPublicationEvidence {
+  predecessorDigest: string
+  successorDigest: string
+}
+
+export type IdentityTransitionPublicationResult =
+  | { result: 'confirmed'; evidence: IdentityTransitionPublicationEvidence }
+  | { result: 'rejected_before_acceptance' }
+  | { result: 'unknown' }
+
+export type IdentityTransitionRemoteObservation =
+  | { observation: 'remote_old'; currentDocument: JsonValue }
+  | {
+      observation: 'published'
+      predecessorDocument: JsonValue
+      successorDocument: JsonValue
+    }
+
+export type IdentityTransitionOutcome =
+  | { outcome: 'ready_for_publication' }
+  | { outcome: 'publication_uncertain' }
+  | { outcome: 'committed'; currentDid: string }
+  | { outcome: 'aborted' }
+
 export interface AnpIdentityError extends Error {
   code:
     | 'invalid_request'
@@ -248,6 +306,8 @@ export class IdentityManager {
   delete(reference: IdentityReference): Promise<void>
   /** Acquires the Store-wide exclusive lock and runs recovery. */
   recover(): Promise<RecoveryReport>
+  prepareIdentityTransition(request: IdentityTransitionRequest): Promise<IdentityTransitionSession>
+  resumeIdentityTransition(expectedCurrentDid: string): Promise<IdentityTransitionSession | undefined>
 }
 
 export class ManagedIdentity {
@@ -267,4 +327,15 @@ export class DocumentChangeSession {
   beginPublication(): Promise<PublicationAttempt>
   complete(attempt: PublicationAttempt, result: PublicationResult): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+}
+
+export class IdentityTransitionSession {
+  private constructor()
+  candidate(): Promise<PreparedIdentityTransition>
+  beginPublication(): Promise<IdentityTransitionPublicationAttempt>
+  complete(
+    attempt: IdentityTransitionPublicationAttempt,
+    result: IdentityTransitionPublicationResult,
+  ): Promise<IdentityTransitionOutcome>
+  reconcile(observation: IdentityTransitionRemoteObservation): Promise<IdentityTransitionOutcome>
 }
