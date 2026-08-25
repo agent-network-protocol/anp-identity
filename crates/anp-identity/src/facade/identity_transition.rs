@@ -97,10 +97,17 @@ pub enum IdentityTransitionRemoteObservation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
+/// Publication-journal outcome for a transition between two existing identities.
+///
+/// This outcome does not mutate the predecessor identity record, select a Store-wide
+/// current DID, or update a remote user registry.
 pub enum IdentityTransitionOutcome {
     ReadyForPublication,
     PublicationUncertain,
-    Committed { current_did: String },
+    /// The exact transition candidate was confirmed as published in the journal.
+    Committed {
+        current_did: String,
+    },
     Aborted,
 }
 

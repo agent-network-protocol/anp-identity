@@ -268,6 +268,7 @@ export type IdentityTransitionRemoteObservation =
 export type IdentityTransitionOutcome =
   | { outcome: 'ready_for_publication' }
   | { outcome: 'publication_uncertain' }
+  /** Confirms the publication journal only; it does not mutate a local identity record or remote current-DID registry. */
   | { outcome: 'committed'; currentDid: string }
   | { outcome: 'aborted' }
 

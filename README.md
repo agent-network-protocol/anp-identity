@@ -369,6 +369,26 @@ verified version, registry version, and digest evidence to `reconcile`.
 This prevents a timeout from deleting a key that a remotely published document
 may already reference.
 
+## Cross-DID identity transitions
+
+`IdentityTransitionSession` coordinates publication between two already
+existing path-based E1 identities. A `committed` outcome confirms only that the
+exact predecessor transition document and successor document were published
+and recorded in the transition journal. It does not rewrite the local
+predecessor identity as deactivated, select a Store-wide current DID, or update
+a User Service current-DID record. Those actions remain host responsibilities
+and must use the confirmed candidate and service-specific transaction rules.
+
+Transition consumers must use the `anp` transition verifier/resolver. The
+legacy single-document did:wba resolver enforces binding-key proof semantics
+and is not suitable for recovery-signed deactivated transition documents.
+
+Recovery continuity means that the recovery key was pre-authorized through the
+trusted predecessor's `assertionMethod`. The test fixture uses an existing
+external assertion-key role only to exercise that relationship; production
+systems must define separate recovery-key purpose and custody and must not
+reuse an E2EE signing key as a recovery key.
+
 ## Store root-key sources
 
 | Source | Intended use | Important property |

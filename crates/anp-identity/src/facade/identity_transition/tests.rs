@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn identity_transition_shared_vector_handoff() {
+fn identity_transition_shared_resolver_contract_precedes_local_session() {
     let fixture_root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../anp/testdata/did_transition");
     let suite: serde_json::Value =
@@ -304,11 +304,19 @@ fn identity_transition_preserves_recovery_provider_and_unverified_assurance() {
         IdentityManager::initialize(config(recovery_root.path(), [0x96; 32])).unwrap();
     let recovery_public = multibase(&recovery_key);
     let predecessor = recovery_manager
-        .create_engine_for_test(spec_with_external("alice", "recovery", &recovery_public))
+        .create_engine_for_test(spec_with_assertion_method_external_key(
+            "alice",
+            "recovery",
+            &recovery_public,
+        ))
         .unwrap()
         .reference();
     let successor = recovery_manager
-        .create_engine_for_test(spec_with_external("alice", "recovery", &recovery_public))
+        .create_engine_for_test(spec_with_assertion_method_external_key(
+            "alice",
+            "recovery",
+            &recovery_public,
+        ))
         .unwrap()
         .reference();
     let trusted = recovery_manager
@@ -475,8 +483,14 @@ fn spec(subject: &str) -> DidCreateSpec {
     }
 }
 
-fn spec_with_external(subject: &str, fragment: &str, public_key_multibase: &str) -> DidCreateSpec {
+fn spec_with_assertion_method_external_key(
+    subject: &str,
+    fragment: &str,
+    public_key_multibase: &str,
+) -> DidCreateSpec {
     let mut value = spec(subject);
+    // E2eeSigning is used only to place this test key in assertionMethod. It does
+    // not model a production recovery-key role or authorize E2EE key reuse.
     value.external_keys.push(ExternalPublicKeySpec {
         kid: format!("#{fragment}"),
         role: KeyRole::E2eeSigning,
