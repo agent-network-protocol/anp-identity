@@ -46,6 +46,7 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     private recoverForClient;
     private setHandleForClient;
     private assertManagedAccess;
+    private assertHostTransitionAccess;
     private grantConsumer;
     private revokeConsumer;
     private createForHost;
@@ -85,10 +86,10 @@ export declare function apply(ctx: Context, config: Config): void;
 export declare function openNativeProvider(config: Config): Promise<NativeProviderRegistration>;
 
 // ===== provider-api.d.ts =====
-import type { CreateIdentityRequest, IdentityDescriptor, IdentityReference, PublicIdentity, RecoveryReport, StoreInfo } from '@agent-network-protocol/anp-identity';
-import type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLease, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope } from '@agent-network-protocol/anp-identity/provider';
+import type { CreateIdentityRequest, IdentityDescriptor, IdentityReference, IdentityTransitionRequest, PublicIdentity, RecoveryReport, StoreInfo } from '@agent-network-protocol/anp-identity';
+import type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderIdentityTransitionSession, ProviderLease, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope } from '@agent-network-protocol/anp-identity/provider';
 import type { DocumentChangeOutcome, DocumentChangeRequest, OriginProofRequest, PublicationAttempt, PublicationResult, SignRequest, Signature, SignedOriginProof, VerifiedRemoteDocument, VerifyRequest } from './types.js';
-export type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope, };
+export type { DeviceEnrollmentRequest, DocumentProofRequest, ExactHttpSigningRequest, IdentityHostStatus, LegacyDidWbaRequest, ObjectProofRequest, PreparedHttpSignatureAttempt, PreparedIdentityMaterialImport, PreparedRootImport, ProviderCapability, ProviderDocumentChangeSession, ProviderEnrollmentSession, ProviderIdentityTransitionSession, ProviderLeaseRequest, RequestSigningEnrollmentRequest, RootPromotionRequest, SealedIdentityImportPreparation, SealedKeyAgreementRequest, SealedRootExportRequest, SealedRootImportPreparation, SealedSecretDelivery, SealedSecretEnvelope, WrappedRootEnvelope, };
 export declare const ANP_IDENTITY_SERVICE_PROTOCOL: "anp-identity-service/1";
 export declare const ANP_IDENTITY_PROVIDER_PROTOCOL: "anp-identity-provider-ts/1";
 export declare const ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL: "anp-identity-node-provider/1";
@@ -127,6 +128,8 @@ export interface HostProviderLease {
     prepareLegacyDidWba(reference: IdentityReference, request: LegacyDidWbaRequest): Promise<string>;
     prepareDocumentChange(reference: IdentityReference, request: DocumentChangeRequest): Promise<ProviderDocumentChangeSession>;
     resumeDocumentChange(reference: IdentityReference): Promise<ProviderDocumentChangeSession | undefined>;
+    prepareIdentityTransition(request: IdentityTransitionRequest): Promise<ProviderIdentityTransitionSession>;
+    resumeIdentityTransition(expectedCurrentDid: string): Promise<ProviderIdentityTransitionSession | undefined>;
     adoptVerifiedDocument(reference: IdentityReference, remote: VerifiedRemoteDocument): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>;
     beginDeviceEnrollment(request: DeviceEnrollmentRequest): Promise<ProviderEnrollmentSession>;
     beginRequestSigningEnrollment(request: RequestSigningEnrollmentRequest): Promise<ProviderEnrollmentSession>;

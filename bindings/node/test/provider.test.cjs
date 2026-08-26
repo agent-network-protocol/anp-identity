@@ -221,6 +221,32 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
   )
   await targetLease.recoverIdentity(proposal.identity)
 
+  const transitionPredecessor = await lease.create(identitySpec('transition'))
+  const successor = await lease.create(identitySpec('transition'))
+  const transition = await lease.prepareIdentityTransition({
+    expectedCurrentDid: transitionPredecessor.reference.did,
+    operationId: 'provider-transition-response-loss',
+    successor: successor.reference,
+  })
+  const transitionCandidate = await transition.candidate()
+  assert.equal(transitionCandidate.expectedCurrentDid, transitionPredecessor.reference.did)
+  assert.equal(transitionCandidate.successorDid, successor.reference.did)
+  const transitionAttempt = await transition.beginPublication()
+  assert.equal(
+    (await transition.complete(transitionAttempt, { result: 'unknown' })).outcome,
+    'publication_uncertain',
+  )
+  const resumedTransition = await lease.resumeIdentityTransition(transitionPredecessor.reference.did)
+  assert.deepEqual(await resumedTransition.candidate(), transitionCandidate)
+  assert.deepEqual(
+    await resumedTransition.reconcile({
+      observation: 'published',
+      predecessorDocument: transitionCandidate.predecessorDocument,
+      successorDocument: transitionCandidate.successorDocument,
+    }),
+    { outcome: 'committed', currentDid: successor.reference.did },
+  )
+
   const denied = await provider.acquireLease({
     consumer: 'viewer',
     capabilities: ['IDENTITY_READ'],

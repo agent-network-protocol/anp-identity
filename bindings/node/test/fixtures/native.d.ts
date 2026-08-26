@@ -78,6 +78,14 @@ export declare class ProviderEnrollmentSession {
 }
 export type JsProviderEnrollmentSession = ProviderEnrollmentSession
 
+export declare class ProviderIdentityTransitionSession {
+  candidate(): Promise<any>
+  beginPublication(): Promise<any>
+  complete(attempt: any, result: any): Promise<any>
+  reconcile(observation: any): Promise<any>
+}
+export type JsProviderIdentityTransitionSession = ProviderIdentityTransitionSession
+
 export declare class ProviderLease {
   dispose(): void
   info(): Promise<any>
@@ -97,6 +105,8 @@ export declare class ProviderLease {
   prepareLegacyDidWba(identity: JsIdentityRef, kid: string | undefined | null, serviceDomain: string, version: string): Promise<string>
   prepareDocumentChange(identity: JsIdentityRef, request: any): Promise<JsProviderDocumentChangeSession>
   resumeDocumentChange(identity: JsIdentityRef): Promise<JsProviderDocumentChangeSession | null>
+  prepareIdentityTransition(request: any): Promise<JsProviderIdentityTransitionSession>
+  resumeIdentityTransition(expectedCurrentDid: string): Promise<JsProviderIdentityTransitionSession | null>
   adoptVerifiedDocument(identity: JsIdentityRef, remote: any): Promise<any>
   beginDeviceEnrollment(request: any): Promise<JsProviderEnrollmentSession>
   beginRequestSigningEnrollment(request: any): Promise<JsProviderEnrollmentSession>

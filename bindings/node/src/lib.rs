@@ -968,6 +968,54 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn prepare_identity_transition(
+        &self,
+        request: Value,
+    ) -> Result<JsProviderIdentityTransitionSession> {
+        let request: IdentityTransitionRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+                move |manager| {
+                    manager
+                        .prepare_identity_transition(request)
+                        .map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(JsProviderIdentityTransitionSession::new(
+            session,
+            Arc::clone(&self.authorization),
+            Arc::clone(&self.lease),
+        ))
+    }
+
+    #[napi]
+    pub async fn resume_identity_transition(
+        &self,
+        expected_current_did: String,
+    ) -> Result<Option<JsProviderIdentityTransitionSession>> {
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+                move |manager| {
+                    manager
+                        .resume_identity_transition(&expected_current_did)
+                        .map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(session.map(|session| {
+            JsProviderIdentityTransitionSession::new(
+                session,
+                Arc::clone(&self.authorization),
+                Arc::clone(&self.lease),
+            )
+        }))
+    }
+
+    #[napi]
     pub async fn adopt_verified_document(
         &self,
         identity: JsIdentityRef,
@@ -1339,6 +1387,78 @@ impl JsProviderDocumentChangeSession {
             to_value(session.reconcile(observation).map_err(map_error)?)
         })
         .await
+    }
+}
+
+#[napi(js_name = "ProviderIdentityTransitionSession")]
+pub struct JsProviderIdentityTransitionSession {
+    inner: Arc<Mutex<CoreIdentityTransitionSession>>,
+    authorization: Arc<anp_identity::host::ProviderAuthorization>,
+    lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+}
+
+#[napi]
+impl JsProviderIdentityTransitionSession {
+    #[napi]
+    pub async fn candidate(&self) -> Result<Value> {
+        self.with_session(|session| to_value(session.candidate()))
+            .await
+    }
+
+    #[napi]
+    pub async fn begin_publication(&self) -> Result<Value> {
+        self.with_session(|session| to_value(session.begin_publication().map_err(map_error)?))
+            .await
+    }
+
+    #[napi]
+    pub async fn complete(&self, attempt: Value, result: Value) -> Result<Value> {
+        let attempt: IdentityTransitionPublicationAttempt =
+            serde_json::from_value(attempt).map_err(invalid_json)?;
+        let result: IdentityTransitionPublicationResult =
+            serde_json::from_value(result).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.complete(attempt, result).map_err(map_error)?)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn reconcile(&self, observation: Value) -> Result<Value> {
+        let observation: IdentityTransitionRemoteObservation =
+            serde_json::from_value(observation).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.reconcile(observation).map_err(map_error)?)
+        })
+        .await
+    }
+}
+
+impl JsProviderIdentityTransitionSession {
+    fn new(
+        session: CoreIdentityTransitionSession,
+        authorization: Arc<anp_identity::host::ProviderAuthorization>,
+        lease: Arc<StdMutex<Option<anp_identity::host::ProviderCapabilityLease>>>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(session)),
+            authorization,
+            lease,
+        }
+    }
+
+    async fn with_session<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreIdentityTransitionSession) -> Result<T> + Send + 'static,
+    {
+        authorize_provider_lease(
+            &self.authorization,
+            &self.lease,
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+        )?;
+        let inner = Arc::clone(&self.inner);
+        run_blocking(move || operation(&mut inner.blocking_lock())).await
     }
 }
 

@@ -718,5 +718,7 @@ module.exports.ProviderDocumentChangeSession = nativeBinding.ProviderDocumentCha
 module.exports.JsProviderDocumentChangeSession = nativeBinding.JsProviderDocumentChangeSession
 module.exports.ProviderEnrollmentSession = nativeBinding.ProviderEnrollmentSession
 module.exports.JsProviderEnrollmentSession = nativeBinding.JsProviderEnrollmentSession
+module.exports.ProviderIdentityTransitionSession = nativeBinding.ProviderIdentityTransitionSession
+module.exports.JsProviderIdentityTransitionSession = nativeBinding.JsProviderIdentityTransitionSession
 module.exports.ProviderLease = nativeBinding.ProviderLease
 module.exports.JsProviderLease = nativeBinding.JsProviderLease

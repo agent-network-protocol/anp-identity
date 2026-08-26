@@ -2,6 +2,7 @@ import type {
   CreateIdentityRequest,
   IdentityDescriptor,
   IdentityReference,
+  IdentityTransitionRequest,
   PublicIdentity,
   RecoveryReport,
   StoreInfo,
@@ -19,6 +20,7 @@ import type {
   ProviderCapability,
   ProviderDocumentChangeSession,
   ProviderEnrollmentSession,
+  ProviderIdentityTransitionSession,
   ProviderLease,
   ProviderLeaseRequest,
   RequestSigningEnrollmentRequest,
@@ -57,6 +59,7 @@ export type {
   ProviderCapability,
   ProviderDocumentChangeSession,
   ProviderEnrollmentSession,
+  ProviderIdentityTransitionSession,
   ProviderLeaseRequest,
   RequestSigningEnrollmentRequest,
   RootPromotionRequest,
@@ -114,6 +117,8 @@ export interface HostProviderLease {
     request: DocumentChangeRequest,
   ): Promise<ProviderDocumentChangeSession>
   resumeDocumentChange(reference: IdentityReference): Promise<ProviderDocumentChangeSession | undefined>
+  prepareIdentityTransition(request: IdentityTransitionRequest): Promise<ProviderIdentityTransitionSession>
+  resumeIdentityTransition(expectedCurrentDid: string): Promise<ProviderIdentityTransitionSession | undefined>
   adoptVerifiedDocument(
     reference: IdentityReference,
     remote: VerifiedRemoteDocument,

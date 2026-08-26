@@ -202,6 +202,57 @@ describe('DSH ANP Identity service', () => {
     host.dispose()
   })
 
+  it('exposes resumable identity transitions only through capability and catalog grants', async () => {
+    await using fixture = await serviceFixture(['owner', 'dsh-awiki'])
+    const owner = await fixture.ctx.anpIdentity.acquireClient({
+      consumer: 'owner',
+      capabilities: ['identity:read', 'identity:create'],
+    })
+    const predecessor = await owner.create({ identity: identitySpec('transition') })
+    const successor = await owner.create({ identity: identitySpec('transition') })
+    const predecessorReference = (await predecessor.publicIdentity()).reference
+    const successorReference = (await successor.publicIdentity()).reference
+    const dsh = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'dsh-awiki',
+      capabilities: ['IDENTITY_DOCUMENT_UPDATE'],
+    })
+    const request = {
+      expectedCurrentDid: predecessorReference.did,
+      operationId: 'dsh-transition-response-loss',
+      successor: successorReference,
+    }
+
+    await expect(dsh.prepareIdentityTransition(request))
+      .rejects.toMatchObject({ code: 'identity_unclaimed' })
+
+    const catalogOwner = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'owner',
+      capabilities: ['IDENTITY_READ'],
+    })
+    await catalogOwner.grantConsumer(predecessorReference, 'dsh-awiki')
+    await catalogOwner.grantConsumer(successorReference, 'dsh-awiki')
+
+    const transition = await dsh.prepareIdentityTransition(request)
+    const candidate = await transition.candidate()
+    expect(candidate.successorDid).toBe(successorReference.did)
+    const attempt = await transition.beginPublication()
+    await expect(transition.complete(attempt, { result: 'unknown' }))
+      .resolves.toEqual({ outcome: 'publication_uncertain' })
+
+    dsh.dispose()
+    const resumedLease = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'dsh-awiki',
+      capabilities: ['IDENTITY_DOCUMENT_UPDATE'],
+    })
+    const resumed = await resumedLease.resumeIdentityTransition(predecessorReference.did)
+    expect(await resumed?.candidate()).toEqual(candidate)
+    await expect(resumed?.reconcile({
+      observation: 'published',
+      predecessorDocument: candidate.predecessorDocument,
+      successorDocument: candidate.successorDocument,
+    })).resolves.toEqual({ outcome: 'committed', currentDid: successorReference.did })
+  })
+
   it('removes a create intent when native creation definitively created nothing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-create-retry-'))
     const ctx = await createContext(root, ['owner'])
