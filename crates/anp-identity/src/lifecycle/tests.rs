@@ -246,7 +246,7 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
 }
 
 #[test]
-fn lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
+fn v1b_lifecycle_adds_and_removes_an_external_device_as_one_published_revision() {
     let root = tempfile::tempdir().unwrap();
     let mut store = DidStore::initialize_injected(root.path(), "host", [35_u8; 32]).unwrap();
     let mut identity = store.create_identity(spec("device-mutation")).unwrap();

@@ -12,7 +12,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 
 #[test]
-fn device_enrollment_scopes_pending_crypto_and_resumes_then_cancels() {
+fn v1b_device_enrollment_scopes_pending_crypto_and_resumes_then_cancels() {
     let (_source_root, source) = source_identity();
     let remote = remote(&source);
     let target_root = tempfile::tempdir().unwrap();

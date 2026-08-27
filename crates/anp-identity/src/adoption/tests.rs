@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use super::*;
 
 #[test]
-fn enrollment_adopts_verified_device_then_revokes_when_remote_document_removes_it() {
+fn v1b_enrollment_adopts_verified_device_then_revokes_when_remote_document_removes_it() {
     let bundle = create_did_wba_document(
         "example.com",
         DidDocumentOptions {
