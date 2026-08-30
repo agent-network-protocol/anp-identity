@@ -128,4 +128,16 @@ npm install --legacy-peer-deps
 npm run verify
 ```
 
+HTTP 签名功能 E2E 还需要 `dsh` CLI、Node `^22.19.0` 或 `>=24.0.0`、
+`pnpm`、`uv`、OpenSSL，以及工作区约定的相邻 ANP checkout：
+
+```bash
+npm run test:functional
+```
+
+该命令会构建 debug native binding，将 native package、DSH 插件和测试
+consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python verifier
+的独立 HTTPS 进程发送签名 GET 和 POST；篡改后的 POST 必须被拒绝。运行结束
+后会删除临时 DSH profile、Store、证书和 tarball。
+
 许可证：Apache-2.0。

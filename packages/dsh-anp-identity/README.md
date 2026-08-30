@@ -146,4 +146,18 @@ npm run verify
 
 The test suite uses the real native binding for multi-DID, restart, signing, HTTP dispatch, corruption recovery, and tombstone recovery, plus real child processes for catalog locking.
 
+The functional HTTP-signing E2E additionally requires the `dsh` CLI, Node
+`^22.19.0` or `>=24.0.0`, `pnpm`, `uv`, OpenSSL, and the sibling ANP checkout
+expected by the workspace:
+
+```bash
+npm run test:functional
+```
+
+It builds the debug native binding, packs and installs the native package and
+DSH plugins into a temporary real DSH profile, then sends signed GET and POST
+requests to an independent HTTPS process backed by the ANP Python verifier. A
+tampered POST must be rejected. The temporary DSH profile, Store, certificate,
+and tarballs are removed after the run.
+
 Licensed under Apache-2.0.
