@@ -1,0 +1,25 @@
+{
+  "name": "@agent-network-protocol/anp-identity-darwin-arm64",
+  "version": "0.2.0",
+  "description": "macOS arm64 native addon for @agent-network-protocol/anp-identity",
+  "type": "commonjs",
+  "license": "Apache-2.0",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "engines": { "node": ">=18" },
+  "main": "./anp-identity.darwin-arm64.node",
+  "files": [
+    "anp-identity.darwin-arm64.node",
+    "README.md",
+    "LICENSE",
+    "NOTICE.md",
+    "SOURCE.md",
+    "checksums.json",
+    "provenance.json",
+    "sbom.cdx.json"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

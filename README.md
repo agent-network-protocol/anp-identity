@@ -29,6 +29,12 @@ the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 > Rust crate and Node package have not been published yet; build them from this
 > repository until release artifacts are available.
 
+The Node release is one wrapper plus five optional native packages for macOS
+x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
+host-specific addon and installation does not compile Rust. The coordinated
+artifacts are built and clean-installed by
+[`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
+
 ## Why this project exists
 
 Generating a DID document is easy. Operating a DID safely over time is not.
@@ -177,6 +183,7 @@ Optional Rust features are default-off:
 | `root-export` | A trusted, user-confirmed legacy `RootKeyEnvelopeV1` sender |
 
 Rust 1.88 or newer is required. The Node package requires Node.js 18 or newer.
+DSH consumers require Node.js `^22.19.0 || >=24.0.0`.
 
 ## Quick start: Rust
 

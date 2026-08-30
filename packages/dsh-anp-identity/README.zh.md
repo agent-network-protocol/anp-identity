@@ -38,11 +38,16 @@ ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 
 ## 安装与配置
 
 ```bash
-pnpm add @agent-network-protocol/dsh-anp-identity \
-  @agent-network-protocol/anp-identity
+pnpm add @agent-network-protocol/dsh-anp-identity
 ```
 
-本包需要 ANP Identity `0.2.x`，自身不携带原生二进制。Cordis 中先装载 Service，再装载 Provider：
+本包会安装精确兼容的 ANP Identity wrapper，由 wrapper 自动选择当前平台的预编译原生包；
+用户不需要 Rust 或源码 checkout。Cordis 中先装载 Service，再装载 Provider：
+
+随包发布的 DSH layer 默认向 `@awiki/dsh-plugin` 开放 client 和 Host Provider，确保文档中的
+双插件安装无需额外本地 patch。其他部署可通过
+`DSH_ANP_IDENTITY_ALLOW_CONSUMERS` 与
+`DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS` JSON 数组完整替换默认值。
 
 ```yaml
 - insert:
@@ -50,8 +55,8 @@ pnpm add @agent-network-protocol/dsh-anp-identity \
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: /var/lib/dsh/anp-identity
-        allowConsumers: ['example/identity-client', 'awiki']
-        allowProviderConsumers: ['awiki']
+        allowConsumers: ['example/identity-client', '@awiki/dsh-plugin']
+        allowProviderConsumers: ['@awiki/dsh-plugin']
         httpAllowedOrigins:
           example/identity-client: ['https://api.example.com']
 

@@ -7,8 +7,8 @@
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: !!js process.env.DSH_ANP_IDENTITY_STATE_ROOT
-        allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '[]')
-        allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '[]')
+        allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '["@awiki/dsh-plugin"]')
+        allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '["@awiki/dsh-plugin"]')
         httpAllowedOrigins: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS ?? '{}')
         recoveryOnOpen: true
 

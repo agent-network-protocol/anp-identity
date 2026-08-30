@@ -42,4 +42,30 @@ jobs:
           node-version: 22
       - name: Node binding
         working-directory: anp-identity
-        run: npm --prefix bindings/node ci && npm --prefix bindings/node run build && npm --prefix bindings/node test
+        run: npm --prefix bindings/node ci --omit=optional && npm --prefix bindings/node run build && npm --prefix bindings/node test
+
+  dsh-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: anp-identity
+      - uses: actions/checkout@v4
+        with:
+          repository: agent-network-protocol/anp
+          path: anp
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build native development dependency
+        working-directory: anp-identity
+        run: npm --prefix bindings/node ci --omit=optional && npm --prefix bindings/node run build:debug
+      - name: Verify DSH package
+        working-directory: anp-identity/packages/dsh-anp-identity
+        run: |
+          npm ci --legacy-peer-deps
+          npm run verify
+          npm pack --dry-run

@@ -37,16 +37,23 @@ See [BOUNDARY.md](./BOUNDARY.md) for the complete trust model.
 
 ## Installation
 
-Install the DSH plugin and the matching native binding:
+Install the DSH plugin:
 
 ```bash
-pnpm add @agent-network-protocol/dsh-anp-identity \
-  @agent-network-protocol/anp-identity
+pnpm add @agent-network-protocol/dsh-anp-identity
 ```
 
-ANP Identity `0.2.x` is required. The TypeScript package contains no native binary itself.
+The package installs the exact compatible ANP Identity wrapper. That wrapper
+selects the prebuilt native package for the current platform; users do not need
+Rust or a source checkout.
 
 Load the Service before its Provider. The included `cordis.patch.yml` is a starting point:
+
+The shipping DSH layer grants `@awiki/dsh-plugin` client and Host Provider
+access by default so the documented two-plugin AWiki installation works without
+an extra local patch. Set `DSH_ANP_IDENTITY_ALLOW_CONSUMERS` and
+`DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS` to explicit JSON arrays to replace
+those defaults for a different deployment.
 
 ```yaml
 - insert:
@@ -54,8 +61,8 @@ Load the Service before its Provider. The included `cordis.patch.yml` is a start
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: /var/lib/dsh/anp-identity
-        allowConsumers: ['example/identity-client', 'awiki']
-        allowProviderConsumers: ['awiki']
+        allowConsumers: ['example/identity-client', '@awiki/dsh-plugin']
+        allowProviderConsumers: ['@awiki/dsh-plugin']
         httpAllowedOrigins:
           example/identity-client: ['https://api.example.com']
 

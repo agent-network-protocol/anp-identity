@@ -8,6 +8,7 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(scriptDirectory, '..')
 const repositoryRoot = resolve(packageRoot, '../..')
 const bindingRoot = join(repositoryRoot, 'bindings/node')
+const releaseScript = join(repositoryRoot, 'scripts/release/stage-node-package.mjs')
 const anpPythonRoot = resolve(repositoryRoot, '../anp')
 const consumerRoot = join(packageRoot, 'test/functional/consumer')
 const verifierScript = join(packageRoot, 'test/functional/http_verifier.py')
@@ -28,7 +29,22 @@ try {
   requireSupportedNode()
   await mkdir(packRoot, { recursive: true })
   await run('npm', ['--prefix', bindingRoot, 'run', 'build:debug'])
-  const nativeTarball = await pack(bindingRoot, packRoot)
+  const target = currentTarget()
+  const wrapperStage = join(repositoryRoot, 'dist/node-release/staged/functional-wrapper')
+  const platformStage = join(repositoryRoot, `dist/node-release/staged/functional-${target}`)
+  await run('node', [
+    releaseScript, '--kind', 'wrapper', '--output', wrapperStage,
+  ])
+  await run('node', [
+    releaseScript,
+    '--kind', 'platform',
+    '--package-dir', join(bindingRoot, 'npm', target),
+    '--target', target,
+    '--binary', join(bindingRoot, `anp-identity.${target}.node`),
+    '--output', platformStage,
+  ])
+  const nativeTarball = await pack(wrapperStage, packRoot)
+  const platformTarball = await pack(platformStage, packRoot)
   const pluginTarball = await pack(packageRoot, packRoot)
   const consumerTarball = await pack(consumerRoot, packRoot)
 
@@ -59,11 +75,17 @@ try {
     DSH_TELEMETRY_DISABLED: '1',
   }
   await run('dsh', [
-    'plugin', '--profile', profileName, 'add',
-    nativeTarball, pluginTarball, consumerTarball,
+    'plugin', '--profile', profileName, 'add', nativeTarball, platformTarball,
+  ], { env: dshEnvironment })
+  const profileRoot = join(dshHome, 'profiles', profileName)
+  await writeFile(
+    join(profileRoot, 'pnpm-workspace.yaml'),
+    `overrides:\n  '@agent-network-protocol/anp-identity': file:${nativeTarball}\n`,
+  )
+  await run('dsh', [
+    'plugin', '--profile', profileName, 'add', pluginTarball, consumerTarball,
   ], { env: dshEnvironment })
 
-  const profileRoot = join(dshHome, 'profiles', profileName)
   const patchPath = join(profileRoot, 'cordis.patch.yml')
   await writeFile(patchPath, patch({
     stateRoot,
@@ -83,7 +105,8 @@ try {
     getStatus: result.get.verified ? 200 : undefined,
     postStatus: result.post.verified ? 200 : undefined,
     tamperedPostStatus: result.tamperedPost.verified ? undefined : 401,
-    tarballs: [nativeTarball, pluginTarball, consumerTarball].map(value => value.split('/').at(-1)),
+    tarballs: [nativeTarball, platformTarball, pluginTarball, consumerTarball]
+      .map(value => value.split('/').at(-1)),
   }, null, 2)}\n`)
 } finally {
   if (verifier !== undefined && verifier.exitCode === null) {
@@ -175,6 +198,20 @@ function requireSupportedNode() {
   if (!((major === 22 && minor >= 19) || major >= 24)) {
     throw new Error(`Node ${process.versions.node} is unsupported; use Node 22.19+ or 24+`)
   }
+}
+
+function currentTarget() {
+  const target = new Map([
+    ['darwin-arm64', 'darwin-arm64'],
+    ['darwin-x64', 'darwin-x64'],
+    ['linux-arm64', 'linux-arm64-gnu'],
+    ['linux-x64', 'linux-x64-gnu'],
+    ['win32-x64', 'win32-x64-msvc'],
+  ]).get(`${process.platform}-${process.arch}`)
+  if (target === undefined) {
+    throw new Error(`unsupported functional E2E platform: ${process.platform}-${process.arch}`)
+  }
+  return target
 }
 
 function run(command, args, options = {}) {

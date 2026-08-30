@@ -1,4 +1,5 @@
 /target/
+/dist/
 /.coverage
 /node_modules/
 /bindings/node/node_modules/

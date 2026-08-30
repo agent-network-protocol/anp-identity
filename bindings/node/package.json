@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "description": "Secure E1 DID identity custody and lifecycle management for ANP",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "main": "index.js",
   "types": "index.d.ts",
   "exports": {
@@ -23,9 +27,13 @@
     "provider.js",
     "provider.d.ts",
     "native.cjs",
-    "*.node",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE.md",
+    "SOURCE.md",
+    "checksums.json",
+    "provenance.json",
+    "sbom.cdx.json"
   ],
   "scripts": {
     "build": "napi build --platform --release && node scripts/wrap.mjs",
@@ -43,6 +51,13 @@
       "x86_64-pc-windows-msvc",
       "aarch64-pc-windows-msvc"
     ]
+  },
+  "optionalDependencies": {
+    "@agent-network-protocol/anp-identity-darwin-arm64": "0.2.0",
+    "@agent-network-protocol/anp-identity-darwin-x64": "0.2.0",
+    "@agent-network-protocol/anp-identity-linux-arm64-gnu": "0.2.0",
+    "@agent-network-protocol/anp-identity-linux-x64-gnu": "0.2.0",
+    "@agent-network-protocol/anp-identity-win32-x64-msvc": "0.2.0"
   },
   "devDependencies": {
     "@napi-rs/cli": "3.8.6",

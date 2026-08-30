@@ -1,0 +1,265 @@
+name: ANP Identity Node Artifacts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/native-node-artifacts.yml'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'bindings/node/**'
+      - 'crates/anp-identity/**'
+      - 'scripts/release/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-node-artifacts.yml'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'bindings/node/**'
+      - 'crates/anp-identity/**'
+      - 'scripts/release/**'
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: 1.88.0
+
+jobs:
+  build-platform:
+    name: Build ${{ matrix.target_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_name: linux-x64-gnu
+            package_dir: bindings/node/npm/linux-x64-gnu
+            rust_target: x86_64-unknown-linux-gnu
+            target_dir: target/manylinux-2-28
+            library: libanp_identity_node.so
+            manylinux_image: quay.io/pypa/manylinux_2_28_x86_64
+            runner: ubuntu-22.04
+            linux_gnu: true
+          - target_name: linux-arm64-gnu
+            package_dir: bindings/node/npm/linux-arm64-gnu
+            rust_target: aarch64-unknown-linux-gnu
+            target_dir: target/manylinux-2-28
+            library: libanp_identity_node.so
+            manylinux_image: quay.io/pypa/manylinux_2_28_aarch64
+            runner: ubuntu-22.04-arm
+            linux_gnu: true
+          - target_name: darwin-x64
+            package_dir: bindings/node/npm/darwin-x64
+            rust_target: x86_64-apple-darwin
+            target_dir: target
+            library: libanp_identity_node.dylib
+            runner: macos-15-intel
+            linux_gnu: false
+          - target_name: darwin-arm64
+            package_dir: bindings/node/npm/darwin-arm64
+            rust_target: aarch64-apple-darwin
+            target_dir: target
+            library: libanp_identity_node.dylib
+            runner: macos-15
+            linux_gnu: false
+          - target_name: win32-x64-msvc
+            package_dir: bindings/node/npm/win32-x64-msvc
+            rust_target: x86_64-pc-windows-msvc
+            target_dir: target
+            library: anp_identity_node.dll
+            runner: windows-2022
+            linux_gnu: false
+
+    steps:
+      - name: Checkout ANP Identity
+        uses: actions/checkout@v4
+        with:
+          path: anp-identity
+      - name: Checkout ANP SDK
+        uses: actions/checkout@v4
+        with:
+          repository: agent-network-protocol/anp
+          path: anp
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
+          rustup target add --toolchain "${RUST_TOOLCHAIN}" "${{ matrix.rust_target }}"
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Build release addon
+        if: matrix.linux_gnu == false
+        working-directory: anp-identity
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '13.5'
+        run: cargo build --locked --release -p anp-identity-node --target "${{ matrix.rust_target }}"
+      - name: Build Linux addon in manylinux 2.28
+        if: matrix.linux_gnu
+        working-directory: anp-identity
+        shell: bash
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME="${HOME}" \
+            -e CARGO_HOME="${HOME}/.cargo" \
+            -e RUSTUP_HOME="${HOME}/.rustup" \
+            -e CARGO_TARGET_DIR="${PWD}/target/manylinux-2-28" \
+            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
+            -v "${HOME}/.cargo:${HOME}/.cargo" \
+            -v "${HOME}/.rustup:${HOME}/.rustup:ro" \
+            -w "${PWD}" \
+            "${{ matrix.manylinux_image }}" \
+            bash -euxo pipefail -c \
+              '"${CARGO_HOME}/bin/cargo" build --locked --release -p anp-identity-node --target "${{ matrix.rust_target }}"'
+      - name: Enforce Linux glibc 2.28 ceiling
+        if: matrix.linux_gnu
+        working-directory: anp-identity
+        shell: bash
+        run: |
+          addon="${{ matrix.target_dir }}/${{ matrix.rust_target }}/release/${{ matrix.library }}"
+          highest="$(objdump -T "${addon}" | sed -n 's/.*GLIBC_\([0-9][0-9.]*\).*/\1/p' | sort -Vu | tail -n 1)"
+          test -n "${highest}"
+          dpkg --compare-versions "${highest}" le 2.28
+      - name: Enforce macOS 13.5 deployment target
+        if: startsWith(matrix.target_name, 'darwin-')
+        working-directory: anp-identity
+        shell: bash
+        run: |
+          addon="${{ matrix.target_dir }}/${{ matrix.rust_target }}/release/${{ matrix.library }}"
+          test "$(otool -l "${addon}" | awk '$1 == "minos" { print $2; exit }')" = '13.5'
+      - name: Stage and audit platform package
+        working-directory: anp-identity
+        shell: bash
+        env:
+          ANP_IDENTITY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/release/stage-node-package.mjs \
+            --kind platform \
+            --package-dir "${{ matrix.package_dir }}" \
+            --target "${{ matrix.target_name }}" \
+            --binary "${{ matrix.target_dir }}/${{ matrix.rust_target }}/release/${{ matrix.library }}" \
+            --output "dist/node-release/staged/${{ matrix.target_name }}"
+          node scripts/release/pack-node-package.mjs \
+            --package-dir "dist/node-release/staged/${{ matrix.target_name }}" \
+            --destination dist/node-release/tarballs
+      - name: Upload platform package
+        uses: actions/upload-artifact@v4
+        with:
+          name: anp-identity-${{ matrix.target_name }}
+          path: anp-identity/dist/node-release/tarballs/*
+          if-no-files-found: error
+          retention-days: 7
+
+  build-wrapper:
+    name: Build root wrapper
+    needs: build-platform
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: anp-identity
+      - uses: actions/checkout@v4
+        with:
+          repository: agent-network-protocol/anp
+          path: anp
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Stage and audit wrapper
+        working-directory: anp-identity
+        env:
+          ANP_IDENTITY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node scripts/release/stage-node-package.mjs \
+            --kind wrapper \
+            --output dist/node-release/staged/wrapper
+          node scripts/release/pack-node-package.mjs \
+            --package-dir dist/node-release/staged/wrapper \
+            --destination dist/node-release/tarballs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anp-identity-wrapper
+          path: anp-identity/dist/node-release/tarballs/*
+          if-no-files-found: error
+          retention-days: 7
+
+  packed-install:
+    name: Packed install ${{ matrix.target.name }} / Node ${{ matrix.node }}
+    needs: [build-platform, build-wrapper]
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.19.0, 24]
+        target:
+          - name: linux-x64-gnu
+            runner: ubuntu-22.04
+          - name: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - name: darwin-x64
+            runner: macos-15-intel
+          - name: darwin-arm64
+            runner: macos-15
+          - name: win32-x64-msvc
+            runner: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+      - uses: actions/download-artifact@v4
+        with:
+          name: anp-identity-wrapper
+          path: artifacts/wrapper
+      - uses: actions/download-artifact@v4
+        with:
+          name: anp-identity-${{ matrix.target.name }}
+          path: artifacts/platform
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install without scripts, source, or Rust
+        shell: bash
+        run: |
+          wrapper="$(find artifacts/wrapper -name '*.tgz' -type f -print -quit)"
+          platform="$(find artifacts/platform -name '*.tgz' -type f -print -quit)"
+          node source/scripts/release/verify-node-install.mjs \
+            --wrapper "${wrapper}" --platform "${platform}"
+      - name: Verify missing platform fails loudly
+        if: matrix.target.name == 'linux-x64-gnu' && matrix.node == '22.19.0'
+        shell: bash
+        run: |
+          wrapper="$(find artifacts/wrapper -name '*.tgz' -type f -print -quit)"
+          node source/scripts/release/verify-node-install.mjs \
+            --wrapper "${wrapper}" --expect-missing
+
+  release-candidate:
+    name: Assemble verified candidate
+    needs: [build-platform, build-wrapper, packed-install]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: anp-identity-*
+          path: candidate
+          merge-multiple: true
+      - name: Verify complete package set
+        run: |
+          test "$(find candidate -maxdepth 1 -name '*.tgz' -type f | wc -l)" -eq 6
+          test "$(find candidate -maxdepth 1 -name '*.tgz.sha256' -type f | wc -l)" -eq 6
+          while IFS= read -r checksum; do
+            (cd candidate && sha256sum --check "$(basename "${checksum}")")
+          done < <(find candidate -maxdepth 1 -name '*.tgz.sha256' -type f | sort)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anp-identity-release-candidate-${{ github.run_id }}
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 30
