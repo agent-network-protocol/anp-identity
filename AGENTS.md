@@ -17,6 +17,12 @@
   expose a direct abort path.
 - Add or update tests in the same task as every behavior change. Keep tests in
   dedicated test files unless private helper access requires a small unit test.
+- Before completion, review the corresponding `../../awiki-system-test` suite
+  and case catalog. Update it in the same task when identity success, relevant
+  failure, cross-service, persistence/cleanup, or regression coverage is
+  incomplete; record the reason when no System Test applies.
+- Product E2E is owned only by `../../awiki-me/tests/e2e/`; this repository does
+  not add or require repository-local product E2E tests.
 - Prefer the existing `anp` crate and the referenced im-core vault code over
   duplicate cryptographic or storage implementations.
 - Keep `key-import` as a permanent, default-off feature and exclude it from the
