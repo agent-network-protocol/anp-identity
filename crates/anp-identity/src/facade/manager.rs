@@ -109,15 +109,22 @@ impl IdentityManager {
     pub fn delete(
         &mut self,
         reference: &IdentityRef,
-        _request: DeleteIdentityRequest,
+        request: DeleteIdentityRequest,
     ) -> IdentityResult<()> {
         self.validate_store(reference)?;
         let engine = self.engine.open_identity(&reference.did)?;
         if engine.identity_id() != reference.identity_id {
             return Err(IdentityError::IdentityNotFound);
         }
-        self.engine
-            .delete_identity_namespace(&reference.did, self.engine.generation())?;
+        if request.discard_pending_changes {
+            self.engine.delete_identity_namespace_discarding_pending(
+                &reference.did,
+                self.engine.generation(),
+            )?;
+        } else {
+            self.engine
+                .delete_identity_namespace(&reference.did, self.engine.generation())?;
+        }
         Ok(())
     }
 

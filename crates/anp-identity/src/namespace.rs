@@ -13,7 +13,15 @@ impl DidStore {
         did: &str,
         expected_generation: u64,
     ) -> DidResult<()> {
-        self.delete_identity_namespace_inner(did, expected_generation, None)
+        self.delete_identity_namespace_inner(did, expected_generation, false, None)
+    }
+
+    pub fn delete_identity_namespace_discarding_pending(
+        &mut self,
+        did: &str,
+        expected_generation: u64,
+    ) -> DidResult<()> {
+        self.delete_identity_namespace_inner(did, expected_generation, true, None)
     }
 
     pub fn discard_unpublished_enrollment(
@@ -87,6 +95,7 @@ impl DidStore {
         &mut self,
         did: &str,
         expected_generation: u64,
+        discard_pending_changes: bool,
         failure: Option<NamespaceDeleteFailurePoint>,
     ) -> DidResult<()> {
         let guard = self.runtime.acquire_write()?;
@@ -110,11 +119,12 @@ impl DidStore {
         let record = read_identity(self.runtime.root(), &summary.identity_id)?;
         if record.did != did
             || record.state == IdentityState::Creating
-            || record.pending_revision.is_some()
-            || record.pending_enrollment.is_some()
-            || record.pending_request_signing.is_some()
-            || record.pending_root_transfer.is_some()
-            || record.root_capability == crate::RootCapabilityState::Pending
+            || (!discard_pending_changes
+                && (record.pending_revision.is_some()
+                    || record.pending_enrollment.is_some()
+                    || record.pending_request_signing.is_some()
+                    || record.pending_root_transfer.is_some()
+                    || record.root_capability == crate::RootCapabilityState::Pending))
         {
             return Err(DidError::InvalidPublicationState);
         }

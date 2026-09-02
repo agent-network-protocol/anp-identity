@@ -179,7 +179,12 @@ impl From<ManagedKeyRole> for KeyRole {
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct DeleteIdentityRequest {}
+pub struct DeleteIdentityRequest {
+    /// Locally discard unpublished mutation state before deleting the complete
+    /// identity namespace. This does not revoke or modify the remote DID.
+    #[serde(default)]
+    pub discard_pending_changes: bool,
+}
 
 pub struct IdentityManagerConfig {
     pub state_root: PathBuf,
