@@ -263,7 +263,6 @@ function identityTransitionRequest(value) {
       did: value.successor.did,
     },
     transition_document: value.transitionDocument,
-    provider_document: value.providerDocument,
   }
 }
 

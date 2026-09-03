@@ -207,7 +207,8 @@ pub(crate) struct IdentityTransitionJournal {
     pub(crate) trusted_predecessor_document: Value,
     pub(crate) predecessor_document: Value,
     pub(crate) successor_document: Value,
-    pub(crate) provider_document: Option<Value>,
+    #[serde(default, rename = "provider_document", skip_serializing)]
+    pub(crate) _legacy_provider_document: Option<Value>,
     pub(crate) predecessor_digest: String,
     pub(crate) successor_digest: String,
     pub(crate) assurance: String,
@@ -229,7 +230,6 @@ impl IdentityTransitionJournal {
         trusted_predecessor_document: Value,
         predecessor_document: Value,
         successor_document: Value,
-        provider_document: Option<Value>,
         predecessor_digest: String,
         successor_digest: String,
         assurance: String,
@@ -247,7 +247,7 @@ impl IdentityTransitionJournal {
             trusted_predecessor_document,
             predecessor_document,
             successor_document,
-            provider_document,
+            _legacy_provider_document: None,
             predecessor_digest,
             successor_digest,
             assurance,
@@ -668,3 +668,6 @@ fn remove_if_exists(path: &Path) -> DidResult<()> {
         Err(error) => Err(DidError::Io(error.to_string())),
     }
 }
+
+#[cfg(test)]
+mod registry_tests;

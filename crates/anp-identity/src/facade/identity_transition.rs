@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use anp::authentication::{
-    verify_active_e1_document, verify_transition_hop, DidDocumentFetcher, TransitionAssurance,
-};
+use anp::authentication::{verify_active_e1_document, verify_transition_hop, TransitionAssurance};
 use anp::proof::{ProofGenerationOptions, CRYPTOSUITE_EDDSA_JCS_2022, PROOF_TYPE_DATA_INTEGRITY};
 use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -26,8 +24,6 @@ pub struct IdentityTransitionRequest {
     pub successor: IdentityRef,
     #[serde(default)]
     pub transition_document: Option<DidDocument>,
-    #[serde(default)]
-    pub provider_document: Option<DidDocument>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -180,15 +176,10 @@ impl IdentityManager {
                 &created_at,
             )?,
         };
-        let provider_document = request.provider_document.map(DidDocument::into_value);
-        let provider_fetcher = provider_document.clone().map(SingleDocumentFetcher);
         let hop = verify_transition_hop(
             &predecessor_document,
             &successor_record.document,
             Some(&predecessor_record.document),
-            provider_fetcher
-                .as_ref()
-                .map(|fetcher| fetcher as &dyn DidDocumentFetcher),
         )
         .map_err(|_| IdentityError::InvalidRequest)?;
         let predecessor_digest = canonical_document_digest(&predecessor_document)?;
@@ -204,7 +195,6 @@ impl IdentityManager {
             predecessor_record.document,
             predecessor_document,
             successor_record.document,
-            provider_document,
             predecessor_digest,
             successor_digest,
             assurance_name(hop.assurance).to_string(),
@@ -345,14 +335,10 @@ impl IdentityTransitionSession {
                 {
                     return Err(IdentityError::VerificationFailed);
                 }
-                let provider_fetcher = journal.provider_document.clone().map(SingleDocumentFetcher);
                 let hop = verify_transition_hop(
                     predecessor_document.as_value(),
                     successor_document.as_value(),
                     Some(&journal.trusted_predecessor_document),
-                    provider_fetcher
-                        .as_ref()
-                        .map(|fetcher| fetcher as &dyn DidDocumentFetcher),
                 )
                 .map_err(|_| IdentityError::VerificationFailed)?;
                 if assurance_name(hop.assurance) != journal.assurance {
@@ -401,7 +387,6 @@ fn validate_request(request: &IdentityTransitionRequest, store_id: &str) -> Iden
         || request.operation_id.as_bytes().contains(&0)
         || request.successor.store_id != store_id
         || request.successor.did == request.expected_current_did
-        || (request.transition_document.is_none() && request.provider_document.is_some())
     {
         return Err(IdentityError::InvalidRequest);
     }
@@ -531,18 +516,6 @@ fn create_verified_transition_document(
             },
         )
         .map_err(Into::into)
-}
-
-struct SingleDocumentFetcher(serde_json::Value);
-
-impl DidDocumentFetcher for SingleDocumentFetcher {
-    fn fetch(&self, did: &str) -> Result<serde_json::Value, String> {
-        if self.0.get("id").and_then(serde_json::Value::as_str) == Some(did) {
-            Ok(self.0.clone())
-        } else {
-            Err("provider DID Document not found".to_string())
-        }
-    }
 }
 
 fn assurance_name(assurance: TransitionAssurance) -> &'static str {

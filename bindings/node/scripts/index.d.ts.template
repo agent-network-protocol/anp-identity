@@ -217,10 +217,8 @@ export interface IdentityTransitionRequest {
   expectedCurrentDid: string
   operationId: string
   successor: IdentityReference
-  /** Optional externally produced recovery/provider/unverified transition evidence. */
+  /** Optional externally produced recovery or unsigned transition evidence. */
   transitionDocument?: JsonValue
-  /** Required only when transitionDocument contains a provider transition assertion. */
-  providerDocument?: JsonValue
 }
 
 export type TransitionAssurance =

@@ -36,7 +36,6 @@ fn identity_transition_shared_resolver_contract_precedes_local_session() {
         case["requestedDid"].as_str().unwrap(),
         &fetch,
         &trusted,
-        None,
         &mut cache,
         case["maxHops"].as_u64().unwrap() as usize,
     )
@@ -182,7 +181,6 @@ fn identity_transition_rejects_forks_stale_sessions_and_path_mismatch() {
                 operation_id: "transition-path-mismatch".to_string(),
                 successor: different_path,
                 transition_document: None,
-                provider_document: None,
             })
             .err(),
         Some(IdentityError::InvalidRequest)
@@ -297,7 +295,7 @@ fn transition_public_values_serialize_without_private_material() {
 }
 
 #[test]
-fn identity_transition_preserves_recovery_provider_and_unverified_assurance() {
+fn identity_transition_preserves_recovery_and_unverified_assurance() {
     let recovery_key = SigningKey::from_bytes(&[0x31; 32]);
     let recovery_root = tempfile::tempdir().unwrap();
     let mut recovery_manager =
@@ -338,54 +336,6 @@ fn identity_transition_preserves_recovery_provider_and_unverified_assurance() {
             .prepare_identity_transition(recovery_request)
             .unwrap(),
         "recovery_verified",
-    );
-
-    let provider_key = SigningKey::from_bytes(&[0x32; 32]);
-    let provider_root = tempfile::tempdir().unwrap();
-    let (mut provider_manager, predecessor, successor) =
-        identities(provider_root.path(), [0x97; 32]);
-    let trusted = provider_manager
-        .get(&predecessor)
-        .unwrap()
-        .public_identity()
-        .unwrap()
-        .document;
-    let provider_did = "did:wba:example.com";
-    let provider_kid = format!("{provider_did}#provider-assertion-key");
-    let provider_document = serde_json::json!({
-        "@context": ["https://www.w3.org/ns/did/v1"],
-        "id": provider_did,
-        "verificationMethod": [{
-            "id": provider_kid,
-            "type": "Multikey",
-            "controller": provider_did,
-            "publicKeyMultibase": multibase(&provider_key),
-        }],
-        "assertionMethod": [provider_kid],
-    });
-    let profile = anp::authentication::parse_did_wba_e1(&predecessor.did).unwrap();
-    let assertion = sign_value(
-        serde_json::json!({
-            "type": "DidWbaProviderTransitionAssertion",
-            "providerDid": provider_did,
-            "predecessorDid": predecessor.did,
-            "successorDid": successor.did,
-            "stableSubjectPath": profile.stable_subject_path,
-            "issuedAt": "2026-08-25T00:00:00Z",
-        }),
-        &format!("{provider_did}#provider-assertion-key"),
-        &provider_key,
-    );
-    let mut provider_transition = unsigned_transition(trusted.as_value(), &successor.did);
-    provider_transition["providerTransitionAssertion"] = assertion;
-    let mut provider_request = request(&predecessor, &successor, "transition-provider");
-    provider_request.transition_document = Some(DidDocument::from_value(provider_transition));
-    provider_request.provider_document = Some(DidDocument::from_value(provider_document));
-    assert_assurance_survives_response_loss(
-        provider_manager
-            .prepare_identity_transition(provider_request)
-            .unwrap(),
-        "provider_asserted",
     );
 
     let unverified_root = tempfile::tempdir().unwrap();
@@ -511,7 +461,6 @@ fn request(
         operation_id: operation_id.to_string(),
         successor: successor.clone(),
         transition_document: None,
-        provider_document: None,
     }
 }
 

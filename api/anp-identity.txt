@@ -507,7 +507,6 @@ pub anp_identity::IdentityTransitionPublicationEvidence::successor_digest: alloc
 pub struct anp_identity::IdentityTransitionRequest
 pub anp_identity::IdentityTransitionRequest::expected_current_did: alloc::string::String
 pub anp_identity::IdentityTransitionRequest::operation_id: alloc::string::String
-pub anp_identity::IdentityTransitionRequest::provider_document: core::option::Option<anp_identity::DidDocument>
 pub anp_identity::IdentityTransitionRequest::successor: anp_identity::IdentityRef
 pub anp_identity::IdentityTransitionRequest::transition_document: core::option::Option<anp_identity::DidDocument>
 pub struct anp_identity::IdentityTransitionSession
