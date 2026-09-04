@@ -180,6 +180,7 @@ impl IdentityManager {
             &predecessor_document,
             &successor_record.document,
             Some(&predecessor_record.document),
+            None,
         )
         .map_err(|_| IdentityError::InvalidRequest)?;
         let predecessor_digest = canonical_document_digest(&predecessor_document)?;
@@ -339,6 +340,7 @@ impl IdentityTransitionSession {
                     predecessor_document.as_value(),
                     successor_document.as_value(),
                     Some(&journal.trusted_predecessor_document),
+                    None,
                 )
                 .map_err(|_| IdentityError::VerificationFailed)?;
                 if assurance_name(hop.assurance) != journal.assurance {
