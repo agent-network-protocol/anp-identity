@@ -1,0 +1,63 @@
+name: ANP Identity Pinned Node Compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact reviewed source commit used by the build
+        required: true
+        type: string
+      artifact_run_id:
+        description: Existing native build run containing the complete package set
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  packed-install:
+    name: Existing artifacts ${{ matrix.target.name }} / Node 26
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-x64-gnu
+            runner: ubuntu-22.04
+          - name: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - name: darwin-x64
+            runner: macos-15-intel
+          - name: darwin-arm64
+            runner: macos-15
+          - name: win32-x64-msvc
+            runner: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: anp-identity-wrapper
+          path: artifacts/wrapper
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: anp-identity-${{ matrix.target.name }}
+          path: artifacts/platform
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - name: Install exact packages without scripts, source, or Rust
+        shell: bash
+        run: |
+          wrapper="$(find artifacts/wrapper -name '*.tgz' -type f -print -quit)"
+          platform="$(find artifacts/platform -name '*.tgz' -type f -print -quit)"
+          node source/scripts/release/verify-node-install.mjs \
+            --wrapper "${wrapper}" --platform "${platform}"
