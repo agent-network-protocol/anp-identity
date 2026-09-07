@@ -481,6 +481,7 @@ impl DidIdentity {
             document_digest: crate::document::document_digest(&record.document)?,
         });
         record.pending_revision = None;
+        record.initial_publication_pending = false;
         persist_record(self.runtime(), &guard, &mut record)?;
         drop(guard);
         self.replace_record(record);

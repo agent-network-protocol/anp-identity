@@ -113,6 +113,9 @@ pub(crate) struct IdentityRecord {
     pub(crate) root_key_fingerprint: String,
     #[serde(default)]
     pub(crate) checkpoint: Option<DocumentCheckpoint>,
+    // Missing in older stores: never infer unpublished authority from version 1 alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) initial_publication_pending: bool,
     #[serde(default)]
     pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
     #[serde(default)]
@@ -622,6 +625,7 @@ pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
         root_capability: input.root_capability,
         root_key_fingerprint: input.root_key_fingerprint,
         checkpoint: Some(input.checkpoint),
+        initial_publication_pending: false,
         local_authorization: input.local_authorization,
         local_request_signing_kid: None,
         pending_enrollment: None,

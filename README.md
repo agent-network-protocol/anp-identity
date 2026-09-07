@@ -376,6 +376,25 @@ verified version, registry version, and digest evidence to `reconcile`.
 This prevents a timeout from deleting a key that a remotely published document
 may already reference.
 
+Newly created identities persist an `initial_publication_pending` marker. Their
+local `1/1` checkpoint is an initial candidate, not a confirmed publication.
+The first `adopt_verified_document` may accept a different valid root proof at
+remote checkpoint `1/1` only when the entire document excluding `proof` is
+unchanged, the identity and root are active, and no document revision is pending.
+Verified evidence must still match the exact signed document. Confirmation,
+including confirmation of an identical document, atomically consumes the marker
+under the existing store lock, generation check, and state-transition journal.
+Subsequent same-version hash changes remain conflicts; exact replay is idempotent.
+Committed document updates and root-transfer activation also clear the marker.
+
+Older records without this marker default to strict checkpoint validation. They
+are not automatically classified as unpublished, including interrupted Recovery
+records. Repairing those records requires independently verified provenance and
+is not part of this automatic adoption path. Old binaries reject a record with
+the new marker while it is pending; upgrade all consumers sharing that store
+before creating new identities. Consumed/absent markers are omitted on disk, and
+the public host/Node DTOs and wire protocol are unchanged.
+
 ## Cross-DID identity transitions
 
 `IdentityTransitionSession` coordinates publication between two already

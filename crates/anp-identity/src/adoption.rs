@@ -517,7 +517,9 @@ impl DidIdentity {
         if record.pending_revision.is_some() {
             return Err(DidError::PendingRevisionExists);
         }
-        validate_checkpoint_progression(record.checkpoint.as_ref(), &spec.evidence)?;
+        if !is_initial_proof_confirmation(&record, &spec)? {
+            validate_checkpoint_progression(record.checkpoint.as_ref(), &spec.evidence)?;
+        }
         if root_key_fingerprint(&spec.document)? != record.root_key_fingerprint {
             return Err(DidError::RootKeyMismatch);
         }
@@ -571,12 +573,16 @@ impl DidIdentity {
                 IdentityState::Revoked => AdoptDocumentOutcome::Revoked,
             };
 
-        if outcome == AdoptDocumentOutcome::Unchanged && checkpoint_unchanged {
+        if outcome == AdoptDocumentOutcome::Unchanged
+            && checkpoint_unchanged
+            && !record.initial_publication_pending
+        {
             return Ok(outcome);
         }
 
         record.document = spec.document;
         record.checkpoint = Some(checkpoint(&spec.evidence));
+        record.initial_publication_pending = false;
         record.revision = spec.evidence.document_version;
         persist_state_transition(self, &guard, &mut record)?;
         drop(guard);
@@ -587,6 +593,37 @@ impl DidIdentity {
 
 pub fn canonical_document_digest(document: &Value) -> DidResult<String> {
     document_digest(document)
+}
+
+// A locally created document has not yet received a remote publication checkpoint.
+// Its first confirmation may refresh only the proof, never keys or document intent.
+fn is_initial_proof_confirmation(
+    record: &IdentityRecord,
+    spec: &AdoptVerifiedDocumentSpec,
+) -> DidResult<bool> {
+    if !record.initial_publication_pending
+        || record.state != IdentityState::Active
+        || record.root_capability != RootCapabilityState::Active
+        || record.revision != 1
+        || spec.evidence.document_version != 1
+        || spec.evidence.registry_version != 1
+        || !record.checkpoint.as_ref().is_some_and(|current| {
+            current.document_version == 1 && current.registry_version == 1
+        })
+    {
+        return Ok(false);
+    }
+    let mut before = record.document.clone();
+    let mut after = spec.document.clone();
+    before
+        .as_object_mut()
+        .ok_or(DidError::InvalidIdentity)?
+        .remove("proof");
+    after
+        .as_object_mut()
+        .ok_or(DidError::InvalidIdentity)?
+        .remove("proof");
+    Ok(before == after)
 }
 
 pub(crate) fn infer_local_authorization(
