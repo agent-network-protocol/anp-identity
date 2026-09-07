@@ -697,7 +697,12 @@ impl JsProviderLease {
             anp_identity::host::capability::IDENTITY_DELETE,
             move |manager| {
                 manager
-                    .delete(&reference, DeleteIdentityRequest::default())
+                    .delete(
+                        &reference,
+                        DeleteIdentityRequest {
+                            discard_pending_changes: true,
+                        },
+                    )
                     .map_err(map_error)
             },
         )

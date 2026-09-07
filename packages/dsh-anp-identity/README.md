@@ -139,8 +139,14 @@ The native Store is always the identity truth. On startup:
 - a Store identity absent from catalog and journals becomes `Unclaimed` with no grants;
 - a catalog entry absent from the Store is removed;
 - a pending create intent is completed when its Store identity can be identified;
-- a deletion tombstone rolls forward;
+- a deletion tombstone rolls forward, including after a transient native
+  failure; if a delete response is lost, the plugin removes the tombstone only
+  after confirming that the exact native identity is absent;
 - a corrupt catalog blocks grants and handles. Explicit `recover()` rebuilds entries as `Unclaimed` and never invents authorization.
+
+Host Provider deletion is an explicit local-destructive operation. It discards
+unpublished local document or enrollment state before removing the complete
+identity namespace; it does not revoke or modify the remote DID.
 
 `recover()` is an exclusive, Store-wide operation. Do not use it as a polling API.
 

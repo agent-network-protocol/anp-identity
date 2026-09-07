@@ -545,17 +545,21 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       throw pluginError('catalog_corrupt')
     }
     if (catalogEntry !== undefined) {
-      if (catalogEntry.state === 'deleting') throw pluginError('identity_deleting')
       if (catalogEntry.grantedConsumers.some(value => value !== consumer)) {
         throw pluginError('identity_in_use')
       }
-      await this.catalogStore.mutate(catalog => {
-        const entry = findEntry(catalog, reference)
-        if (entry === undefined) throw pluginError('identity_not_found')
-        return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
-      })
+      if (catalogEntry.state !== 'deleting') {
+        await this.catalogStore.mutate(catalog => {
+          const entry = findEntry(catalog, reference)
+          if (entry === undefined) throw pluginError('identity_not_found')
+          if (entry.grantedConsumers.some(value => value !== consumer)) {
+            throw pluginError('identity_in_use')
+          }
+          return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
+        })
+      }
     }
-    await nativeCall(() => native.delete(reference))
+    await deleteNativeWithRecovery(native, reference)
     if (catalogEntry !== undefined) {
       await this.catalogStore.mutate(catalog => ({
         ...catalog,
@@ -1390,6 +1394,24 @@ async function nativeCall<T>(operation: () => Promise<T>): Promise<T> {
     return await operation()
   } catch (error) {
     throw mapNativeError(error)
+  }
+}
+
+async function deleteNativeWithRecovery(
+  native: NativeProvider.ProviderLease,
+  reference: IdentityReference,
+): Promise<void> {
+  try {
+    await nativeCall(() => native.delete(reference))
+  } catch (deleteError) {
+    try {
+      const stored = (await nativeCall(() => native.list()))
+        .find(value => value.reference.identityId === reference.identityId)
+      if (stored === undefined) return
+    } catch {
+      // Preserve the original delete failure when its outcome cannot be proven.
+    }
+    throw deleteError
   }
 }
 
