@@ -312,6 +312,85 @@ describe('DSH ANP Identity service', () => {
     }
   })
 
+  it('resumes interrupted Host deletion and closes a lost delete response', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-delete-retry-'))
+    const ctx = await createContext(root, ['owner', 'other-host'])
+    const registration = await openNativeProvider({
+      stateRoot: root,
+      rootKeyProvider: 'injected',
+      rootKeyProviderId: 'dsh-test-root',
+      injectedRootKey: Buffer.alloc(32, 19),
+    })
+    let failure: 'before' | 'after' | undefined = 'before'
+    const provider: NativeIdentityProvider = {
+      acquireLease(request) {
+        const lease = registration.provider.acquireLease(request)
+        return new Proxy(lease, {
+          get(target, property) {
+            if (property === 'delete') {
+              return async (reference: Parameters<typeof target.delete>[0]) => {
+                const currentFailure = failure
+                failure = undefined
+                if (currentFailure === 'before') {
+                  throw Object.assign(new Error('injected pre-delete failure'), {
+                    code: 'provider_unavailable',
+                    retryable: true,
+                  })
+                }
+                await target.delete(reference)
+                if (currentFailure === 'after') {
+                  throw Object.assign(new Error('injected lost delete response'), {
+                    code: 'provider_unavailable',
+                    retryable: true,
+                  })
+                }
+              }
+            }
+            const value = Reflect.get(target, property, target)
+            return typeof value === 'function' ? value.bind(target) : value
+          },
+        })
+      },
+    }
+    const registry = ctx.anpIdentity as unknown as NativeProviderRegistry
+    const dispose = registry.registerProvider({
+      protocol: ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL,
+      provider,
+    })
+    try {
+      await waitForReady(ctx)
+      const host = ctx.anpIdentity.acquireProvider({
+        consumer: 'owner',
+        capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE', 'IDENTITY_DELETE'],
+      })
+
+      const interrupted = await host.create(identitySpec('interrupted-delete'))
+      await expect(host.delete(interrupted.reference))
+        .rejects.toMatchObject({ code: 'provider_unavailable' })
+      expect(findEntry(await new CatalogStore(root).load(), interrupted.reference)?.state)
+        .toBe('deleting')
+      const otherHost = ctx.anpIdentity.acquireProvider({
+        consumer: 'other-host',
+        capabilities: ['IDENTITY_DELETE'],
+      })
+      await expect(otherHost.delete(interrupted.reference))
+        .rejects.toMatchObject({ code: 'identity_in_use' })
+      otherHost.dispose()
+      await expect(host.delete(interrupted.reference)).resolves.toBeUndefined()
+
+      const responseLost = await host.create(identitySpec('lost-delete-response'))
+      failure = 'after'
+      await expect(host.delete(responseLost.reference)).resolves.toBeUndefined()
+      await expect(host.list()).resolves.toEqual([])
+      expect((await new CatalogStore(root).load()).entries).toEqual([])
+      host.dispose()
+    } finally {
+      await dispose()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('rebuilds a corrupt catalog as unclaimed without inventing grants', async () => {
     await using fixture = await serviceFixture(['owner'])
     const owner = await fixture.ctx.anpIdentity.acquireClient({

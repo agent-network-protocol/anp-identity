@@ -121,8 +121,12 @@ HTTP 认证需要申请 `identity:http-auth`，由 Host 为该 consumer 配置�
 - Store 有身份、catalog/journal 没有记录：重建为无 grant 的 `Unclaimed`；
 - catalog 有记录、Store 没有身份：删除 dangling 条目；
 - create intent 未完成：在能够唯一识别 Store 身份时继续提交；
-- deletion tombstone 未完成：继续删除；
+- deletion tombstone 未完成：可在瞬时原生失败后继续删除；如果删除响应丢失，只有在确认
+  精确的原生身份已经不存在后才移除 tombstone；
 - catalog 损坏：grant 与 handle fail closed。显式执行 `recover()` 后，按 Store 重建为 `Unclaimed`，不会伪造授权。
+
+Host Provider 删除属于显式的本地破坏性操作。它会先丢弃未发布的本地 Document 或
+Enrollment 状态，再删除完整身份 namespace；该操作不会撤销或修改远端 DID。
 
 `recover()` 会获取 Store 级独占锁并执行全量恢复，不应作为轮询 API。
 

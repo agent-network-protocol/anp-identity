@@ -247,6 +247,24 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
     { outcome: 'committed', currentDid: successor.reference.did },
   )
 
+  const pendingDelete = await lease.create(identitySpec('pending-delete'))
+  const pendingDeleteChange = await lease.prepareDocumentChange(pendingDelete.reference, {
+    changes: [
+      {
+        change: 'rotate_signing_key',
+        oldKid: '#request',
+        newFragment: 'request-v2',
+      },
+    ],
+  })
+  assert.equal(await pendingDeleteChange.hostPhase(), 'prepared')
+  await lease.delete(pendingDelete.reference)
+  assert.equal(
+    (await lease.list()).some((identity) =>
+      identity.reference.identityId === pendingDelete.reference.identityId),
+    false,
+  )
+
   const denied = await provider.acquireLease({
     consumer: 'viewer',
     capabilities: ['IDENTITY_READ'],
