@@ -607,9 +607,10 @@ fn is_initial_proof_confirmation(
         || record.revision != 1
         || spec.evidence.document_version != 1
         || spec.evidence.registry_version != 1
-        || !record.checkpoint.as_ref().is_some_and(|current| {
-            current.document_version == 1 && current.registry_version == 1
-        })
+        || !record
+            .checkpoint
+            .as_ref()
+            .is_some_and(|current| current.document_version == 1 && current.registry_version == 1)
     {
         return Ok(false);
     }

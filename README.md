@@ -25,9 +25,9 @@ records, generations, journals, or the internal Store engine. The one explicit
 plaintext exception is the default-off Rust `root-export` feature required by
 the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-> **Release status:** `0.2.0` is the first public API release candidate. The
-> Rust crate and Node package have not been published yet; build them from this
-> repository until release artifacts are available.
+> **Rust release:** `0.2.1` provides the facade API and pins ANP Rust `1.0.1`.
+> Native Node packages follow their separate `0.2.0` artifact workflow; a Rust
+> crate release does not publish or change npm package versions.
 
 The Node release is one wrapper plus five optional native packages for macOS
 x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
@@ -168,11 +168,11 @@ request-specific capability token authorizes each privileged operation.
 
 ## Installation
 
-Until `0.2.0` is published, clone this repository and use a local dependency:
+Use the published Rust crate with its pinned ANP dependency:
 
 ```toml
 [dependencies]
-anp-identity = { path = "../anp-identity/crates/anp-identity" }
+anp-identity = "=0.2.1"
 ```
 
 Optional Rust features are default-off:
