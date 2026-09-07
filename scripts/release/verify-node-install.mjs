@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawnSyncPortable as spawnSync } from './spawn-command.mjs'
 
 function fail(message) {
   throw new Error(message)
