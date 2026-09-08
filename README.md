@@ -35,6 +35,13 @@ host-specific addon and installation does not compile Rust. The coordinated
 artifacts are built and clean-installed by
 [`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
 
+## Shared test fixtures
+
+When the ANP checkout is not an adjacent `anp/` directory, set
+`ANP_IDENTITY_DID_TRANSITION_FIXTURE_DIR` to the pinned ANP checkout's
+`testdata/did_transition` directory before running Rust tests. Missing fixtures
+fail the shared transition contract; they are never replaced with mock vectors.
+
 ## Why this project exists
 
 Generating a DID document is easy. Operating a DID safely over time is not.

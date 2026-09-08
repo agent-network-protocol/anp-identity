@@ -1,6 +1,6 @@
 {
   "name": "@agent-network-protocol/anp-identity-darwin-x64",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "macOS x64 native addon for @agent-network-protocol/anp-identity",
   "type": "commonjs",
   "license": "Apache-2.0",
