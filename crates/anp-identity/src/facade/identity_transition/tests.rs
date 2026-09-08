@@ -12,8 +12,13 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn identity_transition_shared_resolver_contract_precedes_local_session() {
-    let fixture_root =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../anp/testdata/did_transition");
+    let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../anp/rust")
+        .canonicalize()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("testdata/did_transition");
     let suite: serde_json::Value =
         serde_json::from_slice(&fs::read(fixture_root.join("transition_vectors.json")).unwrap())
             .unwrap();
