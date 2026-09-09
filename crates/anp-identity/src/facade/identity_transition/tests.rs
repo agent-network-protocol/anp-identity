@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[test]
-fn identity_transition_shared_resolver_contract_precedes_local_session() {
-    let fixture_root = std::env::var_os("ANP_IDENTITY_DID_TRANSITION_FIXTURE_DIR")
+fn transition_fixture_root(override_path: Option<std::ffi::OsString>) -> PathBuf {
+    override_path
+        .filter(|path| !path.to_string_lossy().trim().is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -22,7 +22,29 @@ fn identity_transition_shared_resolver_contract_precedes_local_session() {
                 .parent()
                 .expect("the SDK source checkout must have a parent")
                 .join("testdata/did_transition")
-        });
+        })
+}
+
+#[test]
+fn identity_transition_fixture_override_treats_blank_values_as_unset() {
+    let default = transition_fixture_root(None);
+    assert!(default.join("transition_vectors.json").is_file());
+    for value in ["", " ", "\t\n"] {
+        assert_eq!(transition_fixture_root(Some(value.into())), default);
+    }
+    // Preserve the actual path, including spaces; a nonempty invalid override
+    // must fail when read, rather than silently selecting another fixture.
+    let explicit = " fixtures with spaces ";
+    assert_eq!(
+        transition_fixture_root(Some(explicit.into())),
+        PathBuf::from(explicit)
+    );
+}
+
+#[test]
+fn identity_transition_shared_resolver_contract_precedes_local_session() {
+    let fixture_root =
+        transition_fixture_root(std::env::var_os("ANP_IDENTITY_DID_TRANSITION_FIXTURE_DIR"));
     let suite: serde_json::Value =
         serde_json::from_slice(&fs::read(fixture_root.join("transition_vectors.json")).unwrap())
             .unwrap();
