@@ -432,6 +432,7 @@ pub anp_identity::CreateIdentityRequest::port: core::option::Option<u16>
 pub anp_identity::CreateIdentityRequest::profile: anp_identity::CreateIdentityProfile
 pub anp_identity::CreateIdentityRequest::services: alloc::vec::Vec<anp_identity::IdentityService>
 pub struct anp_identity::DeleteIdentityRequest
+pub anp_identity::DeleteIdentityRequest::discard_pending_changes: bool
 pub struct anp_identity::DeviceInput
 pub anp_identity::DeviceInput::agreement_key: anp_identity::PublicKeyInput
 pub anp_identity::DeviceInput::device_id: alloc::string::String

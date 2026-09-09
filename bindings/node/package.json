@@ -1,6 +1,6 @@
 {
   "name": "@agent-network-protocol/anp-identity",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Secure E1 DID identity custody and lifecycle management for ANP",
   "license": "Apache-2.0",
   "publishConfig": {
@@ -53,11 +53,11 @@
     ]
   },
   "optionalDependencies": {
-    "@agent-network-protocol/anp-identity-darwin-arm64": "0.2.0",
-    "@agent-network-protocol/anp-identity-darwin-x64": "0.2.0",
-    "@agent-network-protocol/anp-identity-linux-arm64-gnu": "0.2.0",
-    "@agent-network-protocol/anp-identity-linux-x64-gnu": "0.2.0",
-    "@agent-network-protocol/anp-identity-win32-x64-msvc": "0.2.0"
+    "@agent-network-protocol/anp-identity-darwin-arm64": "0.2.1",
+    "@agent-network-protocol/anp-identity-darwin-x64": "0.2.1",
+    "@agent-network-protocol/anp-identity-linux-arm64-gnu": "0.2.1",
+    "@agent-network-protocol/anp-identity-linux-x64-gnu": "0.2.1",
+    "@agent-network-protocol/anp-identity-win32-x64-msvc": "0.2.1"
   },
   "devDependencies": {
     "@napi-rs/cli": "3.8.6",

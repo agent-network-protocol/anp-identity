@@ -137,7 +137,7 @@ jobs:
         working-directory: anp-identity
         shell: bash
         env:
-          ANP_IDENTITY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ANP_IDENTITY_SOURCE_SHA: ${{ github.sha }}
         run: |
           node scripts/release/stage-node-package.mjs \
             --kind platform \
@@ -178,7 +178,7 @@ jobs:
       - name: Stage and audit wrapper
         working-directory: anp-identity
         env:
-          ANP_IDENTITY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ANP_IDENTITY_SOURCE_SHA: ${{ github.sha }}
         run: |
           node scripts/release/stage-node-package.mjs \
             --kind wrapper \

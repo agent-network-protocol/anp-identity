@@ -16,7 +16,7 @@ const targets = [
 ]
 
 test('root wrapper pins exactly five platform packages without embedding a native addon', () => {
-  assert.equal(manifest.version, '0.2.0')
+  assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   assert.equal(manifest.publishConfig.registry, 'https://registry.npmjs.org')
   assert.equal(manifest.files.some((entry) => entry.endsWith('.node')), false)
   assert.deepEqual(

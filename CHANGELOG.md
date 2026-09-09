@@ -2,7 +2,7 @@
 
 All notable changes to ANP Identity are documented here.
 
-## Unreleased
+## 0.2.2 (Rust), 0.2.1 (Node), 0.1.1 (DSH Host) — 2026-09-08
 
 ### Fixed
 
