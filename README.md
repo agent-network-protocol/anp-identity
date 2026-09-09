@@ -25,9 +25,10 @@ records, generations, journals, or the internal Store engine. The one explicit
 plaintext exception is the default-off Rust `root-export` feature required by
 the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-> **Rust release:** `0.2.1` provides the facade API and pins ANP Rust `1.0.1`.
-> Native Node packages follow their separate `0.2.0` artifact workflow; a Rust
-> crate release does not publish or change npm package versions.
+The Rust crate pins ANP Rust `1.0.2`. Rust and native Node packages have
+independent release versions; publishing the Rust crate does not publish npm
+packages. The Node artifact workflow accepts an explicit `build_only` dispatch
+for releases that intentionally omit install tests; normal CI keeps those tests.
 
 The Node release is one wrapper plus five optional native packages for macOS
 x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a

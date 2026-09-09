@@ -2,6 +2,12 @@ name: ANP Identity Node Artifacts
 
 on:
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: Build release artifacts without running install tests
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - '.github/workflows/native-node-artifacts.yml'
@@ -81,7 +87,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.1
+          ref: 1.0.2
           path: anp
       - name: Set up Rust
         shell: bash
@@ -167,7 +173,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.1
+          ref: 1.0.2
           path: anp
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -194,6 +200,7 @@ jobs:
           retention-days: 7
 
   packed-install:
+    if: ${{ !inputs.build_only }}
     name: Packed install ${{ matrix.target.name }} / Node ${{ matrix.node }}
     needs: [build-platform, build-wrapper]
     runs-on: ${{ matrix.target.runner }}
