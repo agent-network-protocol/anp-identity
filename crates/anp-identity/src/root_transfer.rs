@@ -62,6 +62,7 @@ pub struct WrappedRootEnvelope {
     pub signature_b64u: String,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootTransferExportSpec {
     pub target_did: String,

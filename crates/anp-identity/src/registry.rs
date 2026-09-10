@@ -48,19 +48,18 @@ pub enum IdentityState {
     Revoked,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RootCapabilityState {
     Absent,
     Pending,
+    #[default]
     Active,
 }
 
-impl Default for RootCapabilityState {
-    fn default() -> Self {
-        Self::Active
-    }
-}
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
