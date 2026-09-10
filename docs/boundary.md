@@ -121,6 +121,18 @@ Document updates use prepare/publication/commit reconciliation. A publication
 with an unknown result enters `PublicationUncertain` and can only be reconciled
 against the observed remote document.
 
+Confirmed facade publication and candidate reconciliation commit the verified
+remote document and Registry versions independently. Neither version is guessed
+from the local revision or the other counter: a Registry-only role promotion may
+advance without a document change. The checkpoint, document, key transitions and
+pending-revision removal are persisted in one lock/CAS-protected record write.
+Rollback of either counter, or a different digest at the same document version,
+leaves the pending transaction unchanged. The legacy raw candidate digest used
+by publication attempts is normalized to the checkpoint's `sha256:` form only
+after its exact candidate binding has been validated.
+The existing one-time unpublished 1/1 proof-refresh exception remains restricted
+to unchanged document intent and is consumed by the same atomic commit.
+
 Generation conflicts preserve the caller's stale snapshot. Callers explicitly
 reload the store or identity, inspect the newly committed snapshot, and then
 decide whether to retry. Reload also runs the same lock-protected crash recovery

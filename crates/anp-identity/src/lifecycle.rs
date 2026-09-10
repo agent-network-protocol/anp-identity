@@ -172,6 +172,7 @@ impl DidIdentity {
         )
     }
 
+    #[cfg(test)]
     pub fn mark_published(&mut self, revision_id: &str) -> DidResult<()> {
         self.transition_publication(
             revision_id,
@@ -191,8 +192,18 @@ impl DidIdentity {
         )
     }
 
+    #[cfg(test)]
     pub fn commit_update(&mut self, revision_id: &str) -> DidResult<()> {
-        self.commit_pending(revision_id, false)
+        self.commit_pending(revision_id, false, None)
+    }
+
+    pub(crate) fn commit_verified_update(
+        &mut self,
+        revision_id: &str,
+        from_reconcile: bool,
+        evidence: &crate::VerifiedDocumentEvidence,
+    ) -> DidResult<()> {
+        self.commit_pending(revision_id, from_reconcile, Some(evidence))
     }
 
     pub fn abort_update(&mut self, revision_id: &str) -> DidResult<()> {
@@ -215,7 +226,7 @@ impl DidIdentity {
         }
         let observed_digest = canonical_digest(observed_remote_document)?;
         if observed_digest == pending.candidate_digest {
-            self.commit_pending(revision_id, true)?;
+            self.commit_pending(revision_id, true, None)?;
             return Ok(ReconcileOutcome::Committed);
         }
         if observed_digest == canonical_digest(self.document())? {
@@ -447,14 +458,35 @@ impl DidIdentity {
         Ok(())
     }
 
-    fn commit_pending(&mut self, revision_id: &str, from_reconcile: bool) -> DidResult<()> {
+    fn commit_pending(
+        &mut self,
+        revision_id: &str,
+        from_reconcile: bool,
+        evidence: Option<&crate::VerifiedDocumentEvidence>,
+    ) -> DidResult<()> {
         let guard = self.runtime().acquire_write()?;
         let mut record = self.current_record_for_mutation()?;
         let pending = required_pending(&record, revision_id)?.clone();
         let allowed = pending.state == PublicationState::Published
+            || (evidence.is_some()
+                && !from_reconcile
+                && pending.state == PublicationState::PublicationInFlight)
             || (from_reconcile && pending.state == PublicationState::PublicationUncertain);
         if !allowed || pending.parent_revision != record.revision {
             return Err(DidError::InvalidPublicationState);
+        }
+        if let Some(evidence) = evidence {
+            crate::adoption::validate_verified_document(&pending.candidate_document, evidence)?;
+            if !crate::adoption::is_initial_proof_confirmation(
+                &record,
+                &pending.candidate_document,
+                evidence,
+            )? {
+                crate::adoption::validate_checkpoint_progression(
+                    record.checkpoint.as_ref(),
+                    evidence,
+                )?;
+            }
         }
         for retired_kid in &pending.retired_kids {
             if let Some(replaced) = record
@@ -467,14 +499,20 @@ impl DidIdentity {
         }
         record.keys.extend(pending.new_key_metadata);
         record.document = pending.candidate_document;
-        record.revision = record.revision.checked_add(1).ok_or(DidError::Conflict)?;
-        let registry_version = record
-            .checkpoint
-            .as_ref()
-            .map(|checkpoint| checkpoint.registry_version)
-            .unwrap_or_default()
-            .checked_add(1)
-            .ok_or(DidError::Conflict)?;
+        record.revision = match evidence {
+            Some(evidence) => evidence.document_version,
+            None => record.revision.checked_add(1).ok_or(DidError::Conflict)?,
+        };
+        let registry_version = match evidence {
+            Some(evidence) => evidence.registry_version,
+            None => record
+                .checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.registry_version)
+                .unwrap_or_default()
+                .checked_add(1)
+                .ok_or(DidError::Conflict)?,
+        };
         record.checkpoint = Some(crate::DocumentCheckpoint {
             document_version: record.revision,
             registry_version,

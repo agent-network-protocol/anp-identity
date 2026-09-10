@@ -517,7 +517,7 @@ impl DidIdentity {
         if record.pending_revision.is_some() {
             return Err(DidError::PendingRevisionExists);
         }
-        if !is_initial_proof_confirmation(&record, &spec)? {
+        if !is_initial_proof_confirmation(&record, &spec.document, &spec.evidence)? {
             validate_checkpoint_progression(record.checkpoint.as_ref(), &spec.evidence)?;
         }
         if root_key_fingerprint(&spec.document)? != record.root_key_fingerprint {
@@ -597,16 +597,17 @@ pub fn canonical_document_digest(document: &Value) -> DidResult<String> {
 
 // A locally created document has not yet received a remote publication checkpoint.
 // Its first confirmation may refresh only the proof, never keys or document intent.
-fn is_initial_proof_confirmation(
+pub(crate) fn is_initial_proof_confirmation(
     record: &IdentityRecord,
-    spec: &AdoptVerifiedDocumentSpec,
+    document: &Value,
+    evidence: &VerifiedDocumentEvidence,
 ) -> DidResult<bool> {
     if !record.initial_publication_pending
         || record.state != IdentityState::Active
         || record.root_capability != RootCapabilityState::Active
         || record.revision != 1
-        || spec.evidence.document_version != 1
-        || spec.evidence.registry_version != 1
+        || evidence.document_version != 1
+        || evidence.registry_version != 1
         || !record
             .checkpoint
             .as_ref()
@@ -615,7 +616,7 @@ fn is_initial_proof_confirmation(
         return Ok(false);
     }
     let mut before = record.document.clone();
-    let mut after = spec.document.clone();
+    let mut after = document.clone();
     before
         .as_object_mut()
         .ok_or(DidError::InvalidIdentity)?
@@ -695,7 +696,7 @@ pub(crate) fn validate_verified_document(
     Ok(())
 }
 
-fn validate_checkpoint_progression(
+pub(crate) fn validate_checkpoint_progression(
     current: Option<&DocumentCheckpoint>,
     next: &VerifiedDocumentEvidence,
 ) -> DidResult<()> {
