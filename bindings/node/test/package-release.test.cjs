@@ -15,6 +15,20 @@ const targets = [
   ['win32-x64-msvc', 'win32', 'x64'],
 ]
 
+test('source lock freezes all published platform dependencies for clean installs', () => {
+  const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'))
+  assert.equal(lock.packages[''].version, manifest.version)
+  assert.deepEqual(lock.packages[''].optionalDependencies, manifest.optionalDependencies)
+  for (const [name, version] of Object.entries(manifest.optionalDependencies)) {
+    const entry = lock.packages[`node_modules/${name}`]
+    assert.ok(entry, `missing lock entry for ${name}`)
+    assert.equal(entry.version, version, `unresolved platform dependency: ${name}`)
+    assert.equal(entry.optional, true)
+    assert.ok(entry.resolved?.startsWith('https://registry.npmjs.org/'), name)
+    assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]+={0,2}$/)
+  }
+})
+
 test('root wrapper pins exactly five platform packages without embedding a native addon', () => {
   assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   assert.equal(manifest.publishConfig.registry, 'https://registry.npmjs.org')
