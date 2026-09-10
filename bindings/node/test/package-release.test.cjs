@@ -29,6 +29,19 @@ test('source lock freezes all published platform dependencies for clean installs
   }
 })
 
+test('source CI and native artifact builds use the declared ANP version', () => {
+  const repository = path.resolve(root, '../..')
+  const cargo = fs.readFileSync(path.join(repository, 'Cargo.toml'), 'utf8')
+  const version = cargo.match(/^anp\s*=.*version\s*=\s*"=([^"]+)"/m)?.[1]
+  assert.ok(version, 'ANP must have an exact declared version')
+  for (const name of ['ci.yml', 'native-node-artifacts.yml']) {
+    const workflow = fs.readFileSync(path.join(repository, '.github/workflows', name), 'utf8')
+    const refs = [...workflow.matchAll(/repository: agent-network-protocol\/anp\s+ref: ([^\s]+)/g)]
+    assert.equal(refs.length, 2, `${name}: expected two reviewed ANP checkouts`)
+    for (const [, ref] of refs) assert.equal(ref, version, `${name}: stale ANP checkout`)
+  }
+})
+
 test('root wrapper pins exactly five platform packages without embedding a native addon', () => {
   assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
   assert.equal(manifest.publishConfig.registry, 'https://registry.npmjs.org')
