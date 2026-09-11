@@ -18,7 +18,14 @@ Load the optional `./management-remote` Host plugin and `./client` browser contr
 }
 ```
 
-The Host resolves ordinary callers by the actual installed Cordis fiber and loader entry. Unknown, disabled and mismatched contexts fail closed. Normal user-mode proxies cannot acquire legacy or Provider leases by claiming a different allowed consumer string. The manager is acquired only from the root/service Host context, and ordinary facades do not contain manager methods. This is cooperative same-process policy, not a sandbox against a plugin that can monkey-patch the process or access other code's references.
+The Host resolves ordinary callers by the actual installed Cordis fiber and loader entry. Unknown, disabled and mismatched contexts fail closed. Normal user-mode proxies cannot acquire legacy or Provider leases by claiming a different allowed consumer string. Ordinary facades do not contain manager methods. This is cooperative same-process policy, not a sandbox.
+
+**Unresolved security limitation (review F2):** the proxy check does not authenticate
+the origin of a call made through `ctx.root.get('anpIdentity')`. Same-process plugins
+can also reach the shared management Remote through the Host gateway. The approval
+UI is therefore not an enforced isolation boundary against such plugins. Host-side
+management-call authentication is explicitly outside this fix's scope; do not report
+F2 as resolved or these changes as complete malicious-plugin isolation.
 
 ## Ordinary consumer flow
 
@@ -63,6 +70,9 @@ The ordinary HTTP API does **not** accept a consumer transport callback: the Hos
 - Processed creation records provide a read-only result/reconciliation action, not another creation approval. Startup completes previously fenced deletion tombstones only after confirming absence from both the native Store and catalog. Ordinary requests wait for Provider readiness before taking an authorization transaction, avoiding a startup lock inversion.
 - Denial/revocation suppresses automatic re-prompting even with changed request IDs or wording. The manager's explicit history re-request creates a new record. Disable/uninstall events cancel pending requests; a transient frontend disconnect or ordinary Host restart does not.
 - Public JSON inspection never fetches a remote document. Deletion is forbidden while effective ordinary grants or legacy/Host associations remain; unknown old Provider ownership fails conservatively.
+- Ordinary access uses the same conservative Host-association exclusion. It is enforced during request validation, approval, opening and execution, not just in the identity selector. The selector omits incompatible identities; the management inventory still shows them. User-created ordinary identities remain shareable across plugins through separate user grants.
+- Native policy reads and deletion reconciliation run outside the shared authorization lock. Their ledger changes commit under a generation CAS; conflicts re-read and revalidate, and sustained contention fails closed with `authorization_conflict`. Host association changes advance the same epoch so stale ordinary snapshots cannot commit across them. The transaction callback must not perform external mutations because it may be retried.
+- Deletion persists its fence before releasing the ledger lock for native I/O, then finalizes against fresh ledger state. A separate per-identity cross-process lock serializes duplicate delete executions. Uncertain failures retain the fence for reconciliation; unrelated ledger work is not blocked by native deletion. The short catalog preparation still runs under the shared ledger lock.
 
 ## Upgrade and rollback
 

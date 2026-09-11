@@ -134,7 +134,7 @@ export class AuthorizationEngine {
       ...(input.identity === undefined ? {} : { identity: reference(input.identity) }),
       ...(input.operation === undefined ? {} : { operation: operation(input.operation) }),
     }
-    return this.#transaction(async state => {
+    return this.#snapshotTransaction(async state => {
       await this.options.validateCaller(source)
       if (details.identity !== undefined) {
         this.#identityAvailable(state, details.identity)
@@ -199,7 +199,7 @@ export class AuthorizationEngine {
   }
 
   async decide(input: AuthorizationDecision): Promise<AuthorizationRequest> {
-    const decided = await this.#transaction(async state => {
+    const decided = await this.#snapshotTransaction(async state => {
       const req = this.#findRequest(state, input.requestId)
       this.#pending(req, input.expectedVersion)
       if (input.decision === 'deny') {
@@ -325,12 +325,16 @@ export class AuthorizationEngine {
   async withIdentityAccess<T>(identity: IdentityReference, callback: () => Promise<T>): Promise<T> {
     return this.#transaction(async state => {
       this.#identityAvailable(state, reference(identity))
+      // Publish an epoch before catalog changes, including an uncertain callback failure.
+      // Snapshot transactions must not commit ordinary use across a Host association change.
+      state.generation += 1
+      await this.#write(state)
       return callback()
     })
   }
 
   async open(verifiedCaller: VerifiedCaller, grantId: string): Promise<AuthorizedLease> {
-    return this.#transaction(async state => {
+    return this.#snapshotTransaction(async state => {
       const grant = this.#findGrant(state, grantId)
       this.#owns(verifiedCaller, grant.caller.consumer)
       if (grant.status !== 'active') fail('grant_inactive')
@@ -345,7 +349,7 @@ export class AuthorizationEngine {
   async admit(verifiedCaller: VerifiedCaller, lease: AuthorizedLease, requestedOperation: ControlledOperation, executionId: string): Promise<AuthorizationExecution> {
     const actual = operation(requestedOperation)
     text(executionId, 256)
-    return this.#transaction(async state => {
+    return this.#snapshotTransaction(async state => {
       // An execution ID is a query key, never permission to replay its side effects.
       if (state.executions.some(value => value.id === executionId)) fail('execution_already_admitted')
       const grant = await this.#checkLease(state, verifiedCaller, lease, actual)
@@ -358,11 +362,11 @@ export class AuthorizationEngine {
       state.executions.push(execution)
       if (grant.mode === 'once') this.#replaceGrant(state, { ...grant, status: 'consumed', version: grant.version + 1, executionId })
       return execution
-    })
+    }, lease.expiresAt)
   }
 
   async assertExecutionActive(verifiedCaller: VerifiedCaller, lease: AuthorizedLease, executionId: string): Promise<void> {
-    await this.#transaction(async state => {
+    await this.#snapshotTransaction(async state => {
       const execution = state.executions.find(value => value.id === executionId)
       if (execution === undefined || execution.grantId !== lease.grantId || execution.status !== 'admitted') fail('execution_inactive')
       this.#owns(verifiedCaller, execution.consumer)
@@ -371,7 +375,7 @@ export class AuthorizationEngine {
       const expectedVersion = grant.mode === 'once' ? execution.grantVersion + 1 : execution.grantVersion
       if (grant.version !== expectedVersion || (grant.status !== 'active' && !(grant.status === 'consumed' && grant.executionId === executionId))) fail('grant_inactive')
       await this.#checkLease(state, verifiedCaller, { ...lease, grantVersion: expectedVersion }, execution.operation)
-    })
+    }, lease.expiresAt)
   }
 
   async recordExecution(verifiedCaller: VerifiedCaller, executionId: string, status: 'succeeded' | 'failed' | 'unknown'): Promise<AuthorizationExecution> {
@@ -403,28 +407,34 @@ export class AuthorizationEngine {
   /** Prepare checks associations and may set the catalog deletion fence before native execution. */
   async withIdentityDeletion(identity: IdentityReference, prepare: () => Promise<void>, execute: () => Promise<void>): Promise<void> {
     const target = reference(identity)
+    // Serialize duplicate deletes of this identity without blocking the shared ledger
+    // during native I/O. A crash releases this lock but leaves the durable fence.
     await this.#locked(async () => {
-      const state = await this.#read()
-      this.#expire(state)
-      if (state.grants.some(grant => equalIdentity(grant.identity, target) && grant.status === 'active')) fail('identity_has_grants')
-      if (state.deletedIdentities.some(ref => equalIdentity(ref, target))) return
-      await prepare()
-      if (!state.deletingIdentities.some(ref => equalIdentity(ref, target))) state.deletingIdentities.push(target)
-      state.generation += 1
-      await this.#write(state)
+      const shouldExecute = await this.#locked(async () => {
+        const state = await this.#read()
+        this.#expire(state)
+        if (state.grants.some(grant => equalIdentity(grant.identity, target) && grant.status === 'active')) fail('identity_has_grants')
+        if (state.deletedIdentities.some(ref => equalIdentity(ref, target))) return false
+        await prepare()
+        if (!state.deletingIdentities.some(ref => equalIdentity(ref, target))) state.deletingIdentities.push(target)
+        state.generation += 1
+        await this.#write(state)
+        return true
+      })
+      if (!shouldExecute) return
       // A failed/uncertain execute leaves the fence for explicit reconciliation; no grant can race in.
       await execute()
-      this.#completeDeletion(state, target)
-      state.generation += 1
-      await this.#write(state)
-    })
+      await this.#transaction(async state => {
+        this.#completeDeletion(state, target)
+      })
+    }, join(this.stateRoot, `authorization-delete-${digest(target)}.lock`))
     this.#notify()
   }
 
   /** Host-only recovery of previously fenced deletions; absence alone never authorizes deletion. */
   async reconcileDeletions(input: DeletionReconciliation): Promise<void> {
     const catalogFences = input.catalogFences.map(reference)
-    await this.#transaction(async state => {
+    await this.#snapshotTransaction(async state => {
       for (const target of catalogFences) {
         if (!state.deletedIdentities.some(ref => equalIdentity(ref, target))
           && !state.deletingIdentities.some(ref => equalIdentity(ref, target))) state.deletingIdentities.push(target)
@@ -453,6 +463,7 @@ export class AuthorizationEngine {
     this.#identityAvailable(state, grant.identity)
     await this.options.validateCaller(grant.caller)
     const current = snapshot(await this.options.resolveSnapshot(grant.caller, grant.identity))
+    if (lease.expiresAt <= this.#now()) fail('lease_expired')
     if (current.version !== grant.snapshot.version || !permits(grant.snapshot, actual) || !permits(current, actual)) fail('operation_not_permitted')
     return grant
   }
@@ -501,8 +512,42 @@ export class AuthorizationEngine {
     return result
   }
   #notify(): void { for (const listener of this.#listeners) { try { listener() } catch { /* Notifications are advisory. */ } } }
-  async #locked<T>(action: () => Promise<T>): Promise<T> {
-    const release = await lockfile.lock(this.#lockPath, { realpath: false, stale: 30_000, update: 10_000, retries: { retries: 500, minTimeout: 20, maxTimeout: 20 } })
+  /** The callback may read native/catalog state but must not perform external mutations.
+   * Re-evaluate on a ledger CAS conflict, including revocation, deletion and Host association
+   * changes. Native waits never hold the shared authorization lock.
+   */
+  async #snapshotTransaction<T>(action: (state: AuthorizationState) => Promise<T>, leaseDeadline = Infinity): Promise<T> {
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const state = await this.#transaction(async current => current)
+      const generation = state.generation
+      const before = JSON.stringify(state)
+      const result = await action(state)
+      const committed = await this.#locked(async () => {
+        const current = await this.#read()
+        if (current.generation !== generation) return false
+        if (leaseDeadline <= this.#now()) fail('lease_expired')
+        const unexpired = JSON.stringify(current)
+        this.#expire(current)
+        if (JSON.stringify(current) !== unexpired) {
+          current.generation += 1
+          await this.#write(current)
+          return false
+        }
+        if (JSON.stringify(state) !== before) {
+          state.generation = generation + 1
+          await this.#write(state)
+        }
+        return true
+      })
+      if (committed) {
+        if (JSON.stringify(state) !== before) this.#notify()
+        return copy(result)
+      }
+    }
+    return fail('authorization_conflict')
+  }
+  async #locked<T>(action: () => Promise<T>, path = this.#lockPath): Promise<T> {
+    const release = await lockfile.lock(path, { realpath: false, stale: 30_000, update: 10_000, retries: { retries: 500, minTimeout: 20, maxTimeout: 20 } })
     try { return await action() } finally { await release() }
   }
   async #read(): Promise<AuthorizationState> {

@@ -17,6 +17,12 @@ approved dispatch uses Host-owned transport.
 
 Consumer identifiers are soft same-process identities. The allowlists prevent accidental cross-plugin use and provide an auditable policy, but JavaScript in the same process is not a sandbox.
 
+Known unresolved limitation: ordinary facades omit management methods, but the
+shared root service and Host gateway still allow same-process code to reach the
+manager without the approval UI (review F2). Host-side call authentication is not
+part of the current scoped fix. Excluding Host-associated identities from ordinary
+grants does not resolve this manager-entry vulnerability.
+
 ## Secret rules
 
 - The default client surface has no raw ECDH, private-key import, Root Key export, sealed envelope, or Header patch method.

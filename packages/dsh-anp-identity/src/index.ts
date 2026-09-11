@@ -858,7 +858,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
           && (request.executionStatus === 'running' || request.executionStatus === 'unknown')) {
           request = await this.users.engine.reconcileCreation(id)
         }
-        const identities = await this.managementIdentities()
+        let identities = await this.managementIdentities()
         let unavailableReason: string | undefined
         try { this.assertInstalledCaller(request.caller) } catch { unavailableReason = 'The requesting plugin is not available.' }
         let snapshot: CapabilitySnapshot | undefined
@@ -872,6 +872,9 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
             catch { /* Only compatible identities may be selected for ordinary use. */ }
           }
         }
+        if (request.kind === 'access') identities = identities.filter(identity =>
+          snapshots.some(item => sameReference(item.identity, identity.reference))
+          || (snapshot !== undefined && request.identity !== undefined && sameReference(request.identity, identity.reference)))
         const allGrants = await this.users.engine.listGrants()
         const grant = request.kind === 'access' ? allGrants.find(value => value.id === request.grantId) : undefined
         const permanentIdentities = allGrants.filter(grant => grant.caller.consumer === request.caller.consumer
@@ -1013,6 +1016,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     const entry = findEntry(catalog, reference)
     if (!entry) throw pluginError('identity_not_found')
     if (entry.state === 'deleting') throw pluginError('identity_deleting')
+    this.assertNoHostAssociations(entry)
     const identity = await this.withUserNative(native => native.publicIdentity(reference))
     if (identity.state !== 'active' || !identity.capabilities.didWba) throw pluginError('provider_incompatible')
     requestSigningKid(identity)

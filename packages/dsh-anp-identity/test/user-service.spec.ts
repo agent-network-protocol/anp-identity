@@ -14,6 +14,57 @@ const ORIGIN = 'https://api.example.com'
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('ordinary plugin authorization with a real native Store', () => {
+  it('excludes Host identities from ordinary requests and decisions while allowing approved cross-plugin use', async () => {
+    await using fixture = await userFixture()
+    const host = fixture.service.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE'] })
+    const protectedIdentity = await host.create({ profile: 'e1', domain: 'example.com', pathSegments: ['host-only'],
+      capabilities: { didWba: true }, managedKeys: [{ fragment: 'root', role: 'root_control' }, { fragment: 'request', role: 'request_signing' }] })
+    const manager = fixture.service.acquireManagement()
+    const ordinary = await createApproved(fixture, 'shareable')
+    const all = await manager.listIdentities()
+    expect(all.find(item => item.reference.did === protectedIdentity.reference.did)?.integrations).toHaveLength(1)
+    await expect(fixture.first.requestAccess({ requestId: 'explicit-host', purpose: 'Read', identity: protectedIdentity.reference,
+      operation: { action: 'read' } })).rejects.toMatchObject({ code: 'identity_in_use' })
+    const request = await fixture.second.requestAccess({ requestId: 'choose-identity', purpose: 'Choose an ordinary identity', operation: { action: 'read' } })
+    const review = await manager.getRequest(request.id)
+    expect(review.identities.map(item => item.reference)).toEqual([ordinary])
+    const snapshot = review.snapshots![0]!.snapshot
+    await expect(manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'once',
+      identity: protectedIdentity.reference, reviewedSnapshot: snapshot })).rejects.toMatchObject({ code: 'identity_in_use' })
+    const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'once',
+      identity: ordinary, reviewedSnapshot: snapshot }) as AccessAuthorizationRequest
+    const lease = await fixture.second.openAuthorizedIdentity(approved.grantId!)
+    expect((await lease.publicIdentity('cross-plugin-read')).reference).toEqual(ordinary)
+    host.dispose()
+  })
+
+  it('invalidates an in-flight ordinary snapshot and existing leases when a Host association is added', async () => {
+    await using fixture = await userFixture()
+    const reference = await createApproved(fixture, 'host-association-race')
+    const manager = fixture.service.acquireManagement()
+    const request = await fixture.first.requestAccess({ requestId: 'before-host', purpose: 'Read', identity: reference, operation: { action: 'read' } })
+    const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent',
+      reviewedSnapshot: (await manager.getRequest(request.id)).snapshot! }) as AccessAuthorizationRequest
+    const lease = await fixture.first.openAuthorizedIdentity(approved.grantId!)
+    const users = (fixture.service as unknown as { users: UserIdentityService }).users
+    const resolve = users.host.resolveSnapshot.bind(users.host)
+    const entered = latch(), release = latch()
+    vi.spyOn(users.host, 'resolveSnapshot').mockImplementationOnce(async (...args) => {
+      const result = await resolve(...args)
+      entered.resolve()
+      await release.promise
+      return result
+    })
+    const read = lease.publicIdentity('association-race').then(() => 'read', error => error.code)
+    await entered.promise
+    try { await fixture.host().grantConsumer(reference, 'host-fixture') }
+    finally { release.resolve() }
+    expect(await read).toBe('identity_in_use')
+    await expect(fixture.first.openAuthorizedIdentity(approved.grantId!)).rejects.toMatchObject({ code: 'identity_in_use' })
+    await expect(lease.sign({ purpose: 'authentication', kid: `${reference.did}#request`, payload: Buffer.from('blocked') }))
+      .rejects.toMatchObject({ code: 'identity_in_use' })
+  })
+
   it('waits for native startup recovery before a plugin request can acquire the authorization ledger', async () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'startup-readiness')

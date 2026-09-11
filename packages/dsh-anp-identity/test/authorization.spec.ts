@@ -13,6 +13,55 @@ const readOperation = freezeOperation({ capability: 'identity:read', summary: 'R
 const parameters = { label: 'Work', domain: 'example.test', path: '/agents/work' }
 
 describe('durable authorization admission and decisions', () => {
+  it('allows revocation during a slow native snapshot and rejects the stale admission', async () => {
+    await using f = await fixture()
+    const grant = await approve(f.engine, 'permanent')
+    const lease = await f.engine.open(caller, grant.id)
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    const slow = f.reopen({ resolveSnapshot: async () => { entered(); await barrier; return policy } })
+    const admission = slow.admit(caller, lease, readOperation, 'slow-admission').then(() => 'admitted', error => error.code)
+    await started
+    const revoked = f.engine.revoke(grant.id, grant.version)
+    try {
+      await expect(Promise.race([revoked.then(() => 'revoked'), new Promise(resolve => setTimeout(() => resolve('blocked'), 1500))])).resolves.toBe('revoked')
+    } finally { release(); await Promise.allSettled([admission, revoked]) }
+    expect(await admission).not.toBe('admitted')
+    expect((await f.engine.listGrants())[0]?.status).toBe('revoked')
+  })
+
+  it('keeps deletion fenced without blocking unrelated requests during native execution', async () => {
+    await using f = await fixture()
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    const deletion = f.engine.withIdentityDeletion(identity, async () => {}, async () => { entered(); await barrier })
+    await started
+    let duplicateExecutions = 0
+    const duplicate = f.reopen().withIdentityDeletion(identity, async () => {}, async () => { duplicateExecutions++ })
+    const request = f.reopen().requestCreate(caller, { requestId: 'during-delete', purpose: 'Unrelated create', parameters })
+    try {
+      await expect(Promise.race([request.then(() => 'pending'), new Promise(resolve => setTimeout(() => resolve('blocked'), 1500))])).resolves.toBe('pending')
+      await expect(f.reopen().requestAccess(caller, { requestId: 'fenced', purpose: 'Read', identity, operation: readOperation }))
+        .rejects.toMatchObject({ code: 'identity_unavailable' })
+    } finally { release(); await Promise.all([deletion, duplicate, request]) }
+    expect(duplicateExecutions).toBe(0)
+    expect((await f.engine.listRequests()).find(item => item.id === 'during-delete')?.status).toBe('pending')
+  })
+
+  it('rejects a lease that expires while resolving its native policy', async () => {
+    let now = 1000
+    await using f = await fixture({ now: () => now, leaseTtlMs: 100 })
+    const grant = await approve(f.engine, 'permanent')
+    const lease = await f.engine.open(caller, grant.id)
+    const delayed = f.reopen({ resolveSnapshot: async () => { now += 101; return policy } })
+    await expect(delayed.admit(caller, lease, readOperation, 'expired-during-native')).rejects.toMatchObject({ code: 'lease_expired' })
+    await expect(f.engine.getExecution(caller, 'expired-during-native')).rejects.toMatchObject({ code: 'execution_not_found' })
+  })
+
   it('requires independent creation and use decisions, preserves result across restart, and freezes request parameters', async () => {
     const created: string[] = []
     await using f = await fixture({ createIdentity: async operationId => { created.push(operationId); return { reference: identity, label: 'Work' } } })
