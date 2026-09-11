@@ -25,9 +25,33 @@ records, generations, journals, or the internal Store engine. The one explicit
 plaintext exception is the default-off Rust `root-export` feature required by
 the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-> **Release status:** `0.2.0` is the first public API release candidate. The
-> Rust crate and Node package have not been published yet; build them from this
-> repository until release artifacts are available.
+The Rust crate pins ANP Rust `1.0.3`. Rust and native Node packages have
+independent release versions; publishing the Rust crate does not publish npm
+packages. The Node artifact workflow accepts an explicit `build_only` dispatch
+for releases that intentionally omit install tests; normal CI keeps those tests.
+
+The Node release is one wrapper plus five optional native packages for macOS
+x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
+host-specific addon and installation does not compile Rust. The coordinated
+artifacts are built and clean-installed by
+[`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
+
+Native release builds use `scripts/release/prepare-registry.py --prepare` to
+snapshot the committed source into a separate build directory and replace only
+the external ANP path with its exact published crates.io version. The checked-in
+`scripts/release/registry-Cargo.lock` freezes that build. Refresh it with
+`python3 scripts/release/prepare-registry.py --refresh-lock` after publishing ANP
+and committing the version changes. Packaging reads the same registry manifest
+through `ANP_IDENTITY_REGISTRY_MANIFEST`; the SBOM rejects path/git or mixed ANP
+dependencies. Source development and shared-vector tests may still use the
+adjacent ANP checkout.
+
+## Shared test fixtures
+
+When the ANP checkout is not an adjacent `anp/` directory, set
+`ANP_IDENTITY_DID_TRANSITION_FIXTURE_DIR` to the pinned ANP checkout's
+`testdata/did_transition` directory before running Rust tests. Missing fixtures
+fail the shared transition contract; they are never replaced with mock vectors.
 
 ## Why this project exists
 
@@ -162,11 +186,11 @@ request-specific capability token authorizes each privileged operation.
 
 ## Installation
 
-Until `0.2.0` is published, clone this repository and use a local dependency:
+Use the published Rust crate with its pinned ANP dependency:
 
 ```toml
 [dependencies]
-anp-identity = { path = "../anp-identity/crates/anp-identity" }
+anp-identity = "=0.2.1"
 ```
 
 Optional Rust features are default-off:
@@ -177,6 +201,7 @@ Optional Rust features are default-off:
 | `root-export` | A trusted, user-confirmed legacy `RootKeyEnvelopeV1` sender |
 
 Rust 1.88 or newer is required. The Node package requires Node.js 18 or newer.
+DSH consumers require Node.js `^22.19.0 || >=24.0.0`.
 
 ## Quick start: Rust
 
@@ -368,6 +393,45 @@ verified version, registry version, and digest evidence to `reconcile`.
 
 This prevents a timeout from deleting a key that a remotely published document
 may already reference.
+
+Newly created identities persist an `initial_publication_pending` marker. Their
+local `1/1` checkpoint is an initial candidate, not a confirmed publication.
+The first `adopt_verified_document` may accept a different valid root proof at
+remote checkpoint `1/1` only when the entire document excluding `proof` is
+unchanged, the identity and root are active, and no document revision is pending.
+Verified evidence must still match the exact signed document. Confirmation,
+including confirmation of an identical document, atomically consumes the marker
+under the existing store lock, generation check, and state-transition journal.
+Subsequent same-version hash changes remain conflicts; exact replay is idempotent.
+Committed document updates and root-transfer activation also clear the marker.
+
+Older records without this marker default to strict checkpoint validation. They
+are not automatically classified as unpublished, including interrupted Recovery
+records. Repairing those records requires independently verified provenance and
+is not part of this automatic adoption path. Old binaries reject a record with
+the new marker while it is pending; upgrade all consumers sharing that store
+before creating new identities. Consumed/absent markers are omitted on disk, and
+the public host/Node DTOs and wire protocol are unchanged.
+
+## Cross-DID identity transitions
+
+`IdentityTransitionSession` coordinates publication between two already
+existing path-based E1 identities. A `committed` outcome confirms only that the
+exact predecessor transition document and successor document were published
+and recorded in the transition journal. It does not rewrite the local
+predecessor identity as deactivated, select a Store-wide current DID, or update
+a User Service current-DID record. Those actions remain host responsibilities
+and must use the confirmed candidate and service-specific transaction rules.
+
+Transition consumers must use the `anp` transition verifier/resolver. The
+legacy single-document did:wba resolver enforces binding-key proof semantics
+and is not suitable for recovery-signed deactivated transition documents.
+
+Recovery continuity means that the recovery key was pre-authorized through the
+trusted predecessor's `assertionMethod`. The test fixture uses an existing
+external assertion-key role only to exercise that relationship; production
+systems must define separate recovery-key purpose and custody and must not
+reuse an E2EE signing key as a recovery key.
 
 ## Store root-key sources
 

@@ -202,6 +202,57 @@ describe('DSH ANP Identity service', () => {
     host.dispose()
   })
 
+  it('exposes resumable identity transitions only through capability and catalog grants', async () => {
+    await using fixture = await serviceFixture(['owner', 'dsh-awiki'])
+    const owner = await fixture.ctx.anpIdentity.acquireClient({
+      consumer: 'owner',
+      capabilities: ['identity:read', 'identity:create'],
+    })
+    const predecessor = await owner.create({ identity: identitySpec('transition') })
+    const successor = await owner.create({ identity: identitySpec('transition') })
+    const predecessorReference = (await predecessor.publicIdentity()).reference
+    const successorReference = (await successor.publicIdentity()).reference
+    const dsh = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'dsh-awiki',
+      capabilities: ['IDENTITY_DOCUMENT_UPDATE'],
+    })
+    const request = {
+      expectedCurrentDid: predecessorReference.did,
+      operationId: 'dsh-transition-response-loss',
+      successor: successorReference,
+    }
+
+    await expect(dsh.prepareIdentityTransition(request))
+      .rejects.toMatchObject({ code: 'identity_unclaimed' })
+
+    const catalogOwner = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'owner',
+      capabilities: ['IDENTITY_READ'],
+    })
+    await catalogOwner.grantConsumer(predecessorReference, 'dsh-awiki')
+    await catalogOwner.grantConsumer(successorReference, 'dsh-awiki')
+
+    const transition = await dsh.prepareIdentityTransition(request)
+    const candidate = await transition.candidate()
+    expect(candidate.successorDid).toBe(successorReference.did)
+    const attempt = await transition.beginPublication()
+    await expect(transition.complete(attempt, { result: 'unknown' }))
+      .resolves.toEqual({ outcome: 'publication_uncertain' })
+
+    dsh.dispose()
+    const resumedLease = fixture.ctx.anpIdentity.acquireProvider({
+      consumer: 'dsh-awiki',
+      capabilities: ['IDENTITY_DOCUMENT_UPDATE'],
+    })
+    const resumed = await resumedLease.resumeIdentityTransition(predecessorReference.did)
+    expect(await resumed?.candidate()).toEqual(candidate)
+    await expect(resumed?.reconcile({
+      observation: 'published',
+      predecessorDocument: candidate.predecessorDocument,
+      successorDocument: candidate.successorDocument,
+    })).resolves.toEqual({ outcome: 'committed', currentDid: successorReference.did })
+  })
+
   it('removes a create intent when native creation definitively created nothing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-create-retry-'))
     const ctx = await createContext(root, ['owner'])
@@ -254,6 +305,85 @@ describe('DSH ANP Identity service', () => {
       await expect(owner.create(create)).rejects.toMatchObject({ code: 'provider_unavailable' })
       await expect(new CatalogStore(root).listIntents()).resolves.toEqual([])
       await expect(owner.create(create)).resolves.toBeDefined()
+    } finally {
+      await dispose()
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('resumes interrupted Host deletion and closes a lost delete response', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-delete-retry-'))
+    const ctx = await createContext(root, ['owner', 'other-host'])
+    const registration = await openNativeProvider({
+      stateRoot: root,
+      rootKeyProvider: 'injected',
+      rootKeyProviderId: 'dsh-test-root',
+      injectedRootKey: Buffer.alloc(32, 19),
+    })
+    let failure: 'before' | 'after' | undefined = 'before'
+    const provider: NativeIdentityProvider = {
+      acquireLease(request) {
+        const lease = registration.provider.acquireLease(request)
+        return new Proxy(lease, {
+          get(target, property) {
+            if (property === 'delete') {
+              return async (reference: Parameters<typeof target.delete>[0]) => {
+                const currentFailure = failure
+                failure = undefined
+                if (currentFailure === 'before') {
+                  throw Object.assign(new Error('injected pre-delete failure'), {
+                    code: 'provider_unavailable',
+                    retryable: true,
+                  })
+                }
+                await target.delete(reference)
+                if (currentFailure === 'after') {
+                  throw Object.assign(new Error('injected lost delete response'), {
+                    code: 'provider_unavailable',
+                    retryable: true,
+                  })
+                }
+              }
+            }
+            const value = Reflect.get(target, property, target)
+            return typeof value === 'function' ? value.bind(target) : value
+          },
+        })
+      },
+    }
+    const registry = ctx.anpIdentity as unknown as NativeProviderRegistry
+    const dispose = registry.registerProvider({
+      protocol: ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL,
+      provider,
+    })
+    try {
+      await waitForReady(ctx)
+      const host = ctx.anpIdentity.acquireProvider({
+        consumer: 'owner',
+        capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE', 'IDENTITY_DELETE'],
+      })
+
+      const interrupted = await host.create(identitySpec('interrupted-delete'))
+      await expect(host.delete(interrupted.reference))
+        .rejects.toMatchObject({ code: 'provider_unavailable' })
+      expect(findEntry(await new CatalogStore(root).load(), interrupted.reference)?.state)
+        .toBe('deleting')
+      const otherHost = ctx.anpIdentity.acquireProvider({
+        consumer: 'other-host',
+        capabilities: ['IDENTITY_DELETE'],
+      })
+      await expect(otherHost.delete(interrupted.reference))
+        .rejects.toMatchObject({ code: 'identity_in_use' })
+      otherHost.dispose()
+      await expect(host.delete(interrupted.reference)).resolves.toBeUndefined()
+
+      const responseLost = await host.create(identitySpec('lost-delete-response'))
+      failure = 'after'
+      await expect(host.delete(responseLost.reference)).resolves.toBeUndefined()
+      await expect(host.list()).resolves.toEqual([])
+      expect((await new CatalogStore(root).load()).entries).toEqual([])
+      host.dispose()
     } finally {
       await dispose()
       await ctx.fiber.dispose()

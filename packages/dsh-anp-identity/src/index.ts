@@ -9,6 +9,10 @@ import type {
   CreateIdentityRequest as NativeCreateIdentityRequest,
   IdentityDescriptor as NativeIdentityDescriptor,
   IdentityReference,
+  IdentityTransitionPublicationAttempt,
+  IdentityTransitionPublicationResult,
+  IdentityTransitionRemoteObservation,
+  IdentityTransitionRequest,
   PublicIdentity,
 } from '@agent-network-protocol/anp-identity'
 import type * as NativeProvider from '@agent-network-protocol/anp-identity/provider'
@@ -123,6 +127,12 @@ interface InternalService {
   recoverForClient(lease: ClientLease): Promise<RecoveryReport>
   setHandleForClient(lease: ClientLease, reference: IdentityRef, handle: string | null): Promise<void>
   assertManagedAccess(lease: ClientLease, reference: IdentityReference): Promise<void>
+  assertHostTransitionAccess(
+    slot: ProviderSlot,
+    consumer: string,
+    expectedCurrentDid: string,
+    successorDid: string,
+  ): Promise<void>
   grantConsumer(slot: ProviderSlot, reference: IdentityReference, consumer: string): Promise<void>
   revokeConsumer(slot: ProviderSlot, reference: IdentityReference, consumer: string): Promise<void>
   createForHost(
@@ -426,6 +436,17 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     assertGrantedEntry(findEntry(catalog, reference), lease.consumer)
   }
 
+  private async assertHostTransitionAccess(
+    slot: ProviderSlot,
+    consumer: string,
+    expectedCurrentDid: string,
+    successorDid: string,
+  ): Promise<void> {
+    const catalog = await this.loadCatalog(slot)
+    assertGrantedEntry(catalog.entries.find(entry => entry.did === expectedCurrentDid), consumer)
+    assertGrantedEntry(catalog.entries.find(entry => entry.did === successorDid), consumer)
+  }
+
   private async grantConsumer(
     slot: ProviderSlot,
     reference: IdentityReference,
@@ -524,17 +545,21 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       throw pluginError('catalog_corrupt')
     }
     if (catalogEntry !== undefined) {
-      if (catalogEntry.state === 'deleting') throw pluginError('identity_deleting')
       if (catalogEntry.grantedConsumers.some(value => value !== consumer)) {
         throw pluginError('identity_in_use')
       }
-      await this.catalogStore.mutate(catalog => {
-        const entry = findEntry(catalog, reference)
-        if (entry === undefined) throw pluginError('identity_not_found')
-        return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
-      })
+      if (catalogEntry.state !== 'deleting') {
+        await this.catalogStore.mutate(catalog => {
+          const entry = findEntry(catalog, reference)
+          if (entry === undefined) throw pluginError('identity_not_found')
+          if (entry.grantedConsumers.some(value => value !== consumer)) {
+            throw pluginError('identity_in_use')
+          }
+          return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
+        })
+      }
     }
-    await nativeCall(() => native.delete(reference))
+    await deleteNativeWithRecovery(native, reference)
     if (catalogEntry !== undefined) {
       await this.catalogStore.mutate(catalog => ({
         ...catalog,
@@ -1014,6 +1039,44 @@ class HostLease implements HostProviderLease, DisposableLease {
   ) => this.call('IDENTITY_DOCUMENT_UPDATE', () => this.native.prepareDocumentChange(reference, request))
   resumeDocumentChange = (reference: IdentityReference) =>
     this.call('IDENTITY_DOCUMENT_UPDATE', () => this.native.resumeDocumentChange(reference))
+  prepareIdentityTransition = (request: IdentityTransitionRequest) =>
+    this.call('IDENTITY_DOCUMENT_UPDATE', async () => {
+      await this.service.assertHostTransitionAccess(
+        this.slot,
+        this.consumer,
+        request.expectedCurrentDid,
+        request.successor.did,
+      )
+      const native = await this.native.prepareIdentityTransition(request)
+      return new HostIdentityTransitionSession(
+        native,
+        operation => this.transitionCall(
+          request.expectedCurrentDid,
+          request.successor.did,
+          operation,
+        ),
+      )
+    })
+  resumeIdentityTransition = (expectedCurrentDid: string) =>
+    this.call('IDENTITY_DOCUMENT_UPDATE', async () => {
+      const native = await this.native.resumeIdentityTransition(expectedCurrentDid)
+      if (native === undefined) return undefined
+      const candidate = await native.candidate()
+      await this.service.assertHostTransitionAccess(
+        this.slot,
+        this.consumer,
+        expectedCurrentDid,
+        candidate.successorDid,
+      )
+      return new HostIdentityTransitionSession(
+        native,
+        operation => this.transitionCall(
+          expectedCurrentDid,
+          candidate.successorDid,
+          operation,
+        ),
+      )
+    })
   adoptVerifiedDocument = (
     reference: IdentityReference,
     remote: import('./types.js').VerifiedRemoteDocument,
@@ -1054,6 +1117,22 @@ class HostLease implements HostProviderLease, DisposableLease {
     return nativeCall(operation)
   }
 
+  private transitionCall<T>(
+    expectedCurrentDid: string,
+    successorDid: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return this.call('IDENTITY_DOCUMENT_UPDATE', async () => {
+      await this.service.assertHostTransitionAccess(
+        this.slot,
+        this.consumer,
+        expectedCurrentDid,
+        successorDid,
+      )
+      return operation()
+    })
+  }
+
   private get native(): NativeProvider.ProviderLease {
     return this.#native
   }
@@ -1089,6 +1168,22 @@ class HostLease implements HostProviderLease, DisposableLease {
     timer.unref?.()
     this.#retired.set(native, timer)
   }
+}
+
+class HostIdentityTransitionSession implements NativeProvider.ProviderIdentityTransitionSession {
+  constructor(
+    readonly native: NativeProvider.ProviderIdentityTransitionSession,
+    readonly call: <T>(operation: () => Promise<T>) => Promise<T>,
+  ) {}
+
+  candidate = () => this.call(() => this.native.candidate())
+  beginPublication = () => this.call(() => this.native.beginPublication())
+  complete = (
+    attempt: IdentityTransitionPublicationAttempt,
+    result: IdentityTransitionPublicationResult,
+  ) => this.call(() => this.native.complete(attempt, result))
+  reconcile = (observation: IdentityTransitionRemoteObservation) =>
+    this.call(() => this.native.reconcile(observation))
 }
 
 function renewalAt(issuedAt: number, ttlSeconds: number): number {
@@ -1299,6 +1394,24 @@ async function nativeCall<T>(operation: () => Promise<T>): Promise<T> {
     return await operation()
   } catch (error) {
     throw mapNativeError(error)
+  }
+}
+
+async function deleteNativeWithRecovery(
+  native: NativeProvider.ProviderLease,
+  reference: IdentityReference,
+): Promise<void> {
+  try {
+    await nativeCall(() => native.delete(reference))
+  } catch (deleteError) {
+    try {
+      const stored = (await nativeCall(() => native.list()))
+        .find(value => value.reference.identityId === reference.identityId)
+      if (stored === undefined) return
+    } catch {
+      // Preserve the original delete failure when its outcome cannot be proven.
+    }
+    throw deleteError
   }
 }
 

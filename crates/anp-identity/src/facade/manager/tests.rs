@@ -76,6 +76,28 @@ fn manager_and_engine_open_each_others_store_without_schema_changes() {
 }
 
 #[test]
+fn manager_delete_refreshes_a_registry_generation_advanced_by_another_store_view() {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = IdentityManager::initialize(config(root.path(), [0x62; 32])).unwrap();
+    let first = manager
+        .create_engine_for_test(spec("delete-after-generation-change"))
+        .unwrap();
+    let reference = first.reference();
+
+    let mut concurrent =
+        crate::DidStore::open_injected(root.path(), "facade-test", [0x62; 32]).unwrap();
+    concurrent
+        .create_identity(spec("concurrent-registry-change"))
+        .unwrap();
+
+    manager
+        .delete(&reference, DeleteIdentityRequest::default())
+        .unwrap();
+    assert_eq!(manager.list().unwrap().len(), 1);
+    assert!(manager.get(&reference).is_err());
+}
+
+#[test]
 fn manager_maps_engine_failures_to_stable_categories() {
     let missing = tempfile::tempdir().unwrap();
     assert_eq!(

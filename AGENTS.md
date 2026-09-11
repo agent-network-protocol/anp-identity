@@ -1,5 +1,12 @@
 # Repository Guidelines
 
+## Shared rules
+
+Engineering work follows [AI Coding Rules](../../awiki-harness/rules/ai-coding-rules.md).
+Behavior changes and verification follow the relevant [Verification Policy](../../awiki-harness/rules/verification-policy.md)
+sections; production behavior needs owning unit coverage and applicable System/product E2E review.
+If Harness is absent, use local docs/tests/CI and disclose missing acceptance evidence.
+
 - Scope v1 to E1 identities. Do not add K1, PlainLegacy, P-256 legacy E2EE,
   backup, root-provider rekey, or root-control rotation. The approved private-key
   egress exception is the default-off `root-export` Rust API used by the
@@ -15,8 +22,8 @@
   and use generation/CAS checks. Recovery and orphan cleanup follow the same rule.
 - `PublicationUncertain` may only transition through reconcile. It must never
   expose a direct abort path.
-- Add or update tests in the same task as every behavior change. Keep tests in
-  dedicated test files unless private helper access requires a small unit test.
+- Keep tests in dedicated files unless private helper access requires a small
+  unit test. Shared Verification Policy defines coverage and product E2E ownership.
 - Prefer the existing `anp` crate and the referenced im-core vault code over
   duplicate cryptographic or storage implementations.
 - Keep `key-import` as a permanent, default-off feature and exclude it from the

@@ -62,6 +62,7 @@ pub struct WrappedRootEnvelope {
     pub signature_b64u: String,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootTransferExportSpec {
     pub target_did: String,
@@ -224,6 +225,7 @@ impl DidIdentity {
         record.root_capability = RootCapabilityState::Active;
         record.pending_root_transfer = None;
         record.document = spec.document;
+        record.initial_publication_pending = false;
         record.checkpoint = Some(DocumentCheckpoint {
             document_version: spec.evidence.document_version,
             registry_version: spec.evidence.registry_version,

@@ -270,6 +270,7 @@ impl DidStore {
             local_authorization,
             created_at: built.created_at,
         });
+        record.initial_publication_pending = true;
         write_identity(self.runtime.root(), &guard, &record)?;
         maybe_fail(failure, CreationFailurePoint::IdentityCreatingPersisted)?;
 

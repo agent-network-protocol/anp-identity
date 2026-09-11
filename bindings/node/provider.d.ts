@@ -3,11 +3,17 @@ import type {
   DocumentChangeOutcome,
   DocumentChangeRequest,
   IdentityDescriptor,
+  IdentityTransitionOutcome,
+  IdentityTransitionPublicationAttempt,
+  IdentityTransitionPublicationResult,
+  IdentityTransitionRemoteObservation,
+  IdentityTransitionRequest,
   IdentityManagerConfig,
   IdentityReference,
   JsonValue,
   OriginProofRequest,
   PreparedDocumentChange,
+  PreparedIdentityTransition,
   PublicIdentity,
   PublicationAttempt,
   PublicationResult,
@@ -302,6 +308,12 @@ export interface ProviderLease {
   resumeDocumentChange(
     reference: IdentityReference,
   ): Promise<ProviderDocumentChangeSession | undefined>
+  prepareIdentityTransition(
+    request: IdentityTransitionRequest,
+  ): Promise<ProviderIdentityTransitionSession>
+  resumeIdentityTransition(
+    expectedCurrentDid: string,
+  ): Promise<ProviderIdentityTransitionSession | undefined>
   adoptVerifiedDocument(
     reference: IdentityReference,
     remote: VerifiedRemoteDocument,
@@ -337,6 +349,18 @@ export interface ProviderDocumentChangeSession {
     result: PublicationResult,
   ): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+}
+
+export interface ProviderIdentityTransitionSession {
+  candidate(): Promise<PreparedIdentityTransition>
+  beginPublication(): Promise<IdentityTransitionPublicationAttempt>
+  complete(
+    attempt: IdentityTransitionPublicationAttempt,
+    result: IdentityTransitionPublicationResult,
+  ): Promise<IdentityTransitionOutcome>
+  reconcile(
+    observation: IdentityTransitionRemoteObservation,
+  ): Promise<IdentityTransitionOutcome>
 }
 
 export interface ProviderEnrollmentSession {

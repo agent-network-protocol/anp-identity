@@ -37,16 +37,23 @@ See [BOUNDARY.md](./BOUNDARY.md) for the complete trust model.
 
 ## Installation
 
-Install the DSH plugin and the matching native binding:
+Install the DSH plugin:
 
 ```bash
-pnpm add @agent-network-protocol/dsh-anp-identity \
-  @agent-network-protocol/anp-identity
+pnpm add @agent-network-protocol/dsh-anp-identity
 ```
 
-ANP Identity `0.2.x` is required. The TypeScript package contains no native binary itself.
+The package installs the exact compatible ANP Identity wrapper. That wrapper
+selects the prebuilt native package for the current platform; users do not need
+Rust or a source checkout.
 
 Load the Service before its Provider. The included `cordis.patch.yml` is a starting point:
+
+The shipping DSH layer grants `@awiki/dsh-plugin` client and Host Provider
+access by default so the documented two-plugin AWiki installation works without
+an extra local patch. Set `DSH_ANP_IDENTITY_ALLOW_CONSUMERS` and
+`DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS` to explicit JSON arrays to replace
+those defaults for a different deployment.
 
 ```yaml
 - insert:
@@ -54,8 +61,8 @@ Load the Service before its Provider. The included `cordis.patch.yml` is a start
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: /var/lib/dsh/anp-identity
-        allowConsumers: ['example/identity-client', 'awiki']
-        allowProviderConsumers: ['awiki']
+        allowConsumers: ['example/identity-client', '@awiki/dsh-plugin']
+        allowProviderConsumers: ['@awiki/dsh-plugin']
         httpAllowedOrigins:
           example/identity-client: ['https://api.example.com']
 
@@ -132,8 +139,14 @@ The native Store is always the identity truth. On startup:
 - a Store identity absent from catalog and journals becomes `Unclaimed` with no grants;
 - a catalog entry absent from the Store is removed;
 - a pending create intent is completed when its Store identity can be identified;
-- a deletion tombstone rolls forward;
+- a deletion tombstone rolls forward, including after a transient native
+  failure; if a delete response is lost, the plugin removes the tombstone only
+  after confirming that the exact native identity is absent;
 - a corrupt catalog blocks grants and handles. Explicit `recover()` rebuilds entries as `Unclaimed` and never invents authorization.
+
+Host Provider deletion is an explicit local-destructive operation. It discards
+unpublished local document or enrollment state before removing the complete
+identity namespace; it does not revoke or modify the remote DID.
 
 `recover()` is an exclusive, Store-wide operation. Do not use it as a polling API.
 
@@ -145,5 +158,20 @@ npm run verify
 ```
 
 The test suite uses the real native binding for multi-DID, restart, signing, HTTP dispatch, corruption recovery, and tombstone recovery, plus real child processes for catalog locking.
+
+The functional HTTP-signing E2E additionally requires the `dsh` CLI, Node
+`^22.19.0` or `>=24.0.0`, `pnpm`, `uv`, OpenSSL, and the sibling ANP checkout
+expected by the workspace:
+
+```bash
+npm run test:functional
+```
+
+It downloads the exact published native wrapper and host platform package
+pinned by this plugin, packs the DSH plugin from source, and installs them
+into a temporary real DSH profile, then sends signed GET and POST
+requests to an independent HTTPS process backed by the ANP Python verifier. A
+tampered POST must be rejected. The temporary DSH profile, Store, certificate,
+and tarballs are removed after the run.
 
 Licensed under Apache-2.0.

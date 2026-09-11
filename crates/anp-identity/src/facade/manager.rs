@@ -9,7 +9,7 @@ use crate::DidStore;
 use std::sync::{Arc, Mutex};
 
 pub struct IdentityManager {
-    engine: DidStore,
+    pub(crate) engine: DidStore,
 }
 
 impl IdentityManager {
@@ -109,15 +109,26 @@ impl IdentityManager {
     pub fn delete(
         &mut self,
         reference: &IdentityRef,
-        _request: DeleteIdentityRequest,
+        request: DeleteIdentityRequest,
     ) -> IdentityResult<()> {
         self.validate_store(reference)?;
+        // Managed identities and other processes can advance the registry after this
+        // manager was opened. Refresh before taking the generation used by the
+        // namespace-delete CAS so an otherwise valid local deletion is not rejected.
+        self.engine.reload()?;
         let engine = self.engine.open_identity(&reference.did)?;
         if engine.identity_id() != reference.identity_id {
             return Err(IdentityError::IdentityNotFound);
         }
-        self.engine
-            .delete_identity_namespace(&reference.did, self.engine.generation())?;
+        if request.discard_pending_changes {
+            self.engine.delete_identity_namespace_discarding_pending(
+                &reference.did,
+                self.engine.generation(),
+            )?;
+        } else {
+            self.engine
+                .delete_identity_namespace(&reference.did, self.engine.generation())?;
+        }
         Ok(())
     }
 

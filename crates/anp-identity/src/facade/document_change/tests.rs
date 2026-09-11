@@ -159,6 +159,199 @@ fn attempts_and_verified_evidence_are_bound_to_the_candidate() {
     );
 }
 
+#[test]
+fn confirmed_and_reconciled_changes_persist_independent_remote_versions() {
+    for reconcile in [false, true] {
+        let (_root, mut identity) = identity();
+        let mut session = identity
+            .prepare_document_change(rotation("request-v2"))
+            .unwrap();
+        let candidate = session.candidate().clone();
+        let verified = VerifiedPublicationEvidence {
+            document_version: 4,
+            registry_version: 7,
+            ..evidence(&candidate)
+        };
+        let attempt = session.begin_publication().unwrap();
+        let outcome = if reconcile {
+            session
+                .complete(attempt, PublicationResult::Unknown)
+                .unwrap();
+            session
+                .reconcile(VerifiedRemoteDocument {
+                    document: candidate.candidate_document,
+                    evidence: VerifiedPublicationEvidence {
+                        document_digest: format!("sha256:{}", verified.document_digest),
+                        ..verified.clone()
+                    },
+                })
+                .unwrap()
+        } else {
+            session
+                .complete(
+                    attempt,
+                    PublicationResult::Confirmed {
+                        evidence: verified.clone(),
+                    },
+                )
+                .unwrap()
+        };
+        let DocumentChangeOutcome::Committed { identity: public } = outcome else {
+            panic!("verified publication must commit");
+        };
+        assert_eq!(public.revision, 4);
+        let engine = identity.lock_engine().unwrap();
+        let checkpoint = engine.checkpoint().unwrap();
+        assert_eq!(checkpoint.document_version, verified.document_version);
+        assert_eq!(checkpoint.registry_version, verified.registry_version);
+        assert_eq!(
+            checkpoint.document_digest,
+            format!("sha256:{}", verified.document_digest)
+        );
+        assert!(engine.pending_revision().is_none());
+        let persisted =
+            crate::registry::read_identity(engine.runtime().root(), engine.identity_id()).unwrap();
+        assert_eq!(persisted.checkpoint.as_ref(), Some(checkpoint));
+        assert!(persisted.pending_revision.is_none());
+    }
+}
+
+#[test]
+fn publication_checkpoint_rollback_preserves_pending_transaction() {
+    for reconcile in [false, true] {
+        let (_root, mut identity) = identity();
+        let mut first = identity
+            .prepare_document_change(rotation("request-v2"))
+            .unwrap();
+        let candidate = first.candidate().clone();
+        let attempt = first.begin_publication().unwrap();
+        first
+            .complete(
+                attempt,
+                PublicationResult::Confirmed {
+                    evidence: VerifiedPublicationEvidence {
+                        document_version: 2,
+                        registry_version: 7,
+                        ..evidence(&candidate)
+                    },
+                },
+            )
+            .unwrap();
+        let mut next = identity
+            .prepare_document_change(rotation_from("#request-v2", "request-v3"))
+            .unwrap();
+        let candidate = next.candidate().clone();
+        let attempt = next.begin_publication().unwrap();
+        if reconcile {
+            next.complete(attempt.clone(), PublicationResult::Unknown)
+                .unwrap();
+        }
+        let before = identity.lock_engine().unwrap().record().clone();
+        for (document_version, registry_version) in [(3, 6), (1, 8), (2, 8)] {
+            let verified = VerifiedPublicationEvidence {
+                document_version,
+                registry_version,
+                document_digest: candidate.candidate_digest.clone(),
+            };
+            let result = if reconcile {
+                next.reconcile(VerifiedRemoteDocument {
+                    document: candidate.candidate_document.clone(),
+                    evidence: VerifiedPublicationEvidence {
+                        document_digest: format!("sha256:{}", verified.document_digest),
+                        ..verified
+                    },
+                })
+            } else {
+                next.complete(
+                    attempt.clone(),
+                    PublicationResult::Confirmed { evidence: verified },
+                )
+            };
+            assert_eq!(result.err(), Some(IdentityError::Conflict));
+            let engine = identity.lock_engine().unwrap();
+            let persisted =
+                crate::registry::read_identity(engine.runtime().root(), engine.identity_id())
+                    .unwrap();
+            assert_eq!(persisted.generation, before.generation);
+            assert_eq!(persisted.checkpoint, before.checkpoint);
+            assert_eq!(persisted.pending_revision, before.pending_revision);
+        }
+    }
+}
+
+#[test]
+fn initial_proof_refresh_keeps_first_remote_checkpoint_and_consumes_initial_authority() {
+    for reconcile in [false, true] {
+        let service = IdentityService {
+            id: "messages".to_owned(),
+            service_type: "ANPMessageService".to_owned(),
+            service_endpoint: "https://example.com/messages".to_owned(),
+            service_did: None,
+            profiles: Vec::new(),
+            security_profiles: Vec::new(),
+        };
+        let (_root, mut identity) = identity_with_services(vec![service.clone().into()]);
+        let mut session = identity
+            .prepare_document_change(DocumentChangeRequest {
+                changes: vec![DocumentChange::ReplaceServices {
+                    services: vec![service],
+                }],
+            })
+            .unwrap();
+        let candidate = session.candidate().clone();
+        let attempt = session.begin_publication().unwrap();
+        let verified = VerifiedPublicationEvidence {
+            document_version: 1,
+            registry_version: 1,
+            ..evidence(&candidate)
+        };
+        if reconcile {
+            session
+                .complete(attempt, PublicationResult::Unknown)
+                .unwrap();
+            session
+                .reconcile(VerifiedRemoteDocument {
+                    document: candidate.candidate_document,
+                    evidence: VerifiedPublicationEvidence {
+                        document_digest: format!("sha256:{}", verified.document_digest),
+                        ..verified
+                    },
+                })
+                .unwrap();
+        } else {
+            session
+                .complete(attempt, PublicationResult::Confirmed { evidence: verified })
+                .unwrap();
+        }
+        {
+            let engine = identity.lock_engine().unwrap();
+            assert_eq!(engine.checkpoint().unwrap().document_version, 1);
+            assert_eq!(engine.checkpoint().unwrap().registry_version, 1);
+            assert!(!engine.record().initial_publication_pending);
+            assert!(engine.pending_revision().is_none());
+        }
+        let mut next = identity
+            .prepare_document_change(rotation("request-v2"))
+            .unwrap();
+        let candidate = next.candidate().clone();
+        let attempt = next.begin_publication().unwrap();
+        assert_eq!(
+            next.complete(
+                attempt,
+                PublicationResult::Confirmed {
+                    evidence: VerifiedPublicationEvidence {
+                        document_version: 1,
+                        registry_version: 1,
+                        ..evidence(&candidate)
+                    },
+                }
+            )
+            .err(),
+            Some(IdentityError::Conflict)
+        );
+    }
+}
+
 fn rotation(new_fragment: &str) -> DocumentChangeRequest {
     rotation_from("#request", new_fragment)
 }
@@ -193,6 +386,10 @@ fn remote(document: DidDocument) -> VerifiedRemoteDocument {
 }
 
 fn identity() -> (tempfile::TempDir, ManagedIdentity) {
+    identity_with_services(Vec::new())
+}
+
+fn identity_with_services(services: Vec<ServiceSpec>) -> (tempfile::TempDir, ManagedIdentity) {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(IdentityManagerConfig {
         state_root: root.path().to_owned(),
@@ -217,7 +414,7 @@ fn identity() -> (tempfile::TempDir, ManagedIdentity) {
                 },
             ],
             external_keys: Vec::new(),
-            services: Vec::new(),
+            services,
             agent_description_url: None,
             extensions: Vec::new(),
         })

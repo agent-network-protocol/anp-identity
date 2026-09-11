@@ -36,13 +36,16 @@ pub use facade::{
     DidDocument, DocumentChange, DocumentChangeOutcome, DocumentChangeRequest,
     DocumentChangeSession, ExternalPublicKeyInput, ExternalPublicKeyInputMaterial,
     IdentityDescriptor, IdentityError, IdentityManager, IdentityManagerConfig, IdentityRef,
-    IdentityResult, IdentityService, InjectedStoreKey, KeyAlgorithm, KeyPurpose, KeySelector,
-    ManagedIdentity, ManagedKeyInput, ManagedKeyRole, OkpPublicJwk, OriginProofOptions,
-    OriginProofRequest, PreparedDocumentChange, PublicCapabilities, PublicIdentity,
-    PublicIdentityState, PublicKeyDescriptor, PublicKeyInput, PublicationAttempt,
-    PublicationResult, RecoveryReport, RootKeySource, SignRequest, Signature, SignedOriginProof,
-    SigningPurpose, StoreHealth, StoreInfo, VerificationOutcome, VerifiedPublicationEvidence,
-    VerifiedRemoteDocument, VerifyRequest,
+    IdentityResult, IdentityService, IdentityTransitionOutcome,
+    IdentityTransitionPublicationAttempt, IdentityTransitionPublicationEvidence,
+    IdentityTransitionPublicationResult, IdentityTransitionRemoteObservation,
+    IdentityTransitionRequest, IdentityTransitionSession, InjectedStoreKey, KeyAlgorithm,
+    KeyPurpose, KeySelector, ManagedIdentity, ManagedKeyInput, ManagedKeyRole, OkpPublicJwk,
+    OriginProofOptions, OriginProofRequest, PreparedDocumentChange, PreparedIdentityTransition,
+    PublicCapabilities, PublicIdentity, PublicIdentityState, PublicKeyDescriptor, PublicKeyInput,
+    PublicationAttempt, PublicationResult, RecoveryReport, RootKeySource, SignRequest, Signature,
+    SignedOriginProof, SigningPurpose, StoreHealth, StoreInfo, VerificationOutcome,
+    VerifiedPublicationEvidence, VerifiedRemoteDocument, VerifyRequest,
 };
 pub(crate) use identity::{DidIdentity, DidStore};
 pub(crate) use input::{

@@ -1,6 +1,6 @@
 {
   "name": "@agent-network-protocol/dsh-anp-identity",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "ANP Identity management plugin for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -34,6 +34,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "npm run build && vitest run",
+    "test:functional": "node scripts/run-functional-e2e.mjs",
     "update:public": "node scripts/public-snapshot.mjs --update",
     "check:public": "npm run build && node scripts/public-snapshot.mjs",
     "check:generated": "node scripts/check-generated.mjs",
@@ -50,23 +51,23 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AgentNetworkProtocol/anp-identity.git",
+    "url": "git+https://github.com/agent-network-protocol/anp-identity.git",
     "directory": "packages/dsh-anp-identity"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "peerDependencies": {
-    "@agent-network-protocol/anp-identity": "^0.2.0",
-    "@deepseek-ai/cordis": "^4.0.1"
-  },
-  "peerDependenciesMeta": {
-    "@agent-network-protocol/anp-identity": {
-      "optional": true
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
   "dependencies": {
+    "@agent-network-protocol/anp-identity": "0.2.2",
     "@deepseek-ai/schemastery": "^3.18.1",
     "proper-lockfile": "^4.1.2"
   },

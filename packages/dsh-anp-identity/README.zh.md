@@ -38,11 +38,16 @@ ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 
 ## 安装与配置
 
 ```bash
-pnpm add @agent-network-protocol/dsh-anp-identity \
-  @agent-network-protocol/anp-identity
+pnpm add @agent-network-protocol/dsh-anp-identity
 ```
 
-本包需要 ANP Identity `0.2.x`，自身不携带原生二进制。Cordis 中先装载 Service，再装载 Provider：
+本包会安装精确兼容的 ANP Identity wrapper，由 wrapper 自动选择当前平台的预编译原生包；
+用户不需要 Rust 或源码 checkout。Cordis 中先装载 Service，再装载 Provider：
+
+随包发布的 DSH layer 默认向 `@awiki/dsh-plugin` 开放 client 和 Host Provider，确保文档中的
+双插件安装无需额外本地 patch。其他部署可通过
+`DSH_ANP_IDENTITY_ALLOW_CONSUMERS` 与
+`DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS` JSON 数组完整替换默认值。
 
 ```yaml
 - insert:
@@ -50,8 +55,8 @@ pnpm add @agent-network-protocol/dsh-anp-identity \
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: /var/lib/dsh/anp-identity
-        allowConsumers: ['example/identity-client', 'awiki']
-        allowProviderConsumers: ['awiki']
+        allowConsumers: ['example/identity-client', '@awiki/dsh-plugin']
+        allowProviderConsumers: ['@awiki/dsh-plugin']
         httpAllowedOrigins:
           example/identity-client: ['https://api.example.com']
 
@@ -116,8 +121,12 @@ HTTP 认证需要申请 `identity:http-auth`，由 Host 为该 consumer 配置�
 - Store 有身份、catalog/journal 没有记录：重建为无 grant 的 `Unclaimed`；
 - catalog 有记录、Store 没有身份：删除 dangling 条目；
 - create intent 未完成：在能够唯一识别 Store 身份时继续提交；
-- deletion tombstone 未完成：继续删除；
+- deletion tombstone 未完成：可在瞬时原生失败后继续删除；如果删除响应丢失，只有在确认
+  精确的原生身份已经不存在后才移除 tombstone；
 - catalog 损坏：grant 与 handle fail closed。显式执行 `recover()` 后，按 Store 重建为 `Unclaimed`，不会伪造授权。
+
+Host Provider 删除属于显式的本地破坏性操作。它会先丢弃未发布的本地 Document 或
+Enrollment 状态，再删除完整身份 namespace；该操作不会撤销或修改远端 DID。
 
 `recover()` 会获取 Store 级独占锁并执行全量恢复，不应作为轮询 API。
 
@@ -127,5 +136,17 @@ HTTP 认证需要申请 `identity:http-auth`，由 Host 为该 consumer 配置�
 npm install --legacy-peer-deps
 npm run verify
 ```
+
+HTTP 签名功能 E2E 还需要 `dsh` CLI、Node `^22.19.0` 或 `>=24.0.0`、
+`pnpm`、`uv`、OpenSSL，以及工作区约定的相邻 ANP checkout：
+
+```bash
+npm run test:functional
+```
+
+该命令会构建 debug native binding，将 native package、DSH 插件和测试
+consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python verifier
+的独立 HTTPS 进程发送签名 GET 和 POST；篡改后的 POST 必须被拒绝。运行结束
+后会删除临时 DSH profile、Store、证书和 tarball。
 
 许可证：Apache-2.0。

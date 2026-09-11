@@ -2,6 +2,17 @@
 
 All notable changes to ANP Identity are documented here.
 
+## 0.2.2 (Rust), 0.2.1 (Node), 0.1.1 (DSH Host) — 2026-09-08
+
+### Fixed
+
+- Refresh the Store registry generation before identity namespace deletion so
+  recovery or another Store view cannot leave a valid local deletion stuck on
+  a stale compare-and-swap generation.
+- Make Host Provider deletion discard unpublished local mutation state and let
+  DSH resume deletion tombstones or close an operation whose native delete
+  succeeded before its response was lost.
+
 ## 0.2.0 — first public API release
 
 `0.2.0` establishes the supported application surface before the project is

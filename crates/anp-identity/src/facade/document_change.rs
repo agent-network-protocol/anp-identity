@@ -231,15 +231,16 @@ impl DocumentChangeSession {
             PublicationResult::Confirmed { evidence } => {
                 validate_evidence(&evidence, &self.candidate.candidate_digest)?;
                 match pending.state {
-                    PublicationState::PublicationInFlight => {
-                        engine.mark_published(&self.candidate.operation_id)?;
-                    }
-                    PublicationState::Published => {}
+                    PublicationState::PublicationInFlight | PublicationState::Published => {}
                     PublicationState::Prepared | PublicationState::PublicationUncertain => {
                         return Err(IdentityError::InvalidDocumentChangeState);
                     }
                 }
-                engine.commit_update(&self.candidate.operation_id)?;
+                engine.commit_verified_update(
+                    &self.candidate.operation_id,
+                    false,
+                    &engine_evidence(&evidence),
+                )?;
                 Ok(DocumentChangeOutcome::Committed {
                     identity: project_public_identity(&self.store_id, &engine)?,
                 })
@@ -275,10 +276,20 @@ impl DocumentChangeSession {
         if pending.state != PublicationState::PublicationUncertain {
             return Err(IdentityError::InvalidDocumentChangeState);
         }
-        match engine.reconcile_update(
-            &self.candidate.operation_id,
-            observation.document.as_value(),
-        )? {
+        let outcome = if observation.document == self.candidate.candidate_document {
+            engine.commit_verified_update(
+                &self.candidate.operation_id,
+                true,
+                &engine_evidence(&observation.evidence),
+            )?;
+            ReconcileOutcome::Committed
+        } else {
+            engine.reconcile_update(
+                &self.candidate.operation_id,
+                observation.document.as_value(),
+            )?
+        };
+        match outcome {
             ReconcileOutcome::RemoteOld => Ok(DocumentChangeOutcome::ReadyForPublication),
             ReconcileOutcome::Committed => Ok(DocumentChangeOutcome::Committed {
                 identity: project_public_identity(&self.store_id, &engine)?,
@@ -406,6 +417,18 @@ impl From<IdentityService> for ServiceSpec {
             profiles: value.profiles,
             security_profiles: value.security_profiles,
         }
+    }
+}
+
+fn engine_evidence(evidence: &VerifiedPublicationEvidence) -> crate::VerifiedDocumentEvidence {
+    crate::VerifiedDocumentEvidence {
+        document_version: evidence.document_version,
+        registry_version: evidence.registry_version,
+        document_digest: if evidence.document_digest.starts_with("sha256:") {
+            evidence.document_digest.clone()
+        } else {
+            format!("sha256:{}", evidence.document_digest)
+        },
     }
 }
 

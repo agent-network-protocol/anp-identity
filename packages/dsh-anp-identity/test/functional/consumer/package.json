@@ -1,0 +1,16 @@
+{
+  "name": "@agent-network-protocol/dsh-anp-identity-functional-e2e-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "peerDependencies": {
+    "@agent-network-protocol/dsh-anp-identity": "0.1.0"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  }
+}

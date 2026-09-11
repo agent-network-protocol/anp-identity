@@ -28,7 +28,14 @@ for (const required of ['acquireClient(', 'authenticatedHttp:', 'prepareDocument
 }
 
 const providerDeclaration = await readFile(new URL('../lib/provider-api.d.ts', import.meta.url), 'utf8')
-for (const required of ['ecdhSealed(', 'exportRootKeySealed(', 'prepareHttpSignature(']) {
+for (const required of [
+  'ecdhSealed(',
+  'exportRootKeySealed(',
+  'prepareHttpSignature(',
+  'prepareIdentityTransition(',
+  'resumeIdentityTransition(',
+  'ProviderIdentityTransitionSession',
+]) {
   if (!providerDeclaration.includes(required)) throw new Error(`Host Provider declaration is missing ${required}`)
 }
 

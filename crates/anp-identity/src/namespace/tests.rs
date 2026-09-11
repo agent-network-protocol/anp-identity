@@ -61,7 +61,7 @@ fn namespace_delete_recovery_finishes_every_crash_point_without_touching_other_d
         let bob_did = bob.did().to_string();
         let generation = store.generation();
         assert!(store
-            .delete_identity_namespace_inner(&alice_did, generation, Some(failure))
+            .delete_identity_namespace_inner(&alice_did, generation, false, Some(failure))
             .is_err());
         if failure != NamespaceDeleteFailurePoint::RegistryCommitted {
             assert!(crate::registry::read_registry(store.runtime.root())
@@ -112,6 +112,14 @@ fn namespace_delete_rejects_pending_document_and_root_state() {
         Err(DidError::InvalidPublicationState)
     );
     assert_eq!(identity.root_capability(), RootCapabilityState::Active);
+
+    store
+        .delete_identity_namespace_discarding_pending(&did, store.generation())
+        .unwrap();
+    assert_eq!(
+        store.open_identity(&did).err(),
+        Some(DidError::IdentityNotFound)
+    );
 }
 
 #[test]
