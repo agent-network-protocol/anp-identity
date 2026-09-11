@@ -79,6 +79,7 @@ function request(
         kind,
         parameters: {
           label: "笔记身份",
+          handle: "notes.example",
           domain: "example.com",
           path: "/agents/notes",
         },
@@ -251,6 +252,7 @@ describe("Identity management UI against Host-shaped Remote", () => {
       within(dialog).getByRole("button", { name: "稍后关闭" }),
     );
     expect(within(dialog).queryAllByRole("textbox")).toHaveLength(0);
+    expect(within(dialog).getByText("notes.example")).toBeTruthy();
     expect(
       within(dialog).getByText("仅创建身份，不会同时授予使用权限。"),
     ).toBeTruthy();

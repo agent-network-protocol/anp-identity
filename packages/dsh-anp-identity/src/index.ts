@@ -1039,6 +1039,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       const baseline = await native.list()
       await this.catalogStore.reserveIntent({ schema: CREATE_INTENT_SCHEMA, requestId: operationId,
         consumer: caller.consumer, label: parameters.label, createdAt: new Date().toISOString(),
+        ...(parameters.handle === undefined ? {} : { handle: parameters.handle }),
         authorizationMode: 'user', baselineIdentityIds: baseline.map(item => item.reference.identityId) })
       const identity = await native.create({ profile: 'e1', domain: parameters.domain,
         pathSegments: parameters.path.split('/').filter(Boolean), capabilities: { didWba: true },

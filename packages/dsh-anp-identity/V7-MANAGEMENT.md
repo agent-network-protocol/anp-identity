@@ -29,7 +29,7 @@ const identity = bindIdentityClient(ctx)
 const creation = await identity.requestCreateIdentity({
   requestId: 'stable-create-id',
   purpose: 'Create the identity used by this integration',
-  parameters: { label: 'Work', domain: 'example.com', path: '/agents/work' },
+  parameters: { label: 'Work', handle: 'work.example', domain: 'example.com', path: '/agents/work' },
 })
 // Return immediately to the plugin's caller. Query this ID after notification.
 const result = await identity.getCreateRequest(creation.id)
@@ -49,7 +49,7 @@ if (result.kind === 'create' && result.executionStatus === 'succeeded') {
 }
 ```
 
-Creation and use are separate decisions. Creation does not grant use, publish a document, register a Handle, or disclose keys. The saved Handle is only display metadata. A request's purpose is plugin-declared text, not verified business intent.
+Creation and use are separate decisions. Creation does not grant use, publish a document, register a Handle, or disclose keys. The optional `parameters.handle` is supplied by the requesting plugin, normalized using the existing catalog rules, frozen with the other creation parameters, and displayed read-only for confirmation. Approval reserves and persists it through the existing create intent and local uniqueness checks, including crash reconciliation. Omission remains compatible with older plugins; existing identities are not backfilled. The saved Handle is local metadata, not proof of registration or ownership on an external service. A request's purpose is plugin-declared text, not verified business intent.
 
 The ordinary HTTP API does **not** accept a consumer transport callback: the Host dispatches exactly one attempt with manual redirects, validates the fixed operation, signs internally, and does not return signed outbound headers. Legacy Host APIs keep their previous transport contract. Raw non-management signatures can still be used outside the website list, as stated in the confirmation UI.
 

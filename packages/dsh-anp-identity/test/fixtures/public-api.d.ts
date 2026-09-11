@@ -332,6 +332,7 @@ export interface CreateParameters {
     readonly label: string;
     readonly domain: string;
     readonly path: string;
+    readonly handle?: string;
 }
 export interface CreateResult {
     readonly reference: IdentityReference;

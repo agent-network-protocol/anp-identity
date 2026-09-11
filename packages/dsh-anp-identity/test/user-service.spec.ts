@@ -190,6 +190,38 @@ describe('ordinary plugin authorization with a real native Store', () => {
     await expect(fixture.host().list()).resolves.toEqual([])
   })
 
+  it('freezes a plugin-supplied handle and persists it on confirmed creation across restart', async () => {
+    await using fixture = await userFixture()
+    const input = { ...createInput('plugin-handle'), parameters: { ...createInput('plugin-handle').parameters, handle: 'demo.handle' } }
+    const request = await fixture.first.requestCreateIdentity(input)
+    expect(request).toMatchObject({ kind: 'create', parameters: { handle: 'demo.handle' } })
+    input.parameters.handle = 'replacement.handle'
+    await expect(fixture.first.requestCreateIdentity(input)).rejects.toThrow()
+    await expect(fixture.host().list()).resolves.toEqual([])
+    await fixture.restart()
+    expect(await fixture.first.getCreateRequest(request.id)).toMatchObject({ kind: 'create', parameters: { handle: 'demo.handle' } })
+    const approved = await fixture.service.acquireManagement().decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
+    expect(approved.executionStatus).toBe('succeeded')
+    expect(await fixture.service.acquireManagement().listIdentities()).toMatchObject([{ handle: 'demo.handle', reference: approved.result!.reference }])
+    expect((await fixture.authorizationState()).grants).toEqual([])
+    await fixture.restart()
+    expect(await fixture.service.acquireManagement().listIdentities()).toMatchObject([{ handle: 'demo.handle' }])
+    const duplicate = await fixture.first.requestCreateIdentity({ ...createInput('duplicate-handle'), parameters: { ...createInput('duplicate-handle').parameters, handle: 'demo.handle' } })
+    await fixture.service.acquireManagement().decide({ requestId: duplicate.id, expectedVersion: duplicate.version, decision: 'approve' })
+    expect(await fixture.host().list()).toHaveLength(1)
+    expect(await fixture.first.getCreateRequest(duplicate.id)).not.toMatchObject({ executionStatus: 'succeeded' })
+  })
+
+  it('rejects malformed plugin handles before recording a creation request', async () => {
+    await using fixture = await userFixture()
+    for (const handle of ['', ' bad ', 'has space', 'x'.repeat(129)]) {
+      const input = createInput('invalid-handle')
+      await expect(fixture.first.requestCreateIdentity({ ...input, parameters: { ...input.parameters, handle } })).rejects.toThrow()
+    }
+    expect((await fixture.authorizationState()).requests).toEqual([])
+    expect(await fixture.host().list()).toHaveLength(0)
+  })
+
   it('creates exactly once and keeps creation and use as independent decisions across restart', async () => {
     await using fixture = await userFixture()
     const request = await fixture.first.requestCreateIdentity(createInput('approved'))

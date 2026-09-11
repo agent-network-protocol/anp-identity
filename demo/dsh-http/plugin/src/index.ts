@@ -29,7 +29,7 @@ export default class HttpDemo extends TypertRemoteService {
       const id = randomUUID();
       this.state = { phase: 'creating', events: [], result: null, checks: null, error: null };
       this.reference = undefined; this.grantId = undefined;
-      const request = await this.getClient().requestCreateIdentity({ requestId: `demo-create-${id}`, purpose: '为 HTTP 签名演示创建一个独立测试身份，不发布到域名。', parameters: { label: 'HTTP 签名演示', domain: 'localhost', path: `/demo/${id}` } });
+      const request = await this.getClient().requestCreateIdentity({ requestId: `demo-create-${id}`, purpose: '为 HTTP 签名演示创建一个独立测试身份，不发布到域名。', parameters: { label: 'HTTP 签名演示', handle: `demo-${id}`, domain: 'localhost', path: `/demo/${id}` } });
       this.pending = { kind: 'create', id: request.id };
       this.event('演示插件已申请创建身份，等待你的确认');
     } catch (error) { this.failed(error); } finally { this.busy = false; }

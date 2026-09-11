@@ -48,7 +48,7 @@ The profile is generated with checkout-relative local package sources, not publi
 
 ### Acceptance steps
 
-1. Click **开始演示：申请创建身份**. Confirm the identity creation popup. The displayed domain/path build a DID; this does **not** publish a document or register a Handle.
+1. Click **开始演示：申请创建身份**. The plugin supplies a unique `demo-<UUID>` Handle alongside the name/domain/path. Check it in the read-only creation popup and confirm; the same Handle appears in identity details. The displayed domain/path build a DID; this does **not** publish a document or register/verify the Handle on an external service. Old demo identities without a Handle remain unchanged.
 2. Approve the separate public-document read request with **单次授权**. The plugin enrolls only the public document at the controlled local server.
 3. Click **授权并发送签名请求** and approve the exact `POST /hello` request. The Host signs and dispatches it; the server should return **HTTP 200** with `verified: true`.
 4. Expand the result to inspect the headers **received by the demo server**. This is server-side diagnostic disclosure, not an API returning reusable outbound headers to an ordinary plugin.

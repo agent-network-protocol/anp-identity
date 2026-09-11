@@ -611,12 +611,15 @@ function IdentityModal({
             <dl className="anpi-parameters">
               <dt>身份名称</dt>
               <dd>{request.parameters.label}</dd>
+              <dt>Handle</dt>
+              <dd>{request.parameters.handle ?? "未提供"}</dd>
               <dt>DID 域名</dt>
               <dd>{request.parameters.domain}</dd>
               <dt>身份路径</dt>
               <dd>{request.parameters.path}</dd>
             </dl>
             <p>参数由插件提供，请确认后继续。</p>
+            <p className="anpi-small">Handle 由申请插件提供，保存不代表已在服务端注册或验证。</p>
             <p className="anpi-small">
               用于生成身份标识和确定文档地址，创建时不会自动发布。
             </p>

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import lockfile from 'proper-lockfile'
+import { normalizeHandle } from './catalog.js'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
 import type {
   AccessAuthorizationRequest, AuthorizationDecision, AuthorizationExecution,
@@ -116,7 +117,8 @@ export class AuthorizationEngine {
 
   async requestCreate(verifiedCaller: VerifiedCaller, input: RequestCreateInput): Promise<CreateAuthorizationRequest> {
     const source = caller(verifiedCaller)
-    const parameters: CreateParameters = { label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048) }
+    const parameters: CreateParameters = { label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+      ...(input.parameters.handle === undefined ? {} : { handle: normalizeHandle(text(input.parameters.handle, 128)) }) }
     const domain = new URL(`https://${parameters.domain}`)
     if (domain.host !== parameters.domain || domain.username || domain.password || domain.pathname !== '/' || !parameters.path.startsWith('/') || /[?#]/u.test(parameters.path)) fail('invalid_create_parameters')
     return this.#transaction(async state => {

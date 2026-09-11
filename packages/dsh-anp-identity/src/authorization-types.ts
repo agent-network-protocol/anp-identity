@@ -19,7 +19,7 @@ export interface ControlledOperation {
   readonly signingPurpose?: string
   readonly httpOrigin?: string
 }
-export interface CreateParameters { readonly label: string; readonly domain: string; readonly path: string }
+export interface CreateParameters { readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
 export interface CreateResult { readonly reference: IdentityReference; readonly label: string }
 interface RequestBase {
   readonly id: string
