@@ -615,10 +615,10 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       await this.catalogStore.mutate(catalog => {
         const entry = findEntry(catalog, reference)
         if (entry === undefined) return catalog
-        if (entry.state === 'deleting') return catalog
         if (entry.grantedConsumers.some(value => value !== consumer)) {
           throw pluginError('identity_in_use')
         }
+        if (entry.state === 'deleting') return catalog
         return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
       })
     }, async () => {
