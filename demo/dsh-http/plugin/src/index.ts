@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { bindIdentityClient } from '@agent-network-protocol/dsh-anp-identity/user-client';
 import contribution from './remote.js';
+import { confirmedHandle } from './created-identity.mjs';
 
 export default class HttpDemo extends TypertRemoteService {
   static inject = ['anpIdentity', 'typert'];
@@ -27,7 +28,7 @@ export default class HttpDemo extends TypertRemoteService {
     this.busy = true;
     try {
       const id = randomUUID();
-      this.state = { phase: 'creating', events: [], result: null, checks: null, error: null };
+      this.state = { phase: 'creating', events: [], result: null, checks: null, error: null, handle: null };
       this.reference = undefined; this.grantId = undefined;
       const request = await this.getClient().requestCreateIdentity({ requestId: `demo-create-${id}`, purpose: '为 HTTP 签名演示创建一个独立测试身份，不发布到域名。', parameters: { label: 'HTTP 签名演示', handle: `demo-${id}`, domain: 'localhost', path: `/demo/${id}` } });
       this.pending = { kind: 'create', id: request.id };
@@ -45,6 +46,7 @@ export default class HttpDemo extends TypertRemoteService {
       this.pending = undefined;
       if (job.kind === 'create') {
         if (request.executionStatus !== 'succeeded' || !request.result?.reference) throw new Error('creation_result_unavailable');
+        this.state.handle = confirmedHandle(request);
         this.reference = request.result.reference; this.state.phase = 'publishing'; this.event('身份已创建；创建本身没有授予使用权限');
         const read = await ordinary().requestAccess({ requestId: `demo-read-${randomUUID()}`, identity: this.reference, purpose: '读取公开 DID 文档并提供给本地 Demo Server，用于验签；不传输私钥。', operation: { action: 'read' } });
         this.pending = { kind: 'read', id: read.id };
