@@ -189,6 +189,8 @@ describe("Identity management UI against Host-shaped Remote", () => {
     await act(() => f.controller.refresh());
     const nav = screen.getByRole("navigation", { name: "我的身份" });
     expect(nav.querySelector("svg")).toBeNull();
+    expect(within(nav).getByTitle(identity.handle!).textContent).toBe(identity.handle);
+    expect(screen.getByRole("heading", { name: identity.handle! })).toBeTruthy();
     expect(within(nav).getByTitle(identity.reference.did).textContent).toBe(identity.reference.did);
     fireEvent.click(screen.getByRole("button", { name: "复制 DID" }));
     expect(copy).toHaveBeenLastCalledWith(identity.reference.did);
@@ -199,6 +201,7 @@ describe("Identity management UI against Host-shaped Remote", () => {
     fireEvent.click(screen.getByRole("button", { name: "复制 DID" }));
     expect(copy).toHaveBeenLastCalledWith(second.reference.did);
     expect(screen.getByText("未设置")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: second.label! })).toBeTruthy();
     expect(within(nav).getByRole("button", { name: /个人身份/ }).getAttribute("aria-current")).toBe("true");
   });
   it("shows saved Handle, no creation shortcuts, and current read-only permission details", async () => {
@@ -216,7 +219,7 @@ describe("Identity management UI against Host-shaped Remote", () => {
     const f = fixture([], [grant]);
     f.render();
     await act(() => f.controller.refresh());
-    expect(screen.getByText("work.example.com")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "work.example.com" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /创建身份/ })).toBeNull();
     expect(
       screen.getByRole("button", { name: "删除身份" }).hasAttribute("disabled"),
