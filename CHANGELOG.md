@@ -2,6 +2,29 @@
 
 All notable changes to ANP Identity are documented here.
 
+## 0.2.0-rc.1 (DSH plugin) — 2026-09-12
+
+- Add identity management with plugin-supplied Handles, DID document inspection,
+  creation confirmation, request inbox, permission details and revocation.
+- Separate creation from identity-use approval; support single-operation and
+  persistent revocable grants with an explicit full-permission MVP disclosure.
+- Add catalog v2 migration and recovery, Host-identity exclusion, and short
+  authorization ledger transactions with generation/CAS revalidation.
+- Include a documented, isolated signed-HTTPS demo in the source repository.
+- Preserve release/0815 Host identity-transition and deletion-recovery APIs,
+  AWiki defaults, and the published native runtime dependency at 0.2.2.
+- Publish this candidate under the npm `next` tag; do not advance `latest`.
+
+### Upgrade and security limitations
+
+- Stop old catalog writers before catalog v2 migration. Follow V7-MANAGEMENT.md
+  for coordinated rollback; changing npm tags alone does not roll back storage.
+- Review F2 remains unresolved: same-process root-service/gateway management
+  access is not a security boundary against malicious plugins. This candidate
+  does not include DSH Host-side authentication changes.
+- Identity creation does not publish a DID document, register a Handle, or
+  automatically grant identity use. Native and Rust packages are not re-released.
+
 ## 0.2.2 (Rust), 0.2.1 (Node), 0.1.1 (DSH Host) — 2026-09-08
 
 ### Fixed
