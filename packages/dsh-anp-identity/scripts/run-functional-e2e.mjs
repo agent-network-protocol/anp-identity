@@ -10,6 +10,7 @@ const repositoryRoot = resolve(packageRoot, '../..')
 const anpPythonRoot = resolve(repositoryRoot, '../anp')
 const consumerRoot = join(packageRoot, 'test/functional/consumer')
 const verifierScript = join(packageRoot, 'test/functional/http_verifier.py')
+const verifyPublished = process.argv.includes('--published')
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'dsh-anp-http-functional-e2e-'))
 const packRoot = join(temporaryRoot, 'packs')
@@ -34,7 +35,9 @@ try {
   }
   const nativeTarball = await packRegistry(`@agent-network-protocol/anp-identity@${nativeVersion}`)
   const platformTarball = await packRegistry(`@agent-network-protocol/anp-identity-${target}@${nativeVersion}`)
-  const pluginTarball = await pack(packageRoot, packRoot)
+  const pluginTarball = verifyPublished
+    ? await packRegistry(`${manifest.name}@${manifest.version}`)
+    : await pack(packageRoot, packRoot)
   const consumerTarball = await pack(consumerRoot, packRoot)
 
   await run('openssl', [
@@ -97,7 +100,9 @@ try {
   process.stdout.write(`${JSON.stringify({
     status: 'passed',
     dsh: 'real-profile',
-    installation: 'candidate-plugin-and-published-native-tarballs',
+    installation: verifyPublished
+      ? 'published-plugin-and-native-tarballs'
+      : 'candidate-plugin-and-published-native-tarballs',
     https: true,
     getStatus: result.get.verified ? 200 : undefined,
     postStatus: result.post.verified ? 200 : undefined,
