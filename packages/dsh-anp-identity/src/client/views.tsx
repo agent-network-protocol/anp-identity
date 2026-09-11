@@ -242,7 +242,7 @@ export function IdentitySettings({
                       <Button
                         disabled={view.pending}
                         onClick={() => {
-                          void controller.revoke(grant);
+                          void controller.openRevoke(grant.id);
                         }}
                       >
                         撤销
@@ -479,8 +479,8 @@ export function IdentityOverlay({
   const key =
     modal.kind === "request" || modal.kind === "result"
       ? `${modal.review.request.id}:${modal.review.request.version}`
-      : modal.kind === "permissions"
-        ? modal.grant.id
+      : modal.kind === "permissions" || modal.kind === "revoke"
+        ? `${modal.kind}:${modal.grant.id}`
         : identityKey(identityReference(modal.identity));
   return <IdentityModal key={key} controller={controller} />;
 }
@@ -688,6 +688,22 @@ function IdentityModal({
         </div>
       </>
     );
+  } else if (modal.kind === "revoke") {
+    title = "撤销授权";
+    content = (
+      <>
+        <h3>{modal.grant.caller.displayName}</h3>
+        <p className="anpi-small">{modal.grant.caller.consumer}</p>
+        <p>{identityLabel(modal.identity)}{modal.identity.handle ? ` · ${modal.identity.handle}` : ""}</p>
+        <p className="anpi-small anpi-break">{modal.identity.reference.did}</p>
+        <p>将撤销此插件的{modeLabel(modal.grant.mode)}。已发出的请求可能仍会完成，也不会注销远端登录。</p>
+        <p className="anpi-small">撤销后不会自动再次弹窗；如需恢复，可在授权请求历史中重新申请。</p>
+        <div className="anpi-footer">
+          <Button disabled={view.pending} onClick={() => controller.closeModal()}>取消</Button>
+          <Button variant="primary" disabled={view.pending} onClick={() => { void controller.revoke(); }}>确认撤销</Button>
+        </div>
+      </>
+    );
   } else {
     title = "删除身份";
     content = (
@@ -828,7 +844,9 @@ function AccessForm({
           </label>
         </div>
       </fieldset>
-      {request.operation ? (
+      {mode === "permanent" ? (
+        <p className="anpi-operation">持续授权：可读取公开身份、签名，并请求下列全部网站，直到你撤销。不仅限于当前操作。</p>
+      ) : request.operation ? (
         <p className="anpi-operation">本次操作：{request.operation.summary}</p>
       ) : (
         mode === "once" && (

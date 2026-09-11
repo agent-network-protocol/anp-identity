@@ -298,6 +298,13 @@ describe("Identity management UI against Host-shaped Remote", () => {
       within(dialog).getByText("签名可在外部使用，不受网站列表限制。"),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /永久授权/ }));
+    expect(within(dialog).queryByText(/本次操作：/)).toBeNull();
+    expect(within(dialog).getByText(/持续授权：可读取公开身份、签名，并请求下列全部网站，直到你撤销/)).toBeTruthy();
+    expect(within(dialog).getByText(/网站：https:\/\/api.example.com/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /单次授权/ }));
+    expect(within(dialog).getByText("本次操作：GET https://api.example.com/profile")).toBeTruthy();
+    expect(within(dialog).queryByText(/持续授权：/)).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: /永久授权/ }));
     fireEvent.click(screen.getByRole("button", { name: "允许授权" }));
     await waitFor(() =>
       expect(f.remote.decide).toHaveBeenCalledWith({
@@ -328,7 +335,27 @@ describe("Identity management UI against Host-shaped Remote", () => {
     expect(screen.getByText(/原插件未提供明确操作/)).toBeTruthy();
     expect(f.remote.decide).not.toHaveBeenCalled();
   });
-  it("closes a stale permission modal when the authoritative grant was revoked elsewhere", async () => {
+  it("confirms permanent revocation with plugin and identity and does nothing on cancellation", async () => {
+    const grant: AuthorizationGrant = { id: "grant", requestId: "r", caller, identity: identity.reference, snapshot, mode: "permanent", version: 1, approvedAt: 1, status: "active" };
+    const f = fixture([], [grant]);
+    f.render();
+    await act(() => f.controller.refresh());
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    const dialog = await screen.findByRole("dialog", { name: "撤销授权" });
+    expect(within(dialog).getByText(caller.displayName)).toBeTruthy();
+    expect(within(dialog).getByText(identity.reference.did)).toBeTruthy();
+    expect(f.remote.revoke).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.remote.revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    const confirmation = await screen.findByRole("dialog", { name: "撤销授权" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "确认撤销" }));
+    await waitFor(() => expect(f.remote.revoke).toHaveBeenCalledExactlyOnceWith({ grantId: grant.id, expectedVersion: grant.version }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it.each(["权限详情", "撤销"])("closes a stale %s modal when the authoritative grant was revoked elsewhere", async trigger => {
     const grant: AuthorizationGrant = {
       id: "grant",
       requestId: "r",
@@ -343,7 +370,7 @@ describe("Identity management UI against Host-shaped Remote", () => {
     const f = fixture([], [grant]);
     f.render();
     await act(() => f.controller.refresh());
-    fireEvent.click(screen.getByRole("button", { name: "权限详情" }));
+    fireEvent.click(screen.getByRole("button", { name: trigger }));
     await screen.findByRole("dialog");
     await f.remote.revoke({
       grantId: grant.id,

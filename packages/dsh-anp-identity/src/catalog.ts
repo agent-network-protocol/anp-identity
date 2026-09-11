@@ -57,6 +57,9 @@ export interface CreateIntent {
 }
 
 export type CatalogFaultPoint =
+  | 'before_backup_temp_write'
+  | 'after_backup_temp_sync'
+  | 'after_backup_rename'
   | 'before_catalog_temp_write'
   | 'after_catalog_temp_sync'
   | 'after_catalog_rename'
@@ -102,17 +105,9 @@ export class CatalogStore {
       if (isRecord(value) && value.schema === 'anp-identity-catalog/1') {
         const upgraded = parseCatalog({ ...value, schema: CATALOG_SCHEMA })
         // Preserve legacy associations exactly; never synthesize user grants.
-        const backup = await open(`${this.catalogPath}.before-v2`, 'wx', 0o600).catch(async error => {
-          if (isNodeError(error, 'EEXIST')) {
-            const prior = await readFile(`${this.catalogPath}.before-v2`)
-            if (!prior.equals(bytes)) throw pluginError('catalog_conflict')
-            return undefined
-          }
-          throw error
-        })
-        if (backup) {
-          try { await backup.writeFile(bytes); await backup.sync() } finally { await backup.close() }
-        }
+        // The validated live v1 catalog is authoritative while holding the lock.
+        // Repair leftovers from the former non-atomic backup writer on retry.
+        await this.writeBytesAtomic(`${this.catalogPath}.before-v2`, bytes, 'backup')
         await this.writeCatalog({ ...upgraded, catalogGeneration: upgraded.catalogGeneration + 1 })
       } else parseCatalog(value)
     })
@@ -310,19 +305,23 @@ export class CatalogStore {
     value: unknown,
     kind: 'catalog' | 'intent',
   ): Promise<void> {
+    await this.writeBytesAtomic(path, Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8'), kind)
+  }
+
+  private async writeBytesAtomic(path: string, bytes: Buffer, kind: 'catalog' | 'intent' | 'backup'): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
     const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
     let handle: FileHandle | undefined
     try {
-      this.#fault(kind === 'catalog' ? 'before_catalog_temp_write' : 'before_intent_temp_write')
+      this.#fault(`before_${kind}_temp_write`)
       handle = await open(temp, 'wx', 0o600)
-      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
+      await handle.writeFile(bytes)
       await handle.sync()
-      this.#fault(kind === 'catalog' ? 'after_catalog_temp_sync' : 'after_intent_temp_sync')
+      this.#fault(`after_${kind}_temp_sync`)
       await handle.close()
       handle = undefined
       await rename(temp, path)
-      this.#fault(kind === 'catalog' ? 'after_catalog_rename' : 'after_intent_rename')
+      this.#fault(`after_${kind}_rename`)
       const directory = await open(dirname(path), 'r')
       try {
         await directory.sync()

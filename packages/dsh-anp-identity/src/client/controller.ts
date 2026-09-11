@@ -20,7 +20,7 @@ export type ManagerModal =
   | { readonly kind: "request"; readonly review: RequestReview }
   | { readonly kind: "result"; readonly review: RequestReview }
   | {
-      readonly kind: "permissions";
+      readonly kind: "permissions" | "revoke";
       readonly grant: AuthorizationGrant;
       readonly identity: ManagedIdentitySummary;
     }
@@ -175,7 +175,7 @@ export class IdentityController {
       this.patch({ grants: grants.filter((g) => g.status === "active") });
       const modal = this.view.modal;
       if (
-        modal?.kind === "permissions" &&
+        (modal?.kind === "permissions" || modal?.kind === "revoke") &&
         !grants.some(
           (g) =>
             g.id === modal.grant.id &&
@@ -261,6 +261,12 @@ export class IdentityController {
     }
   }
   async openPermissions(grantId: string): Promise<void> {
+    await this.openGrantModal(grantId, "permissions");
+  }
+  async openRevoke(grantId: string): Promise<void> {
+    await this.openGrantModal(grantId, "revoke");
+  }
+  private async openGrantModal(grantId: string, kind: "permissions" | "revoke"): Promise<void> {
     if (this.view.modal || this.view.pending) return;
     this.captureFocus();
     try {
@@ -270,19 +276,24 @@ export class IdentityController {
       if (!grant || !identity)
         throw new Error("The authorization is no longer active");
       this.patch({
-        modal: { kind: "permissions", grant, identity },
+        modal: { kind, grant, identity },
         error: null,
       });
     } catch (error) {
       this.fail(error);
     }
   }
-  async revoke(grant: AuthorizationGrant): Promise<void> {
+  async revoke(): Promise<void> {
+    const modal = this.view.modal;
+    if (modal?.kind !== "revoke") return;
+    const grant = modal.grant;
     await this.action(async () => {
       await this.call("revoke", {
         grantId: grant.id,
         expectedVersion: grant.version,
       });
+      this.patch({ pending: false });
+      this.closeModal();
       await this.refresh();
     });
   }

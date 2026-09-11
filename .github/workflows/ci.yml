@@ -71,3 +71,18 @@ jobs:
           npm ci --legacy-peer-deps
           npm run verify
           npm pack --dry-run
+      - name: Signed HTTP demo
+        working-directory: anp-identity/demo/dsh-http
+        run: |
+          node build.mjs
+          node setup.mjs
+          node server/index.mjs &
+          verifier_pid=$!
+          trap 'kill "$verifier_pid" 2>/dev/null || true' EXIT
+          NODE_EXTRA_CA_CERTS="$PWD/runtime/tls/ca.crt" node --input-type=module -e '
+            for (let attempt = 0; ; attempt++) {
+              try { const response = await fetch("https://127.0.0.1:19443/health"); if (response.ok) break; } catch {}
+              if (attempt >= 49) throw new Error("Demo server did not become ready");
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }'
+          node --test test/*.test.mjs

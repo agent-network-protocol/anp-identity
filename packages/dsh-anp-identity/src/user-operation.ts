@@ -71,7 +71,7 @@ export async function normalizeOperation(operation: UserOperation): Promise<{
     ...(body === undefined ? {} : { body: Uint8Array.from(body) }),
   })
   return {
-    frozen: { ...fingerprint('identity:http-auth', `${request.method} ${url.origin}${url.pathname}`, {
+    frozen: { ...fingerprint('identity:http-auth', `${request.method} ${url.origin}${url.pathname}${url.href.includes('?') ? '（包含查询参数，内容未展示）' : ''}`, {
       action: 'http', url: request.url, method: request.method, headers: [...request.headers],
       body: body === undefined ? null : Buffer.from(body).toString('base64'),
       credentials: request.credentials, cache: request.cache, mode: request.mode,
