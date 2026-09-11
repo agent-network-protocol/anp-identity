@@ -1,0 +1,7 @@
+{
+  "name": "anp-http-demo", "version": "0.0.0-local", "private": true, "type": "module",
+  "exports": { ".": "./lib/index.js", "./client": "./lib/client.js", "./remote": "./lib/remote.js", "./package.json": "./package.json", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "dependencies": { "zod": "^4.6.2" },
+  "peerDependencies": { "@agent-network-protocol/dsh-anp-identity": "*", "@deepseek-ai/cordis": "^4.0.2", "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-api-remotes", "@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-ui-settings"] } }
+}

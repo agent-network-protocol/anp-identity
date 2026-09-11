@@ -29,6 +29,10 @@ import {
 } from './catalog.js'
 import { pluginError, AnpIdentityPluginError } from './errors.js'
 import { createAuthenticatedHttp } from './http-auth.js'
+import { UserIdentityService, requestSigningKid } from './user-service.js'
+import type { UserIdentityClient } from './user-client.js'
+import type { CapabilitySnapshot, CreateParameters, CreateResult, VerifiedCaller } from './authorization-types.js'
+import type { IdentityManagement, ManagedIdentitySummary } from './management-types.js'
 import {
   ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL,
   ANP_IDENTITY_PROVIDER_PROTOCOL,
@@ -87,6 +91,8 @@ export interface Config {
   readonly httpAllowedOrigins?: Record<string, string[]>
   /** Run native Store recovery when a Provider opens. */
   readonly recoveryOnOpen?: boolean
+  /** Installed plugin identifiers requiring explicit user decisions instead of legacy access. */
+  readonly userConsumers?: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -95,6 +101,7 @@ export const Config: z<Config> = z.object({
   allowProviderConsumers: z.array(z.string()).default([]),
   httpAllowedOrigins: z.dict(z.array(z.string())).default({}),
   recoveryOnOpen: z.boolean().default(true),
+  userConsumers: z.array(z.string()).default([]),
 })
 
 interface ResolvedConfig {
@@ -103,6 +110,7 @@ interface ResolvedConfig {
   readonly allowProviderConsumers: ReadonlySet<string>
   readonly httpAllowedOrigins: ReadonlyMap<string, ReadonlySet<string>>
   readonly recoveryOnOpen: boolean
+  readonly userConsumers: ReadonlySet<string>
 }
 
 interface ProviderSlot {
@@ -117,6 +125,20 @@ interface ProviderSlot {
 
 interface DisposableLease {
   dispose(): void | Promise<void>
+}
+
+interface InstalledEntry {
+  readonly options: { readonly name: string }
+  readonly disabled?: boolean
+  readonly fiber?: { readonly state: number }
+}
+
+/** The Loader retains Registry.plugin's awaitable wrapper, not its raw fiber. */
+function sameFiber(left: object | undefined, right: object | undefined): boolean {
+  if (!left || !right) return false
+  const original = (fiber: object): object =>
+    (fiber as { ctx?: Context }).ctx?.fiber ?? fiber
+  return original(left) === original(right)
 }
 
 interface InternalService {
@@ -183,12 +205,48 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   private readonly resolvedConfig: ResolvedConfig
   private readonly catalogStore: CatalogStore
   private providerSlot: ProviderSlot | undefined
+  private readonly users: UserIdentityService
+  private readonly hostContext: Context
+  private readonly disabledFences = new Set<string>()
+  private readonly lifecycleWrites = new Set<Promise<void>>()
 
   public constructor(ctx: Context, config: Config) {
     super(ctx, 'anpIdentity')
     this.resolvedConfig = resolveConfig(config)
     this.catalogStore = new CatalogStore(this.resolvedConfig.stateRoot)
+    this.hostContext = ctx
+    this.users = new UserIdentityService(this.resolvedConfig.stateRoot, {
+      ensureReady: async () => { await this.awaitProvider(this.requireSlot()) },
+      resolveCaller: context => this.resolveInstalledCaller(context),
+      validateCaller: async caller => { this.assertInstalledCaller(caller) },
+      resolveSnapshot: (caller, reference) => this.userSnapshot(caller, reference),
+      createIdentity: (id, caller, parameters) => this.createConfirmed(id, caller, parameters),
+      reconcileCreation: (id, caller, parameters) => this.reconcileConfirmed(id, caller, parameters),
+      withNative: operation => this.withUserNative(operation),
+    })
+    const observe = ctx.on.bind(ctx) as (name: string, listener: (...values: unknown[]) => void) => () => void
+    observe('loader/partial-dispose', (rawEntry, rawPrevious, active) => {
+      if (ctx.fiber.state > 2) return
+      const entry = rawEntry as InstalledEntry
+      const previous = rawPrevious as { name?: string }
+      if (active === false || entry?.disabled) this.cancelDisabledRequests(previous?.name ?? entry?.options?.name)
+      try {
+        for (const candidate of this.installedEntries()) {
+          if (candidate.disabled) this.cancelDisabledRequests(candidate.options.name)
+        }
+      } catch { /* The Host may not have installed a loader yet. */ }
+    })
+    ctx.on('internal/plugin', fiber => {
+      if (ctx.fiber.state > 2) return
+      try {
+        for (const entry of this.installedEntries()) {
+          if (sameFiber(entry.fiber, fiber) && entry.disabled) this.cancelDisabledRequests(entry.options.name)
+        }
+      } catch { /* A transient missing loader is not an uninstall decision. */ }
+    })
     ctx.effect(() => async () => {
+      await this.users.ready.catch(() => {})
+      await Promise.allSettled([...this.lifecycleWrites])
       const slot = this.providerSlot
       if (slot !== undefined) await this.disposeSlot(slot)
     }, 'anp-identity: dispose native provider')
@@ -246,7 +304,9 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   }
 
   async acquireClient(input: ClientRequest): Promise<IdentityClientLease> {
+    this.assertLegacyCallerContext(input.consumer)
     const request = validateClientRequest(input, this.resolvedConfig)
+    this.assertLegacyConsumer(request.consumer)
     const slot = this.requireSlot()
     const provider = await this.awaitProvider(slot)
     const capabilities = nativeClientCapabilities(request.capabilities)
@@ -274,6 +334,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   }
 
   acquireProvider(input: ProviderRequest): HostProviderLease {
+    this.assertLegacyCallerContext(input.consumer)
     const request = validateProviderRequest(input, this.resolvedConfig)
     const slot = this.requireSlot()
     const provider = slot.provider
@@ -306,6 +367,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     input: ListIdentitiesInput | undefined,
   ): Promise<IdentityDescriptor[]> {
     lease.assertCapability('identity:read')
+    this.assertLegacyConsumer(lease.consumer)
     const catalog = await this.loadCatalog(lease.slot)
     const native = await nativeCall(() => lease.native.list())
     const byId = new Map(native.map(value => [value.reference.identityId, value]))
@@ -329,6 +391,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     input: CreateIdentityRequest,
   ): Promise<ManagedIdentityClient> {
     lease.assertCapability('identity:create')
+    this.assertLegacyConsumer(lease.consumer)
     validateCreateInput(input)
     const requestId = input.requestId ?? randomUUID()
     const createdAt = new Date().toISOString()
@@ -345,6 +408,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     try {
       identity = await this.catalogStore.withNativeCreateLock(async () => {
         lease.assertCapability('identity:create')
+        await this.assertNoUnresolvedUserCreate()
         const baseline = await nativeCall(() => lease.native.list())
         await this.catalogStore.updateIntent(requestId, current => ({
           ...current,
@@ -383,7 +447,8 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   ): Promise<void> {
     lease.assertCapability('identity:delete')
     const resolved = await this.resolveAuthorized(lease, reference)
-    await this.catalogStore.mutate((catalog) => {
+    await this.users.ready
+    await this.users.engine.withIdentityDeletion(resolved, async () => { await this.catalogStore.mutate((catalog) => {
       const entry = findEntry(catalog, resolved)
       if (entry === undefined) throw pluginError('identity_not_found')
       if (entry.state !== 'active') throw pluginError('identity_deleting')
@@ -391,19 +456,23 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
         throw pluginError('identity_in_use')
       }
       return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
+    }) }, async () => {
+      await nativeCall(() => lease.native.delete(resolved))
+      await this.catalogStore.mutate(catalog => ({
+        ...catalog,
+        entries: catalog.entries.filter(entry => entry.identityId !== resolved.identityId),
+      }))
     })
-    await nativeCall(() => lease.native.delete(resolved))
-    await this.catalogStore.mutate(catalog => ({
-      ...catalog,
-      entries: catalog.entries.filter(entry => entry.identityId !== resolved.identityId),
-    }))
   }
 
   private async recoverForClient(lease: ClientLease): Promise<RecoveryReport> {
     lease.assertCapability('identity:recover')
-    const native = await nativeCall(() => lease.native.recover())
-    const report = await this.reconcile(lease.slot, lease.native, true, false)
-    return { ...native, ...report }
+    this.assertLegacyConsumer(lease.consumer)
+    return this.catalogStore.withNativeCreateLock(async () => {
+      const native = await nativeCall(() => lease.native.recover())
+      const report = await this.reconcile(lease.slot, lease.native, true, false)
+      return { ...native, ...report }
+    })
   }
 
   private async setHandleForClient(
@@ -432,6 +501,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   private async assertManagedAccess(lease: ClientLease, reference: IdentityReference): Promise<void> {
     lease.assertActive()
+    this.assertLegacyConsumer(lease.consumer)
     const catalog = await this.loadCatalog(lease.slot)
     assertGrantedEntry(findEntry(catalog, reference), lease.consumer)
   }
@@ -453,8 +523,10 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     consumer: string,
   ): Promise<void> {
     this.assertAllowedConsumer(consumer)
+    this.assertLegacyConsumer(consumer)
     this.assertSlot(slot)
-    await this.catalogStore.mutate((catalog) => {
+    await this.users.ready
+    await this.users.engine.withIdentityAccess(reference, async () => { await this.catalogStore.mutate((catalog) => {
       const entry = findEntry(catalog, reference)
       if (entry === undefined) throw pluginError('identity_not_found')
       if (entry.state === 'deleting') throw pluginError('identity_deleting')
@@ -463,7 +535,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
         state: 'active',
         grantedConsumers: [...new Set([...entry.grantedConsumers, consumer])].sort(),
       })
-    })
+    }) })
   }
 
   private async revokeConsumer(
@@ -504,6 +576,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     try {
       const identity = await this.catalogStore.withNativeCreateLock(async () => {
         this.assertSlot(slot)
+        await this.assertNoUnresolvedUserCreate()
         const baseline = await nativeCall(() => native.list())
         await this.catalogStore.updateIntent(requestId, current => ({
           ...current,
@@ -536,36 +609,25 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     reference: IdentityReference,
   ): Promise<void> {
     this.assertSlot(slot)
-    let catalogEntry: CatalogEntry | undefined
-    try {
-      const catalog = await this.loadCatalog(slot)
-      catalogEntry = findEntry(catalog, reference)
-    } catch (error) {
-      if (!isPluginCode(error, 'catalog_corrupt')) throw error
-      throw pluginError('catalog_corrupt')
-    }
-    if (catalogEntry !== undefined) {
-      if (catalogEntry.grantedConsumers.some(value => value !== consumer)) {
-        throw pluginError('identity_in_use')
-      }
-      if (catalogEntry.state !== 'deleting') {
-        await this.catalogStore.mutate(catalog => {
-          const entry = findEntry(catalog, reference)
-          if (entry === undefined) throw pluginError('identity_not_found')
-          if (entry.grantedConsumers.some(value => value !== consumer)) {
-            throw pluginError('identity_in_use')
-          }
-          return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
-        })
-      }
-    }
-    await deleteNativeWithRecovery(native, reference)
-    if (catalogEntry !== undefined) {
+    await this.users.ready
+    await this.users.engine.withIdentityDeletion(reference, async () => {
+      await this.loadCatalog(slot)
+      await this.catalogStore.mutate(catalog => {
+        const entry = findEntry(catalog, reference)
+        if (entry === undefined) return catalog
+        if (entry.state === 'deleting') return catalog
+        if (entry.grantedConsumers.some(value => value !== consumer)) {
+          throw pluginError('identity_in_use')
+        }
+        return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
+      })
+    }, async () => {
+      await deleteNativeWithRecovery(native, reference)
       await this.catalogStore.mutate(catalog => ({
         ...catalog,
         entries: catalog.entries.filter(entry => entry.identityId !== reference.identityId),
       }))
-    }
+    })
   }
 
   private async createNativeWithRecovery(
@@ -598,6 +660,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   }
 
   private async initializeSlot(slot: ProviderSlot, provider: NativeIdentityProvider): Promise<void> {
+    await this.users.ready
     try {
       await this.catalogStore.initialize()
       slot.catalog = 'ready'
@@ -612,7 +675,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     })
     try {
       if (this.resolvedConfig.recoveryOnOpen) await nativeCall(() => native.recover())
-      await this.reconcile(slot, native, false, false)
+      await this.catalogStore.withNativeCreateLock(() => this.reconcile(slot, native, false, false))
     } finally {
       native.dispose()
     }
@@ -682,6 +745,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     }
 
     catalog = await this.catalogStore.load()
+    const catalogFences = catalog.entries.filter(value => value.state === 'deleting').map(entryReference)
     for (const entry of catalog.entries.filter(value => value.state === 'deleting')) {
       const reference = storeById.get(entry.identityId)
       if (reference !== undefined) {
@@ -702,6 +766,15 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
         known.add(reference.identityId)
       }
     }
+    await this.users.engine.reconcileDeletions({
+      catalogFences,
+      isAbsent: async reference => {
+        const currentNative = await nativeCall(() => native.list())
+        const currentCatalog = await this.catalogStore.load()
+        return !currentNative.some(value => sameReference(value.reference, reference))
+          && !findEntry(currentCatalog, reference)
+      },
+    })
     return {
       catalogRebuilt: false,
       unclaimedIdentityCount: catalog.entries.filter(value => value.state === 'unclaimed').length,
@@ -713,6 +786,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     reference: IdentityRef,
   ): Promise<IdentityReference> {
     lease.assertActive()
+    this.assertLegacyConsumer(lease.consumer)
     const catalog = await this.loadCatalog(lease.slot)
     const entry = 'handle' in reference
       ? catalog.entries.find(value => value.handle === normalizeHandle(reference.handle))
@@ -756,6 +830,255 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     } catch (error) {
       if (isPluginCode(error, 'provider_disposed')) throw error
       throw pluginError('provider_unavailable')
+    }
+  }
+
+  /** Host-bound ordinary facade; request inputs never select a caller. */
+  bindUserConsumer(context: Context): UserIdentityClient {
+    return this.users.bind(context)
+  }
+
+  /** Host-only manager; the ordinary consumer facade never exposes this object. */
+  acquireManagement(): IdentityManagement {
+    if (!sameFiber(this.ctx.fiber, this.hostContext.fiber) && !sameFiber(this.ctx.fiber, this.hostContext.root.fiber)) {
+      throw pluginError('consumer_forbidden')
+    }
+    const ready = async () => { await this.users.ready; await this.awaitProvider(this.requireSlot()) }
+    return Object.freeze({
+      listIdentities: async () => { await ready(); return this.managementIdentities() },
+      listRequests: async (history = false) => {
+        await ready()
+        return (await this.users.engine.listRequests()).filter(request => history ? request.status !== 'pending' : request.status === 'pending')
+      },
+      getRequest: async (id: string) => {
+        await ready()
+        let request = (await this.users.engine.listRequests()).find(value => value.id === id)
+        if (!request) throw pluginError('invalid_request')
+        if (request.kind === 'create' && request.status === 'approved'
+          && (request.executionStatus === 'running' || request.executionStatus === 'unknown')) {
+          request = await this.users.engine.reconcileCreation(id)
+        }
+        const identities = await this.managementIdentities()
+        let unavailableReason: string | undefined
+        try { this.assertInstalledCaller(request.caller) } catch { unavailableReason = 'The requesting plugin is not available.' }
+        let snapshot: CapabilitySnapshot | undefined
+        const snapshots: { identity: IdentityReference; snapshot: CapabilitySnapshot }[] = []
+        if (request.kind === 'access' && request.identity) {
+          try { snapshot = await this.userSnapshot(request.caller, request.identity) }
+          catch { unavailableReason = 'The requested identity or plugin is not available.' }
+        } else if (request.kind === 'access' && unavailableReason === undefined) {
+          for (const identity of identities) {
+            try { snapshots.push({ identity: identity.reference, snapshot: await this.userSnapshot(request.caller, identity.reference) }) }
+            catch { /* Only compatible identities may be selected for ordinary use. */ }
+          }
+        }
+        const allGrants = await this.users.engine.listGrants()
+        const grant = request.kind === 'access' ? allGrants.find(value => value.id === request.grantId) : undefined
+        const permanentIdentities = allGrants.filter(grant => grant.caller.consumer === request.caller.consumer
+          && grant.mode === 'permanent' && grant.status === 'active').map(grant => grant.identity)
+        return { request, identities, snapshots, permanentIdentities, ...(snapshot === undefined ? {} : { snapshot }),
+          ...(grant === undefined ? {} : { grant }),
+          ...(unavailableReason === undefined ? {} : { unavailableReason }) }
+      },
+      decide: async input => { await ready(); return this.users.engine.decide(input) },
+      reauthorize: async input => { await ready(); return this.users.engine.reauthorize(input.requestId, input.expectedVersion) },
+      grants: async reference => { await ready(); return (await this.users.engine.listGrants(reference)).filter(grant => grant.status === 'active') },
+      revoke: async input => { await ready(); await this.users.engine.revoke(input.grantId, input.expectedVersion) },
+      publicDocument: async reference => {
+        await ready()
+        return this.withUserNative(async native => structuredClone((await native.publicIdentity(reference)).document))
+      },
+      deleteIdentity: async input => {
+        await ready()
+        // Preserve the stable creation result before removing its catalog provenance.
+        const entry = findEntry(await this.catalogStore.load(), input.reference)
+        if (entry?.creationOperationId) {
+          const creation = (await this.users.engine.listRequests()).find(request => request.kind === 'create'
+            && request.operationId === entry.creationOperationId)
+          if (creation?.kind === 'create' && creation.result === undefined) {
+            const reconciled = await this.users.engine.reconcileCreation(creation.id)
+            if (!reconciled.result || !sameReference(reconciled.result.reference, input.reference)) throw pluginError('identity_in_use')
+          }
+        }
+        await this.users.engine.withIdentityDeletion(input.reference, async () => {
+          await this.catalogStore.mutate(catalog => {
+            const entry = findEntry(catalog, input.reference)
+            if (!entry) throw pluginError('identity_not_found')
+            if (input.confirmationName !== (entry.label ?? entry.did)) throw pluginError('invalid_request')
+            this.assertNoHostAssociations(entry)
+            return replaceEntry(catalog, entry, { ...entry, state: 'deleting' })
+          })
+        }, async () => {
+          await this.withUserNative(native => native.delete(input.reference))
+          await this.catalogStore.mutate(catalog => ({ ...catalog, entries: catalog.entries.filter(entry => !sameReference(entryReference(entry), input.reference)) }))
+        })
+      },
+      markPrompted: async input => {
+        await ready()
+        await this.users.engine.markPrompted(input.requestId, input.expectedVersion)
+      },
+    } satisfies IdentityManagement)
+  }
+
+  private assertNoHostAssociations(entry: CatalogEntry): void {
+    if (entry.grantedConsumers.some(consumer => !this.resolvedConfig.userConsumers.has(consumer))
+      || (!entry.creationOperationId && this.resolvedConfig.allowProviderConsumers.size > 0)) {
+      throw pluginError('identity_in_use')
+    }
+  }
+
+  private async managementIdentities(): Promise<ManagedIdentitySummary[]> {
+    const slot = this.requireSlot()
+    const catalog = await this.loadCatalog(slot)
+    const descriptors = await this.withUserNative(native => native.list())
+    const grants = await this.users.engine.listGrants()
+    return descriptors.map(descriptor => {
+      const entry = findEntry(catalog, descriptor.reference)
+      const integrations = (entry?.grantedConsumers ?? []).filter(consumer => !this.resolvedConfig.userConsumers.has(consumer)).map(consumer => ({
+        consumer, displayName: consumer,
+        kind: this.resolvedConfig.allowProviderConsumers.has(consumer) ? 'provider' as const : 'legacy' as const,
+      }))
+      let deleteBlockedReason: string | undefined
+      if (entry?.state === 'deleting') deleteBlockedReason = 'Identity deletion is in progress.'
+      else if (integrations.length || (!entry?.creationOperationId && this.resolvedConfig.allowProviderConsumers.size > 0)) {
+        deleteBlockedReason = 'This identity has a legacy or Host-managed association.'
+      } else if (grants.some(grant => grant.status === 'active' && sameReference(grant.identity, descriptor.reference))) {
+        deleteBlockedReason = 'Revoke the effective plugin grants before deleting this identity.'
+      }
+      return { ...descriptor, ...(entry?.label === undefined ? {} : { label: entry.label }),
+        ...(entry?.handle === undefined ? {} : { handle: entry.handle }),
+        catalogState: entry?.state ?? 'unclaimed', integrations,
+        ...(deleteBlockedReason === undefined ? {} : { deleteBlockedReason }) }
+    })
+  }
+
+  private installedEntries(): InstalledEntry[] {
+    const loader = (this.hostContext as unknown as { get(name: string): unknown }).get('loader') as
+      { entries?: () => Iterable<InstalledEntry> } | undefined
+    if (typeof loader?.entries !== 'function') throw pluginError('consumer_forbidden')
+    return [...loader.entries()]
+  }
+
+  private resolveInstalledCaller(context: Context): VerifiedCaller {
+    const entry = this.installedEntries().find(value => sameFiber(value.fiber, context.fiber))
+    if (!entry || entry.disabled || !this.resolvedConfig.userConsumers.has(entry.options.name)
+      || ![1, 2].includes(entry.fiber!.state)) throw pluginError('consumer_forbidden')
+    return { consumer: entry.options.name, displayName: entry.options.name }
+  }
+
+  private assertInstalledCaller(caller: VerifiedCaller): void {
+    if (this.disabledFences.has(caller.consumer)) throw pluginError('consumer_forbidden')
+    const entry = this.installedEntries().find(value => value.options.name === caller.consumer
+      && !value.disabled && value.fiber !== undefined && [1, 2].includes(value.fiber.state))
+    if (!entry || !this.resolvedConfig.userConsumers.has(caller.consumer)) throw pluginError('consumer_forbidden')
+  }
+
+  private cancelDisabledRequests(consumer: string | undefined): void {
+    if (!consumer || !this.resolvedConfig.userConsumers.has(consumer) || this.disabledFences.has(consumer)) return
+    this.disabledFences.add(consumer)
+    const pending = this.users.ready.then(() => this.users.engine.cancelPendingForConsumer(consumer)).then(() => {
+      this.disabledFences.delete(consumer)
+    }).catch(() => {
+      // Keep the admission fence on a persistence failure; never silently revive pending approval.
+      this.hostContext.logger.error('ANP Identity could not persist plugin request cancellation.')
+    })
+    this.lifecycleWrites.add(pending)
+    void pending.finally(() => { this.lifecycleWrites.delete(pending) })
+  }
+
+  private assertLegacyConsumer(consumer: string): void {
+    if (this.resolvedConfig.userConsumers.has(consumer)) throw pluginError('capability_forbidden')
+  }
+
+  private assertLegacyCallerContext(consumer: string): void {
+    if (this.resolvedConfig.userConsumers.size === 0
+      || sameFiber(this.ctx.fiber, this.hostContext.fiber) || sameFiber(this.ctx.fiber, this.hostContext.root.fiber)) return
+    const installed = this.installedEntries().find(entry => sameFiber(entry.fiber, this.ctx.fiber))
+    if (!installed || installed.disabled || installed.options.name !== consumer
+      || !installed.fiber || ![1, 2].includes(installed.fiber.state)
+      || this.resolvedConfig.userConsumers.has(installed.options.name)) throw pluginError('consumer_forbidden')
+  }
+
+  private async withUserNative<T>(operation: (native: NativeProvider.ProviderLease) => Promise<T>): Promise<T> {
+    const slot = this.requireSlot()
+    const provider = await this.awaitProvider(slot)
+    const native = provider.acquireLease({ consumer: '@agent-network-protocol/dsh-anp-identity',
+      capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE', 'IDENTITY_SIGN', 'IDENTITY_HTTP_SIGNATURE', 'IDENTITY_DELETE'], ttlSeconds: 300 })
+    try { this.assertSlot(slot); return await operation(native) } finally { native.dispose() }
+  }
+
+  private async userSnapshot(caller: VerifiedCaller, reference: IdentityReference): Promise<CapabilitySnapshot> {
+    this.assertInstalledCaller(caller)
+    const catalog = await this.loadCatalog(this.requireSlot())
+    const entry = findEntry(catalog, reference)
+    if (!entry) throw pluginError('identity_not_found')
+    if (entry.state === 'deleting') throw pluginError('identity_deleting')
+    const identity = await this.withUserNative(native => native.publicIdentity(reference))
+    if (identity.state !== 'active' || !identity.capabilities.didWba) throw pluginError('provider_incompatible')
+    requestSigningKid(identity)
+    return { version: 'ordinary-use/1', capabilities: ['identity:read', 'identity:sign', 'identity:http-auth'],
+      signingPurposes: ['authentication', 'application_assertion'],
+      httpOrigins: [...(this.resolvedConfig.httpAllowedOrigins.get(caller.consumer) ?? [])].sort() }
+  }
+
+  private async createConfirmed(operationId: string, caller: VerifiedCaller, parameters: CreateParameters): Promise<CreateResult> {
+    this.assertInstalledCaller(caller)
+    return this.catalogStore.withNativeCreateLock(async () => this.withUserNative(async native => {
+      const catalog = await this.loadCatalog(this.requireSlot())
+      const existing = catalog.entries.find(entry => entry.creationOperationId === operationId)
+      if (existing) return { reference: entryReference(existing), label: existing.label ?? parameters.label }
+      const prior = (await this.catalogStore.listIntents()).find(intent => intent.requestId === operationId)
+      if (prior) {
+        const result = await this.recoverConfirmedIntent(operationId, parameters, native)
+        if (result) return result
+        throw pluginError('catalog_conflict')
+      }
+      if ((await this.catalogStore.listIntents()).some(intent => intent.reference === undefined)) {
+        throw pluginError('catalog_conflict')
+      }
+      const baseline = await native.list()
+      await this.catalogStore.reserveIntent({ schema: CREATE_INTENT_SCHEMA, requestId: operationId,
+        consumer: caller.consumer, label: parameters.label, createdAt: new Date().toISOString(),
+        authorizationMode: 'user', baselineIdentityIds: baseline.map(item => item.reference.identityId) })
+      const identity = await native.create({ profile: 'e1', domain: parameters.domain,
+        pathSegments: parameters.path.split('/').filter(Boolean), capabilities: { didWba: true },
+        managedKeys: [{ fragment: 'root', role: 'root_control' }, { fragment: 'request', role: 'request_signing' }] })
+      await this.catalogStore.updateIntent(operationId, intent => ({ ...intent, reference: identity.reference }))
+      const entry = await this.catalogStore.commitIntent(operationId)
+      await this.catalogStore.deleteIntent(operationId)
+      return { reference: entryReference(entry), label: entry.label ?? parameters.label }
+    }))
+  }
+
+  private async reconcileConfirmed(operationId: string, _caller: VerifiedCaller, parameters: CreateParameters): Promise<CreateResult | undefined> {
+    return this.catalogStore.withNativeCreateLock(async () => this.withUserNative(async native => {
+      const existing = (await this.loadCatalog(this.requireSlot())).entries.find(entry => entry.creationOperationId === operationId)
+      if (existing) return { reference: entryReference(existing), label: existing.label ?? parameters.label }
+      return this.recoverConfirmedIntent(operationId, parameters, native)
+    }))
+  }
+
+  private async recoverConfirmedIntent(operationId: string, parameters: CreateParameters, native: NativeProvider.ProviderLease): Promise<CreateResult | undefined> {
+    const intent = (await this.catalogStore.listIntents()).find(value => value.requestId === operationId && value.authorizationMode === 'user')
+    if (!intent) return undefined
+    let reference = intent.reference
+    if (!reference) {
+      const known = new Set((await this.catalogStore.load()).entries.map(entry => entry.identityId))
+      const candidates = (await native.list()).filter(item => !intent.baselineIdentityIds.includes(item.reference.identityId) && !known.has(item.reference.identityId))
+      if (candidates.length !== 1) return undefined
+      reference = candidates[0]!.reference
+      const recovered = reference
+      await this.catalogStore.updateIntent(operationId, current => ({ ...current, reference: recovered }))
+    }
+    await native.publicIdentity(reference)
+    const entry = await this.catalogStore.commitIntent(operationId)
+    await this.catalogStore.deleteIntent(operationId)
+    return { reference: entryReference(entry), label: entry.label ?? parameters.label }
+  }
+
+  private async assertNoUnresolvedUserCreate(): Promise<void> {
+    if ((await this.catalogStore.listIntents()).some(intent => intent.authorizationMode === 'user' && !intent.reference)) {
+      throw pluginError('catalog_conflict')
     }
   }
 
@@ -1202,6 +1525,12 @@ function resolveConfig(config: Config): ResolvedConfig {
   if (!isAbsolute(stateRoot)) throw new TypeError('anp-identity: stateRoot must be absolute')
   const allowConsumers = new Set((config.allowConsumers ?? []).map(validateConsumer))
   const allowProviderConsumers = new Set((config.allowProviderConsumers ?? []).map(validateConsumer))
+  const userConsumers = new Set((config.userConsumers ?? []).map(validateConsumer))
+  for (const consumer of userConsumers) {
+    if (!allowConsumers.has(consumer) || allowProviderConsumers.has(consumer)) {
+      throw new TypeError('anp-identity: User consumers must be allowed and cannot be trusted Providers')
+    }
+  }
   for (const consumer of allowProviderConsumers) {
     if (!allowConsumers.has(consumer)) {
       throw new TypeError('anp-identity: Host Provider consumers must also be allowed clients')
@@ -1223,6 +1552,7 @@ function resolveConfig(config: Config): ResolvedConfig {
     allowProviderConsumers,
     httpAllowedOrigins,
     recoveryOnOpen: config.recoveryOnOpen ?? true,
+    userConsumers,
   }
 }
 

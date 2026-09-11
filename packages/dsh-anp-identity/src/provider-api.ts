@@ -1,3 +1,5 @@
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserIdentityClient } from './user-client.js'
 import type {
   CreateIdentityRequest,
   IdentityDescriptor,
@@ -138,6 +140,7 @@ export interface HostProviderLease {
 }
 
 export interface AnpIdentityService {
+  bindUserConsumer(context: Context): UserIdentityClient
   health(): Promise<import('./types.js').AnpIdentityHealth>
   acquireClient(input: import('./types.js').ClientRequest): Promise<import('./types.js').IdentityClientLease>
   acquireProvider(input: ProviderRequest): HostProviderLease

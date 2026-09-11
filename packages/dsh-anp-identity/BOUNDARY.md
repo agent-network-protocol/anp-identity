@@ -2,6 +2,12 @@
 
 The DSH package is a policy and lifecycle layer around ANP Identity. It does not replace the native custody boundary.
 
+The v7 ordinary-plugin creation/authorization UI and Host-bound `UserIdentityClient`
+are documented in [V7-MANAGEMENT.md](./V7-MANAGEMENT.md). The legacy
+`IdentityClientLease` below remains a separate compatibility contract. Ordinary
+user consumers cannot acquire it or supply an HTTP transport callback; their
+approved dispatch uses Host-owned transport.
+
 ## Trust zones
 
 - ANP Identity Rust and its Node binding hold Store Root Keys, managed private keys, and decrypted signing material.
@@ -31,7 +37,7 @@ Consumer identifiers are soft same-process identities. The allowlists prevent ac
 
 ## HTTP dispatcher
 
-The default client API exposes only `dispatch(Request, transport)`:
+The legacy client API exposes `dispatch(Request, transport)`:
 
 - exact HTTPS origins must be authorized by Host configuration and requested by the lease;
 - caller-supplied `Authorization`, `Signature-Input`, `Signature`, and `Content-Digest` are rejected;
@@ -44,4 +50,4 @@ AWiki's Bearer Token cache, challenge processing, and retry policy remain in `ds
 
 ## Out of scope
 
-This package does not provide OS sandboxing, malicious-plugin isolation, DID resolution or publication, remote backup, Store rekey, Root Key rotation, or an end-user approval UI. Root Transfer user-presence confirmation remains an AWiki workflow above the Host Provider lease.
+This package does not provide OS sandboxing, malicious-plugin isolation, DID resolution or publication, remote backup, Store rekey, or Root Key rotation. Its ordinary-plugin approval UI does not replace Root Transfer user-presence confirmation, which remains an AWiki workflow above the Host Provider lease.

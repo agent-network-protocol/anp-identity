@@ -1,0 +1,6 @@
+# Test-only ordinary plugin. Host policy must admit this exact installation name.
+- insert:
+    - id: anp-identity-runtime-consumer
+      name: anp-identity-runtime-consumer
+      config:
+        evidencePath: !!js process.env.ANP_IDENTITY_TEST_CONTROL_PATH

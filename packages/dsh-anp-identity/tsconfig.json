@@ -15,11 +15,16 @@
     "verbatimModuleSyntax": true,
     "types": ["node"],
     "skipLibCheck": true,
+    "jsx": "react-jsx",
     "paths": {
       "@agent-network-protocol/dsh-anp-identity": ["./src/index.ts"],
-      "@agent-network-protocol/anp-identity": ["../../bindings/node/index.d.ts"],
-      "@agent-network-protocol/anp-identity/provider": ["../../bindings/node/provider.d.ts"]
+      "@agent-network-protocol/anp-identity": [
+        "../../bindings/node/index.d.ts"
+      ],
+      "@agent-network-protocol/anp-identity/provider": [
+        "../../bindings/node/provider.d.ts"
+      ]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

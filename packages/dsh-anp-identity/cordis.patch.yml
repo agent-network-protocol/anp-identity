@@ -8,6 +8,7 @@
       config:
         stateRoot: !!js process.env.DSH_ANP_IDENTITY_STATE_ROOT
         allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '["@awiki/dsh-plugin"]')
+        userConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_USER_CONSUMERS ?? '[]')
         allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '["@awiki/dsh-plugin"]')
         httpAllowedOrigins: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS ?? '{}')
         recoveryOnOpen: true
@@ -19,3 +20,6 @@
         rootKeyProvider: !!js process.env.DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER ?? 'keyring'
         rootKeyProviderId: !!js process.env.DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER_ID ?? 'anp-identity/dsh'
         keyringFallbackToLocalFile: false
+
+    - id: anp-identity-manager
+      name: '@agent-network-protocol/dsh-anp-identity/management-remote'

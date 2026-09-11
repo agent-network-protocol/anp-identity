@@ -2,7 +2,7 @@
 
 `@agent-network-protocol/dsh-anp-identity` gives DSH applications one shared, multi-DID identity store without making each application implement key custody, DID document lifecycle, crash recovery, or request signing.
 
-Applications use a small TypeScript facade through `ctx.anpIdentity`. The plugin delegates private-key operations to the ANP Identity native module, keeps private keys encrypted at rest, and stores only non-secret DSH metadata—labels, handles, and consumer grants—in its catalog.
+Ordinary plugins use `bindIdentityClient(ctx)` to request user-approved identity creation and use. Trusted Host integrations retain a separate facade through `ctx.anpIdentity`. The plugin delegates private-key operations to the ANP Identity native module, keeps private keys encrypted at rest, and stores only non-secret DSH metadata—labels, handles, and consumer grants—in its catalog.
 
 ## What problem it solves
 
@@ -14,10 +14,11 @@ A DSH installation may host several plugins and several independent DIDs. Those 
 - How can a request be authenticated without exposing a reusable signature header patch?
 - How can a Store contain several DIDs while handles and deletion grants remain consistent?
 
-This package supplies that coordination layer. ANP Identity remains the source of truth for identities and encrypted keys. A transactional `catalog-v1` adds DSH-specific ownership metadata. Creation uses a recoverable intent; deletion writes a tombstone before touching the native Store; cross-process mutations use a file lock, generation checks, and atomic rename.
+This package supplies that coordination layer. ANP Identity remains the source of truth for identities and encrypted keys. A transactional catalog adds DSH-specific ownership metadata. Creation uses a recoverable intent; deletion writes a tombstone before touching the native Store; cross-process mutations use a file lock, generation checks, and atomic rename. Management upgrades the catalog to schema v2; see the coordinated upgrade and rollback instructions in [V7-MANAGEMENT.md](./V7-MANAGEMENT.md).
 
 ## What it provides
 
+- An optional settings page with Handle/DID details, creation confirmations, an authorization inbox, once or persistent revocable grants, permission details and guarded deletion.
 - Multi-DID create, list, open, delete, and recovery operations.
 - Purpose-based Ed25519 signing and verification.
 - Origin Proof signing.
@@ -78,7 +79,27 @@ those defaults for a different deployment.
 
 ## Use it from another DSH plugin
 
-Declare the Cordis dependency, acquire only the capabilities you need, and dispose the lease with the calling plugin's fiber:
+Ordinary plugins must be configured in `userConsumers` by the Host. They use the loader-bound client below, not a self-declared consumer name or a legacy lease:
+
+```ts
+import { bindIdentityClient } from '@agent-network-protocol/dsh-anp-identity/user-client'
+
+export const inject = ['anpIdentity']
+// Call from the installed plugin's Context after its Loader entry is ready.
+const client = bindIdentityClient(ctx)
+const request = await client.requestCreateIdentity({
+  requestId: 'stable-create-id',
+  purpose: 'Create an identity for this integration',
+  parameters: { label: 'Work', domain: 'example.com', path: '/agents/work' },
+})
+// Query request.id after user confirmation, then request separate use authorization.
+```
+
+Creation does not publish the document, register a Handle, or grant use. Once authorization binds one operation; permanent authorization lasts until revoked. The current MVP grants the full ordinary capability bundle, not individually selected permissions. See [the complete management contract](./V7-MANAGEMENT.md) and the [runnable signed HTTP demo](../../demo/dsh-http/README.md).
+
+### Existing trusted Host consumers
+
+The following legacy facade is for explicitly configured **trusted Host integrations**, not ordinary user-mode plugins. Declare the Cordis dependency, acquire only the capabilities you need, and dispose the lease with the calling plugin's fiber:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
