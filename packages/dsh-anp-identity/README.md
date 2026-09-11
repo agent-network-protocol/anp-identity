@@ -174,7 +174,7 @@ identity namespace; it does not revoke or modify the remote DID.
 ## Development
 
 ```bash
-npm install --legacy-peer-deps
+npm ci --legacy-peer-deps
 npm run verify
 ```
 
@@ -194,5 +194,13 @@ into a temporary real DSH profile, then sends signed GET and POST
 requests to an independent HTTPS process backed by the ANP Python verifier. A
 tampered POST must be rejected. The temporary DSH profile, Store, certificate,
 and tarballs are removed after the run.
+
+The management UI tests render the real DSH primitives. Version `0.1.5-rc.1` of
+`@deepseek-ai/dsh-client-ui-primitives` imports syntax-highlighting, Markdown,
+terminal, and styling packages from its entry point but lists them only as its
+own development dependencies. We explicitly include those imports as development
+dependencies here so a clean `npm ci` can load the same components without
+relying on a parent workspace's `node_modules`. They are test-environment
+dependencies; the browser build continues to use the host-provided UI primitives.
 
 Licensed under Apache-2.0.
