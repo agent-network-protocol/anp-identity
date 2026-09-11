@@ -54,7 +54,7 @@
     "update:public": "node scripts/public-snapshot.mjs --update",
     "check:public": "npm run build && node scripts/public-snapshot.mjs",
     "check:generated": "node scripts/check-generated.mjs",
-    "verify": "npm run typecheck && npm run check:public && npm run check:generated && npm test",
+    "verify": "npm run check:public && npm run typecheck && npm run check:generated && npm test",
     "prepack": "npm run verify",
     "test:functional": "node scripts/run-functional-e2e.mjs"
   },
