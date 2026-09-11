@@ -1,0 +1,14 @@
+{
+  "name": "anp-identity-runtime-consumer",
+  "version": "0.0.0-test-only",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "exports": { ".": "./index.mjs", "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "peerDependencies": {
+    "@agent-network-protocol/dsh-anp-identity": "*",
+    "@agent-network-protocol/anp-identity": "*"
+  },
+  "files": ["index.mjs", "control.mjs", "cordis.patch.yml", "README.md"]
+}

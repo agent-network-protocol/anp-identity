@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const exported = Object.keys(packageJson.exports).sort()
-const expected = ['.', './cordis.patch.yml', './package.json', './provider', './provider-api'].sort()
+const expected = ['.', './cordis.patch.yml', './package.json', './provider', './provider-api', './user-client', './client', './remote', './management-remote'].sort()
 if (JSON.stringify(exported) !== JSON.stringify(expected)) {
   throw new Error(`unexpected package exports: ${exported.join(', ')}`)
 }

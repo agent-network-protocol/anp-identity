@@ -14,7 +14,7 @@ import lockfile from 'proper-lockfile'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
 import { pluginError } from './errors.js'
 
-export const CATALOG_SCHEMA = 'anp-identity-catalog/1' as const
+export const CATALOG_SCHEMA = 'anp-identity-catalog/2' as const
 export const CREATE_INTENT_SCHEMA = 'anp-identity-create-intent/1' as const
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024
 const LOCK_TIMEOUT_MS = 10_000
@@ -29,6 +29,8 @@ export interface CatalogEntry {
   readonly label?: string
   readonly handle?: string
   readonly createdByConsumer?: string
+  /** Durable create provenance, not an access grant. */
+  readonly creationOperationId?: string
   readonly grantedConsumers: string[]
   readonly createdAt: string
   readonly lastUsedAt: string
@@ -50,9 +52,14 @@ export interface CreateIntent {
   readonly createdAt: string
   readonly baselineIdentityIds: string[]
   readonly reference?: IdentityReference
+  /** User-confirmed creation never implies access. */
+  readonly authorizationMode?: 'user'
 }
 
 export type CatalogFaultPoint =
+  | 'before_backup_temp_write'
+  | 'after_backup_temp_sync'
+  | 'after_backup_rename'
   | 'before_catalog_temp_write'
   | 'after_catalog_temp_sync'
   | 'after_catalog_rename'
@@ -85,19 +92,25 @@ export class CatalogStore {
 
   async initialize(): Promise<void> {
     await mkdir(this.intentsRoot, { recursive: true, mode: 0o700 })
-    try {
-      await this.load()
-    } catch (error) {
-      if (!isMissing(error)) throw error
-      await this.withCatalogLock(async () => {
-        try {
-          await this.load()
-        } catch (nested) {
-          if (!isMissing(nested)) throw nested
-          await this.writeCatalog(emptyCatalog())
-        }
-      })
-    }
+    await this.withCatalogLock(async () => {
+      let bytes: Buffer
+      try { bytes = await readFile(this.catalogPath) } catch (error) {
+        if (!isMissing(error)) throw error
+        await this.writeCatalog(emptyCatalog())
+        return
+      }
+      if (bytes.byteLength > MAX_CATALOG_BYTES) throw pluginError('catalog_corrupt')
+      let value: unknown
+      try { value = JSON.parse(bytes.toString('utf8')) } catch { throw pluginError('catalog_corrupt') }
+      if (isRecord(value) && value.schema === 'anp-identity-catalog/1') {
+        const upgraded = parseCatalog({ ...value, schema: CATALOG_SCHEMA })
+        // Preserve legacy associations exactly; never synthesize user grants.
+        // The validated live v1 catalog is authoritative while holding the lock.
+        // Repair leftovers from the former non-atomic backup writer on retry.
+        await this.writeBytesAtomic(`${this.catalogPath}.before-v2`, bytes, 'backup')
+        await this.writeCatalog({ ...upgraded, catalogGeneration: upgraded.catalogGeneration + 1 })
+      } else parseCatalog(value)
+    })
   }
 
   async load(): Promise<IdentityCatalog> {
@@ -194,7 +207,8 @@ export class CatalogStore {
         ...(intent.label === undefined ? {} : { label: intent.label }),
         ...(intent.handle === undefined ? {} : { handle: intent.handle }),
         createdByConsumer: intent.consumer,
-        grantedConsumers: [intent.consumer],
+        ...(intent.authorizationMode === 'user' ? { creationOperationId: intent.requestId } : {}),
+        grantedConsumers: intent.authorizationMode === 'user' ? [] : [intent.consumer],
         createdAt: intent.createdAt,
         lastUsedAt: intent.createdAt,
         state: 'active',
@@ -291,19 +305,23 @@ export class CatalogStore {
     value: unknown,
     kind: 'catalog' | 'intent',
   ): Promise<void> {
+    await this.writeBytesAtomic(path, Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8'), kind)
+  }
+
+  private async writeBytesAtomic(path: string, bytes: Buffer, kind: 'catalog' | 'intent' | 'backup'): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
     const temp = `${path}.${process.pid}.${randomUUID()}.tmp`
     let handle: FileHandle | undefined
     try {
-      this.#fault(kind === 'catalog' ? 'before_catalog_temp_write' : 'before_intent_temp_write')
+      this.#fault(`before_${kind}_temp_write`)
       handle = await open(temp, 'wx', 0o600)
-      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
+      await handle.writeFile(bytes)
       await handle.sync()
-      this.#fault(kind === 'catalog' ? 'after_catalog_temp_sync' : 'after_intent_temp_sync')
+      this.#fault(`after_${kind}_temp_sync`)
       await handle.close()
       handle = undefined
       await rename(temp, path)
-      this.#fault(kind === 'catalog' ? 'after_catalog_rename' : 'after_intent_rename')
+      this.#fault(`after_${kind}_rename`)
       const directory = await open(dirname(path), 'r')
       try {
         await directory.sync()
@@ -392,6 +410,7 @@ function parseEntry(value: unknown): CatalogEntry {
     || !isOptionalString(value.label)
     || !isOptionalString(value.handle)
     || !isOptionalString(value.createdByConsumer)
+    || !isOptionalString(value.creationOperationId)
     || !Array.isArray(value.grantedConsumers)
     || !value.grantedConsumers.every(isString)
     || !isString(value.createdAt)
@@ -409,6 +428,7 @@ function parseEntry(value: unknown): CatalogEntry {
     ...(value.label === undefined ? {} : { label: value.label }),
     ...(value.handle === undefined ? {} : { handle: normalizeHandle(value.handle) }),
     ...(value.createdByConsumer === undefined ? {} : { createdByConsumer: value.createdByConsumer }),
+    ...(value.creationOperationId === undefined ? {} : { creationOperationId: value.creationOperationId }),
     grantedConsumers,
     createdAt: value.createdAt,
     lastUsedAt: value.lastUsedAt,
@@ -426,6 +446,7 @@ function parseIntent(value: unknown): CreateIntent {
     || !isString(value.createdAt)
     || !Array.isArray(value.baselineIdentityIds)
     || !value.baselineIdentityIds.every(isString)
+    || (value.authorizationMode !== undefined && value.authorizationMode !== 'user')
     || !isOptionalReference(value.reference)) {
     throw pluginError('catalog_corrupt')
   }
@@ -439,6 +460,7 @@ function parseIntent(value: unknown): CreateIntent {
     createdAt: value.createdAt,
     baselineIdentityIds: [...new Set(value.baselineIdentityIds)].sort(),
     ...(value.reference === undefined ? {} : { reference: value.reference }),
+    ...(value.authorizationMode === undefined ? {} : { authorizationMode: 'user' as const }),
   }
 }
 

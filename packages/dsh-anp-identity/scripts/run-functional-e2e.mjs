@@ -55,13 +55,20 @@ try {
   ], { stdio: ['ignore', 'pipe', 'pipe'] })
   pipeWithPrefix(verifier.stdout, 'verifier:stdout')
   pipeWithPrefix(verifier.stderr, 'verifier:stderr')
-  const { origin } = await waitForJson(readyPath, verifier, 10_000)
+  const { origin } = await waitForJson(readyPath, verifier, 60_000)
 
   const dshEnvironment = {
     ...process.env,
     DSH_HOME: dshHome,
     NODE_EXTRA_CA_CERTS: certificatePath,
     DSH_TELEMETRY_DISABLED: '1',
+    DSH_ANP_IDENTITY_STATE_ROOT: stateRoot,
+    DSH_ANP_IDENTITY_ALLOW_CONSUMERS: '["anp-http-functional-e2e"]',
+    DSH_ANP_IDENTITY_USER_CONSUMERS: '[]',
+    DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS: '[]',
+    DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS: JSON.stringify({ 'anp-http-functional-e2e': [origin] }),
+    DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER: 'local-file',
+    DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER_ID: 'functional-e2e-local-file',
   }
   await run('dsh', [
     'plugin', '--profile', profileName, 'add', nativeTarball, platformTarball,
@@ -76,8 +83,9 @@ try {
   ], { env: dshEnvironment })
 
   const patchPath = join(profileRoot, 'cordis.patch.yml')
+  // The installed identity bundle already inserts its service and Provider.
+  // Configure those entries through the bundle environment, adding only the consumer.
   await writeFile(patchPath, patch({
-    stateRoot,
     origin,
     didDocumentPath,
     resultPath,
@@ -132,22 +140,6 @@ async function packRegistry(spec) {
 function patch(config) {
   const value = key => JSON.stringify(config[key])
   return `- insert:
-    - id: anp-identity
-      name: '@agent-network-protocol/dsh-anp-identity'
-      config:
-        stateRoot: ${value('stateRoot')}
-        allowConsumers: [anp-http-functional-e2e]
-        allowProviderConsumers: []
-        httpAllowedOrigins:
-          anp-http-functional-e2e: [${value('origin')}]
-        recoveryOnOpen: true
-    - id: anp-identity-provider
-      name: '@agent-network-protocol/dsh-anp-identity/provider'
-      config:
-        stateRoot: ${value('stateRoot')}
-        rootKeyProvider: local-file
-        rootKeyProviderId: functional-e2e-local-file
-        keyringFallbackToLocalFile: false
     - id: anp-identity-functional-e2e-consumer
       name: '@agent-network-protocol/dsh-anp-identity-functional-e2e-consumer'
       inject: [anpIdentity]

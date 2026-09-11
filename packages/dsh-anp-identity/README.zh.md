@@ -2,7 +2,7 @@
 
 `@agent-network-protocol/dsh-anp-identity` 为 DSH 应用提供共享的多 DID 身份 Store。应用不需要各自实现私钥托管、DID Document 生命周期、崩溃恢复和请求签名。
 
-普通插件通过 `ctx.anpIdentity` 使用精简的 TypeScript Facade。私钥操作由 ANP Identity 原生模块完成；私钥在磁盘上加密保存。DSH catalog 只记录 label、handle 和 consumer grant 等非秘密元数据。
+普通插件通过 `bindIdentityClient(ctx)` 申请创建身份和使用授权；`ctx.anpIdentity` 的旧 lease 接口保留给可信 Host 集成。私钥操作由 ANP Identity 原生模块完成；私钥在磁盘上加密保存。DSH catalog 只记录 label、handle 和 consumer grant 等非秘密元数据。
 
 ## 它解决什么问题
 
@@ -14,7 +14,7 @@
 - HTTP 请求如何完成身份认证，同时不把可复用 Header patch 交给调用方；
 - 多 DID、通用 handle、consumer grant 和删除保护如何保持一致。
 
-ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 `catalog-v1`：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。
+ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。管理功能将 catalog 升级为 v2，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
 
 ## 主要能力
 
@@ -71,6 +71,14 @@ pnpm add @agent-network-protocol/dsh-anp-identity
 keyring 的 `rootKeyProviderId` 格式为 `service/account`；env 模式填写环境变量名；injected 模式填写 key id，并且只能通过可信 Host 代码以 Buffer 注入，不能写入 Loader YAML。`local-file` 必须显式启用；如果 Store 与 Root Key 文件被一起复制，攻击者可以离线解密 Store。
 
 ## 其他 DSH 插件如何使用
+
+普通插件由 Host 加入 `userConsumers`，通过 `bindIdentityClient(ctx)` 提交请求，等待创建确认，再单独申请使用授权。创建不会发布 DID 文档、注册 Handle 或自动授予使用权。支持单次授权和持续到撤销的永久授权；当前默认授予全部普通使用权限，暂不支持逐项选择。
+
+完整 API 与边界见 [管理说明](./V7-MANAGEMENT.md)；可运行示例见 [HTTP 签名 demo](../../demo/dsh-http/README.md)。设置页包含 Handle/DID、授权请求、权限详情和撤销入口。
+
+### 既有可信 Host 集成
+
+以下旧 lease 示例仅适用于明确配置的可信 Host 集成，不适用于普通 user-mode 插件。
 
 调用插件声明 `inject = ['anpIdentity']`，申请最小 capability，并让 lease 随自己的 Cordis fiber 释放：
 

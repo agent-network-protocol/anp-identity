@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const fixture = join(root, 'test', 'fixtures', 'public-api.d.ts')
-const entries = ['index.d.ts', 'provider.d.ts', 'provider-api.d.ts', 'types.d.ts']
+const entries = ['index.d.ts', 'provider.d.ts', 'provider-api.d.ts', 'types.d.ts', 'user-client.d.ts', 'authorization-types.d.ts', 'management-types.d.ts', 'management-remote.d.ts', 'remote.d.ts', 'client/index.d.ts']
 const sections = []
 for (const entry of entries) {
   const value = (await readFile(join(root, 'lib', entry), 'utf8'))
