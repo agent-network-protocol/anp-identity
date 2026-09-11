@@ -1,13 +1,21 @@
 {
   "name": "@agent-network-protocol/anp-identity-linux-arm64-gnu",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Linux arm64 glibc native addon for @agent-network-protocol/anp-identity",
   "type": "commonjs",
   "license": "Apache-2.0",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "libc": ["glibc"],
-  "engines": { "node": ">=18" },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./anp-identity.linux-arm64-gnu.node",
   "files": [
     "anp-identity.linux-arm64-gnu.node",

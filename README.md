@@ -25,7 +25,7 @@ records, generations, journals, or the internal Store engine. The one explicit
 plaintext exception is the default-off Rust `root-export` feature required by
 the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-The Rust crate pins ANP Rust `1.0.2`. Rust and native Node packages have
+The Rust crate pins ANP Rust `1.0.3`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
 packages. The Node artifact workflow accepts an explicit `build_only` dispatch
 for releases that intentionally omit install tests; normal CI keeps those tests.
@@ -35,6 +35,16 @@ x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
 host-specific addon and installation does not compile Rust. The coordinated
 artifacts are built and clean-installed by
 [`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
+
+Native release builds use `scripts/release/prepare-registry.py --prepare` to
+snapshot the committed source into a separate build directory and replace only
+the external ANP path with its exact published crates.io version. The checked-in
+`scripts/release/registry-Cargo.lock` freezes that build. Refresh it with
+`python3 scripts/release/prepare-registry.py --refresh-lock` after publishing ANP
+and committing the version changes. Packaging reads the same registry manifest
+through `ANP_IDENTITY_REGISTRY_MANIFEST`; the SBOM rejects path/git or mixed ANP
+dependencies. Source development and shared-vector tests may still use the
+adjacent ANP checkout.
 
 ## Shared test fixtures
 

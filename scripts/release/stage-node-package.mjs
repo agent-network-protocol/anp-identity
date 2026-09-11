@@ -50,7 +50,16 @@ function sourceRevision() {
 }
 
 function sbom(manifest) {
-  const metadata = JSON.parse(run('cargo', ['metadata', '--format-version', '1', '--locked']))
+  const registryManifest = process.env.ANP_IDENTITY_REGISTRY_MANIFEST?.trim()
+  if (!registryManifest) fail('ANP_IDENTITY_REGISTRY_MANIFEST must identify the verified registry build')
+  const metadata = JSON.parse(run('cargo', ['metadata', '--manifest-path', resolve(registryManifest), '--format-version', '1', '--locked']))
+  const sourceManifest = run('git', ['show', 'HEAD:Cargo.toml'])
+  const anpVersion = sourceManifest.match(/^anp\s*=.*version\s*=\s*"=([^"]+)"/m)?.[1]
+  const anpPackages = metadata.packages.filter((pkg) => pkg.name === 'anp')
+  if (!anpVersion || anpPackages.length !== 1 || anpPackages[0].version !== anpVersion ||
+      anpPackages[0].source !== 'registry+https://github.com/rust-lang/crates.io-index') {
+    fail('release SBOM must resolve the exact published registry ANP')
+  }
   const cargo = metadata.packages.map((pkg) => ({
     type: 'library',
     name: pkg.name,

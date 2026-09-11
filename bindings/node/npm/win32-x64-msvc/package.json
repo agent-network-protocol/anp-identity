@@ -1,12 +1,18 @@
 {
   "name": "@agent-network-protocol/anp-identity-win32-x64-msvc",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Windows x64 MSVC native addon for @agent-network-protocol/anp-identity",
   "type": "commonjs",
   "license": "Apache-2.0",
-  "os": ["win32"],
-  "cpu": ["x64"],
-  "engines": { "node": ">=18" },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./anp-identity.win32-x64-msvc.node",
   "files": [
     "anp-identity.win32-x64-msvc.node",

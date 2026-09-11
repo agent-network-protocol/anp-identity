@@ -31,6 +31,8 @@ permissions:
 
 env:
   RUST_TOOLCHAIN: 1.88.0
+  RUSTUP_TOOLCHAIN: 1.88.0
+  ANP_IDENTITY_REGISTRY_MANIFEST: ${{ github.workspace }}/anp-identity-registry/Cargo.toml
 
 jobs:
   build-platform:
@@ -87,7 +89,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.2
+          ref: 1.0.3
           path: anp
       - name: Set up Rust
         shell: bash
@@ -98,16 +100,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
-      - name: Build release addon
-        if: matrix.linux_gnu == false
+      - name: Prepare exact registry ANP build
         working-directory: anp-identity
         shell: bash
+        run: python3 scripts/release/prepare-registry.py --prepare ../anp-identity-registry
+      - name: Build release addon
+        if: matrix.linux_gnu == false
+        working-directory: anp-identity-registry
+        shell: bash
         env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/anp-identity/target
           MACOSX_DEPLOYMENT_TARGET: '13.5'
         run: cargo build --locked --release -p anp-identity-node --target "${{ matrix.rust_target }}"
       - name: Build Linux addon in manylinux 2.28
         if: matrix.linux_gnu
-        working-directory: anp-identity
+        working-directory: anp-identity-registry
         shell: bash
         run: |
           docker run --rm \
@@ -115,7 +122,8 @@ jobs:
             -e HOME="${HOME}" \
             -e CARGO_HOME="${HOME}/.cargo" \
             -e RUSTUP_HOME="${HOME}/.rustup" \
-            -e CARGO_TARGET_DIR="${PWD}/target/manylinux-2-28" \
+            -e CARGO_TARGET_DIR="${GITHUB_WORKSPACE}/anp-identity/target/manylinux-2-28" \
+            -e RUSTUP_TOOLCHAIN="${RUST_TOOLCHAIN}" \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}" \
             -v "${HOME}/.cargo:${HOME}/.cargo" \
             -v "${HOME}/.rustup:${HOME}/.rustup:ro" \
@@ -173,7 +181,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.2
+          ref: 1.0.3
           path: anp
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -181,6 +189,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
+      - name: Prepare exact registry ANP metadata
+        working-directory: anp-identity
+        run: python3 scripts/release/prepare-registry.py --prepare ../anp-identity-registry
       - name: Stage and audit wrapper
         working-directory: anp-identity
         env:
