@@ -2,7 +2,10 @@
 
 All notable changes to ANP Identity are documented here.
 
-## 0.2.0-rc.1 (DSH plugin) — 2026-09-12
+## 0.1.3-rc.1 (DSH plugin) — 2026-09-12
+
+- Correct the prerelease version to remain on the 0.1.x line. This candidate
+  has the same functionality as 0.2.0-rc.1; it does not downgrade storage or APIs.
 
 - Add identity management with plugin-supplied Handles, DID document inspection,
   creation confirmation, request inbox, permission details and revocation.
@@ -24,6 +27,12 @@ All notable changes to ANP Identity are documented here.
   does not include DSH Host-side authentication changes.
 - Identity creation does not publish a DID document, register a Handle, or
   automatically grant identity use. Native and Rust packages are not re-released.
+
+## 0.2.0-rc.1 (DSH plugin, superseded) — 2026-09-12
+
+- Published with an unintended minor-version jump. Superseded by 0.1.3-rc.1
+  under the `next` tag, with an npm deprecation notice. The published artifact
+  remains available; `latest` remains 0.1.2.
 
 ## 0.2.2 (Rust), 0.2.1 (Node), 0.1.1 (DSH Host) — 2026-09-08
 
