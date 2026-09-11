@@ -7,8 +7,6 @@ import { fileURLToPath } from 'node:url'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(scriptDirectory, '..')
 const repositoryRoot = resolve(packageRoot, '../..')
-const bindingRoot = join(repositoryRoot, 'bindings/node')
-const releaseScript = join(repositoryRoot, 'scripts/release/stage-node-package.mjs')
 const anpPythonRoot = resolve(repositoryRoot, '../anp')
 const consumerRoot = join(packageRoot, 'test/functional/consumer')
 const verifierScript = join(packageRoot, 'test/functional/http_verifier.py')
@@ -28,23 +26,14 @@ let verifier
 try {
   requireSupportedNode()
   await mkdir(packRoot, { recursive: true })
-  await run('npm', ['--prefix', bindingRoot, 'run', 'build:debug'])
   const target = currentTarget()
-  const wrapperStage = join(repositoryRoot, 'dist/node-release/staged/functional-wrapper')
-  const platformStage = join(repositoryRoot, `dist/node-release/staged/functional-${target}`)
-  await run('node', [
-    releaseScript, '--kind', 'wrapper', '--output', wrapperStage,
-  ])
-  await run('node', [
-    releaseScript,
-    '--kind', 'platform',
-    '--package-dir', join(bindingRoot, 'npm', target),
-    '--target', target,
-    '--binary', join(bindingRoot, `anp-identity.${target}.node`),
-    '--output', platformStage,
-  ])
-  const nativeTarball = await pack(wrapperStage, packRoot)
-  const platformTarball = await pack(platformStage, packRoot)
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
+  const nativeVersion = manifest.dependencies?.['@agent-network-protocol/anp-identity']
+  if (typeof nativeVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(nativeVersion)) {
+    throw new Error('functional verification requires an exact published native dependency')
+  }
+  const nativeTarball = await packRegistry(`@agent-network-protocol/anp-identity@${nativeVersion}`)
+  const platformTarball = await packRegistry(`@agent-network-protocol/anp-identity-${target}@${nativeVersion}`)
   const pluginTarball = await pack(packageRoot, packRoot)
   const consumerTarball = await pack(consumerRoot, packRoot)
 
@@ -100,7 +89,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     status: 'passed',
     dsh: 'real-profile',
-    installation: 'tarballs',
+    installation: 'candidate-plugin-and-published-native-tarballs',
     https: true,
     getStatus: result.get.verified ? 200 : undefined,
     postStatus: result.post.verified ? 200 : undefined,
@@ -128,6 +117,16 @@ async function pack(directory, destination) {
     throw new Error(`npm pack in ${directory} created ${created.length} tarballs`)
   }
   return join(destination, created[0])
+}
+
+async function packRegistry(spec) {
+  const before = new Set(await readdir(packRoot))
+  await run('npm', ['pack', spec, '--ignore-scripts', '--prefer-online',
+    '--registry', 'https://registry.npmjs.org', '--pack-destination', packRoot],
+  { cwd: temporaryRoot })
+  const created = (await readdir(packRoot)).filter(value => value.endsWith('.tgz') && !before.has(value))
+  if (created.length !== 1) throw new Error(`registry package ${spec} did not produce one tarball`)
+  return join(packRoot, created[0])
 }
 
 function patch(config) {

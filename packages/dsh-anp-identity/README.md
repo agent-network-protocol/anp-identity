@@ -167,8 +167,9 @@ expected by the workspace:
 npm run test:functional
 ```
 
-It builds the debug native binding, packs and installs the native package and
-DSH plugins into a temporary real DSH profile, then sends signed GET and POST
+It downloads the exact published native wrapper and host platform package
+pinned by this plugin, packs the DSH plugin from source, and installs them
+into a temporary real DSH profile, then sends signed GET and POST
 requests to an independent HTTPS process backed by the ANP Python verifier. A
 tampered POST must be rejected. The temporary DSH profile, Store, certificate,
 and tarballs are removed after the run.

@@ -8,7 +8,7 @@ describe('published DSH identity dependency closure', () => {
       readonly peerDependencies?: Record<string, string>
       readonly peerDependenciesMeta?: Record<string, unknown>
     }
-    expect(manifest.dependencies?.['@agent-network-protocol/anp-identity']).toBe('0.2.1')
+    expect(manifest.dependencies?.['@agent-network-protocol/anp-identity']).toBe('0.2.2')
     expect(manifest.peerDependencies?.['@agent-network-protocol/anp-identity']).toBeUndefined()
     expect(manifest.peerDependenciesMeta?.['@agent-network-protocol/anp-identity']).toBeUndefined()
   })
