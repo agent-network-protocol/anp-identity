@@ -196,7 +196,7 @@ export function IdentitySettings({
                 }}
               >
                 <span className="anpi-identity-label">
-                  <strong title={identityLabel(item)}>{identityLabel(item)}</strong>
+                  <strong title={item.handle || identityLabel(item)}>{item.handle || identityLabel(item)}</strong>
                   <small title={item.reference.did}>{item.reference.did}</small>
                 </span>
               </button>
@@ -204,7 +204,7 @@ export function IdentitySettings({
           </nav>
           {identity && (
             <div className="anpi-detail" key={view.selectedKey}>
-              <h3>{identityLabel(identity)}</h3>
+              <h3>{identity.handle || identityLabel(identity)}</h3>
               <div className="anpi-fields">
               <CopyRow
                 label="Handle"
