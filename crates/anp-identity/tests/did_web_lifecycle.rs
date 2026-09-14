@@ -194,6 +194,49 @@ fn web_http_signature_uses_device_authentication_without_root_proof() {
 }
 
 #[test]
+fn web_bootstrap_stays_active_when_adopting_a_later_document() {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = IdentityManager::initialize(config(root.path())).unwrap();
+    let mut identity = manager.create(request()).unwrap();
+    let original = identity.public_identity().unwrap();
+    let mut document = original.document.clone().into_value();
+    document["alsoKnownAs"] = serde_json::json!(["https://identity.example/profile"]);
+    assert_eq!(
+        identity
+            .adopt_verified_document(remote(DidDocument::from_value(document.clone()), 2, 1))
+            .unwrap(),
+        ConvergenceOutcome::Updated
+    );
+    assert_eq!(
+        identity.public_identity().unwrap().state,
+        PublicIdentityState::Active
+    );
+    assert_eq!(
+        identity.public_identity().unwrap().active_keys,
+        original.active_keys
+    );
+    assert_eq!(
+        identity.host_status().unwrap().root_capability,
+        HostRootCapability::Absent
+    );
+    drop(identity);
+    drop(manager);
+    let manager = IdentityManager::open(config(root.path())).unwrap();
+    let identity = manager.get(&original.reference).unwrap();
+    assert_eq!(
+        identity.public_identity().unwrap().document.as_value(),
+        &document
+    );
+    identity
+        .sign(SignRequest {
+            purpose: SigningPurpose::DeviceAssertion,
+            key: KeySelector::Default,
+            payload: b"still authorized".to_vec(),
+        })
+        .unwrap();
+}
+
+#[test]
 fn web_join_adopts_exact_device_and_revoke_does_not_restore_it() {
     let root_a = tempfile::tempdir().unwrap();
     let root_b = tempfile::tempdir().unwrap();
