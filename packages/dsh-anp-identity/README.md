@@ -188,6 +188,10 @@ expected by the workspace:
 npm run test:functional
 ```
 
+After publishing, run `npm run test:functional -- --published` to repeat the
+same real DSH/HTTPS acceptance using the exact plugin version from npm instead
+of a locally packed candidate.
+
 It downloads the exact published native wrapper and host platform package
 pinned by this plugin, packs the DSH plugin from source, and installs them
 into a temporary real DSH profile, then sends signed GET and POST
