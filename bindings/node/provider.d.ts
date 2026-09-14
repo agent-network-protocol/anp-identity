@@ -71,7 +71,7 @@ export interface PreparedHttpSignatureAttempt {
 
 export interface IdentityHostStatus {
   rootCapability: 'absent' | 'pending' | 'active'
-  rootKeyFingerprint: string
+  rootKeyFingerprint: string | null
   checkpoint?: HostDocumentCheckpoint
 }
 
@@ -238,7 +238,7 @@ export interface EnrollmentProposal {
   enrollmentId: string
   identity: IdentityReference
   kind: EnrollmentProposalKind
-  rootKeyFingerprint: string
+  rootKeyFingerprint: string | null
   checkpoint: HostDocumentCheckpoint
 }
 

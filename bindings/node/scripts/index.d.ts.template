@@ -103,7 +103,7 @@ export interface DeviceManifestEntry {
 }
 
 export interface CreateIdentityRequest {
-  profile: 'e1'
+  profile: 'e1' | 'web'
   domain: string
   port?: number
   pathSegments: string[]

@@ -26,6 +26,30 @@ const ALL_CLIENT_CAPABILITIES = [
 ] as const
 
 describe('DSH ANP Identity service', () => {
+  it('creates Web through the same client lease without exposing a DID root', async () => {
+    await using fixture = await serviceFixture(['web-client'])
+    const client = await fixture.ctx.anpIdentity.acquireClient({
+      consumer: 'web-client', capabilities: [...ALL_CLIENT_CAPABILITIES],
+      httpOrigins: ['https://api.example.com'],
+    })
+    const spec = identitySpec('web-client')
+    spec.profile = 'web'
+    spec.managedKeys = spec.managedKeys.filter(key => key.role !== 'root_control')
+    const identity = await client.create({ identity: spec, label: 'Web identity' })
+    const snapshot = await identity.publicIdentity()
+    expect(snapshot.reference.did).toMatch(/^did:web:/)
+    expect(snapshot.document).not.toHaveProperty('proof')
+    expect(snapshot.activeKeys.some(key => key.kid.endsWith('#root'))).toBe(false)
+    const signature = await identity.sign({ purpose: 'device_assertion',
+      kid: `${snapshot.reference.did}#device`, payload: Buffer.from('Web client') })
+    expect(signature.bytes).toHaveLength(64)
+    await identity.authenticatedHttp.dispatch(new Request('https://api.example.com/messages'), async request => {
+      expect(request.headers.get('signature-input')).toContain(snapshot.reference.did)
+      return new Response('accepted')
+    })
+    await client.dispose()
+  })
+
   it('creates multiple DIDs, signs through a purpose, dispatches HTTP, and survives restart', async () => {
     await using fixture = await serviceFixture(['third-party-demo'])
     const client = await fixture.ctx.anpIdentity.acquireClient({

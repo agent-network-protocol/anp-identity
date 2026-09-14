@@ -11,6 +11,7 @@ use crate::{IdentityState, KeyRole, KeyState};
 #[serde(rename_all = "snake_case")]
 pub enum CreateIdentityProfile {
     E1,
+    Web,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,6 +104,7 @@ impl From<CreateIdentityRequest> for crate::DidCreateSpec {
         Self {
             profile: match value.profile {
                 CreateIdentityProfile::E1 => crate::DidProfile::E1,
+                CreateIdentityProfile::Web => crate::DidProfile::Web,
             },
             domain: value.domain,
             port: value.port,

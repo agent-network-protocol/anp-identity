@@ -1,6 +1,6 @@
 # @agent-network-protocol/anp-identity
 
-Node.js bindings for ANP Identity, an E1 DID identity manager that keeps managed
+Node.js bindings for ANP Identity, an E1 and Web DID identity manager that keeps managed
 keys behind a native Rust boundary. A single Store can own multiple DIDs. All
 filesystem, keyring, and cryptographic operations are asynchronous so they do
 not block the JavaScript main thread.
@@ -47,6 +47,13 @@ HPKE envelopes. Ordinary DSH consumers must use the plugin's narrower client
 lease instead of importing this Host entry.
 
 ## Root key sources
+
+Choose `profile: 'web'` to create a Web identity without a DID `root_control`
+key. Managed device signing/agreement keys and the encrypted Store are reused.
+Host status and enrollment proposals expose `rootKeyFingerprint: null` and
+`rootCapability: 'absent'`. WBA retains its existing fingerprint and root flows.
+Web HTTP authentication uses RFC 9421; legacy DID-WBA, Root Transfer and Root
+Import are unavailable. The default entry still exposes no private keys.
 
 The bindings support OS keyring, local private file, named environment variable,
 and an injected 32-byte key. An injected key `Buffer` is consumed and

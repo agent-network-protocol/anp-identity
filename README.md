@@ -99,7 +99,7 @@ Encrypted Store
 
 The implementation combines five responsibilities:
 
-1. **Typed ANP E1 identity creation.** Managed keys and external public keys
+1. **Typed ANP E1 and Web identity creation.** Managed keys and external public keys
    are validated against a fixed role matrix before a DID is created.
 2. **Encrypted key custody.** Managed private keys are encrypted with
    ChaCha20-Poly1305. Record keys are derived with HKDF and authenticated
@@ -123,20 +123,34 @@ multi-identity isolation, lifecycle policy, and application-facing APIs.
 | Area | Capability |
 |---|---|
 | Multi-DID management | One Store can create, list, open, recover, and delete multiple isolated identities |
-| DID documents | ANP E1 creation, public snapshots, external public keys, services, and device manifests |
+| DID documents | ANP E1 and rootless Web creation, public snapshots, external public keys, services, and device manifests |
 | Private-key custody | Encrypted managed-key records tied to a pinned root-key provider |
 | Signing | Purpose-scoped Ed25519 authentication, device assertion, application assertion, and Origin Proof signing |
 | Verification | Purpose and DID-relationship checks before signature verification |
-| HTTP authentication | Host-only exact-request signing for DID-WBA and RFC 9421-style HTTP Message Signatures |
+| HTTP authentication | Host-only RFC 9421 HTTP Message Signatures for both methods; legacy DID-WBA only for WBA |
 | Key agreement | Host-only X25519 agreement; external mode transports only sealed results through TypeScript |
 | DID updates | Prepare, publish, complete, abort-before-acceptance, uncertain-result reconciliation, and recovery |
 | Enrollment | Rootless device or request-signing enrollment with verified remote-document activation |
-| Root Transfer | Wrapped transfer support plus a feature-gated legacy `RootKeyEnvelopeV1` export/import path |
+| Root Transfer | WBA-only wrapped transfer plus a feature-gated legacy `RootKeyEnvelopeV1` export/import path |
 | Migration | Feature-gated, one-way key import for trusted hosts |
 | Concurrency | Cross-process Store lock and optimistic generation conflict detection |
 | Language support | Rust Facade, asynchronous Node.js bindings, and a separate trusted Provider entry |
 
 ## What it deliberately does not provide
+
+Web uses `CreateIdentityProfile::Web` (Node `profile: 'web'`) with the same
+Store, managed device/request keys, enrollment and `DocumentChangeSession`.
+It has no DID RootControl key or document root proof. Host status and enrollment
+proposals return no root fingerprint (`None` in Rust, `null` in Node); the Store
+encryption root remains required. Web does not support Root Import, Root Transfer,
+recovery or device key replacement. Existing WBA records retain their fingerprint.
+
+After an unknown Web publication, observing the old document keeps the operation
+`PublicationUncertain`; only verified candidate confirmation commits it. The Host
+must establish publication evidence and current device eligibility through its
+own authorized service workflow. Device IDs observed as removed are persisted
+and cannot be added again, including after reopening the Store. An authoritative
+service must enforce retirement history the local Store has never observed.
 
 ANP Identity is not:
 

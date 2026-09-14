@@ -65,7 +65,7 @@ pub struct EnrollmentProposal {
     pub enrollment_id: String,
     pub identity: IdentityRef,
     pub kind: EnrollmentProposalKind,
-    pub root_key_fingerprint: String,
+    pub root_key_fingerprint: Option<String>,
     pub checkpoint: HostDocumentCheckpoint,
 }
 

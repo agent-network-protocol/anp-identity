@@ -4,12 +4,12 @@ use serde_json::Value;
 
 use anp::authentication::{
     find_verification_method, is_assertion_method_authorized, is_authentication_authorized,
-    validate_device_manifest, validate_did_document_binding,
+    validate_device_manifest,
 };
 
 use crate::document::{
-    document_digest, key_metadata, key_metadata_from_public, public_key_from_secret,
-    public_keys_equal, root_key_fingerprint, ManagedPrivateKey,
+    document_digest, key_metadata, key_metadata_from_public, method_root_fingerprint,
+    public_key_from_secret, public_keys_equal, validate_method_document, ManagedPrivateKey,
 };
 use crate::input::{canonicalize_kid, validate_fragment};
 use crate::keystore::{SealIfAbsent, SecretRef};
@@ -59,7 +59,7 @@ pub struct PreparedEnrollment {
     pub device_signing_key: EnrollmentPublicKey,
     pub device_e2ee_key: EnrollmentPublicKey,
     pub profiles: Vec<String>,
-    pub root_key_fingerprint: String,
+    pub root_key_fingerprint: Option<String>,
     pub checkpoint: DocumentCheckpoint,
 }
 
@@ -80,7 +80,7 @@ pub struct PreparedRequestSigningEnrollment {
     pub identity_id: String,
     pub did: String,
     pub request_signing_key: EnrollmentPublicKey,
-    pub root_key_fingerprint: String,
+    pub root_key_fingerprint: Option<String>,
     pub checkpoint: DocumentCheckpoint,
 }
 
@@ -210,14 +210,7 @@ impl DidStore {
             }
         }
 
-        let root_kid = root_kid(&spec.verified_document)?;
-        let root_metadata = key_metadata(
-            &spec.verified_document,
-            &root_kid,
-            KeyRole::RootControl,
-            KeyOrigin::External,
-            &created_at,
-        )?;
+        let root_metadata = optional_root_metadata(&spec.verified_document, &created_at)?;
         let signing_metadata = key_metadata_from_public(
             &signing_kid,
             KeyRole::DeviceSigning,
@@ -241,16 +234,15 @@ impl DidStore {
             e2ee_kid: e2ee_kid.clone(),
             profiles: spec.profiles.clone(),
         };
-        let root_fingerprint = root_key_fingerprint(&spec.verified_document)?;
+        let root_fingerprint = method_root_fingerprint(&spec.verified_document)?;
         let mut record = new_identity_record(NewIdentityRecord {
             identity_id: identity_id.clone(),
             did: did.clone(),
             document: spec.verified_document,
-            keys: vec![
-                root_metadata,
-                signing_metadata.clone(),
-                e2ee_metadata.clone(),
-            ],
+            keys: root_metadata
+                .into_iter()
+                .chain([signing_metadata.clone(), e2ee_metadata.clone()])
+                .collect(),
             capabilities: spec.capabilities,
             root_capability: RootCapabilityState::Absent,
             root_key_fingerprint: root_fingerprint.clone(),
@@ -364,13 +356,7 @@ impl DidStore {
                 return Err(DidError::InvalidIdentity);
             }
         }
-        let root_metadata = key_metadata(
-            &spec.verified_document,
-            &root_kid(&spec.verified_document)?,
-            KeyRole::RootControl,
-            KeyOrigin::External,
-            &created_at,
-        )?;
+        let root_metadata = optional_root_metadata(&spec.verified_document, &created_at)?;
         let request_metadata = key_metadata_from_public(
             &kid,
             KeyRole::RequestSigning,
@@ -380,12 +366,15 @@ impl DidStore {
             &created_at,
         )?;
         let checkpoint = checkpoint(&spec.evidence);
-        let root_fingerprint = root_key_fingerprint(&spec.verified_document)?;
+        let root_fingerprint = method_root_fingerprint(&spec.verified_document)?;
         let mut record = new_identity_record(NewIdentityRecord {
             identity_id: identity_id.clone(),
             did: did.clone(),
             document: spec.verified_document,
-            keys: vec![root_metadata, request_metadata.clone()],
+            keys: root_metadata
+                .into_iter()
+                .chain([request_metadata.clone()])
+                .collect(),
             capabilities: spec.capabilities,
             root_capability: RootCapabilityState::Absent,
             root_key_fingerprint: root_fingerprint.clone(),
@@ -438,8 +427,8 @@ impl DidIdentity {
         self.record().root_capability
     }
 
-    pub fn root_key_fingerprint(&self) -> &str {
-        &self.record().root_key_fingerprint
+    pub fn root_key_fingerprint(&self) -> Option<&str> {
+        self.record().root_key_fingerprint.as_deref()
     }
 
     pub fn checkpoint(&self) -> Option<&DocumentCheckpoint> {
@@ -520,7 +509,7 @@ impl DidIdentity {
         if !is_initial_proof_confirmation(&record, &spec.document, &spec.evidence)? {
             validate_checkpoint_progression(record.checkpoint.as_ref(), &spec.evidence)?;
         }
-        if root_key_fingerprint(&spec.document)? != record.root_key_fingerprint {
+        if method_root_fingerprint(&spec.document)? != record.root_key_fingerprint {
             return Err(DidError::RootKeyMismatch);
         }
         let checkpoint_unchanged = record.checkpoint.as_ref().is_some_and(|current| {
@@ -580,6 +569,7 @@ impl DidIdentity {
             return Ok(outcome);
         }
 
+        record.observe_devices(&spec.document)?;
         record.document = spec.document;
         record.checkpoint = Some(checkpoint(&spec.evidence));
         record.initial_publication_pending = false;
@@ -686,14 +676,28 @@ pub(crate) fn validate_verified_document(
 ) -> DidResult<()> {
     if evidence.document_version == 0
         || evidence.registry_version == 0
-        || !validate_did_document_binding(document, true)
         || document_digest(document)? != evidence.document_digest
     {
         return Err(DidError::InvalidIdentity);
     }
     validate_device_manifest(document).map_err(|_| DidError::InvalidExtension)?;
-    root_key_fingerprint(document)?;
+    validate_method_document(document)?;
     Ok(())
+}
+
+fn optional_root_metadata(document: &Value, created_at: &str) -> DidResult<Option<KeyMetadata>> {
+    if validate_method_document(document)?.supports_root_control() {
+        key_metadata(
+            document,
+            &root_kid(document)?,
+            KeyRole::RootControl,
+            KeyOrigin::External,
+            created_at,
+        )
+        .map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 pub(crate) fn validate_checkpoint_progression(

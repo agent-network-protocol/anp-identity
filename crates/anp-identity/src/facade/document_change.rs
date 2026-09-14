@@ -290,7 +290,13 @@ impl DocumentChangeSession {
             )?
         };
         match outcome {
-            ReconcileOutcome::RemoteOld => Ok(DocumentChangeOutcome::ReadyForPublication),
+            ReconcileOutcome::RemoteOld => {
+                if self.required_pending(&engine)?.state == PublicationState::PublicationUncertain {
+                    Ok(DocumentChangeOutcome::PublicationUncertain)
+                } else {
+                    Ok(DocumentChangeOutcome::ReadyForPublication)
+                }
+            }
             ReconcileOutcome::Committed => Ok(DocumentChangeOutcome::Committed {
                 identity: project_public_identity(&self.store_id, &engine)?,
             }),

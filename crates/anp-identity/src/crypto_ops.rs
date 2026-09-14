@@ -278,6 +278,9 @@ impl DidIdentity {
         service_domain: &str,
         version: &str,
     ) -> DidResult<String> {
+        if crate::DidProfile::for_did(self.did())? != crate::DidProfile::E1 {
+            return Err(DidError::UnsupportedOperation);
+        }
         let metadata = self.request_signing_metadata(kid)?;
         let prepared = prepare_legacy_did_wba_auth_header(
             self.document(),
