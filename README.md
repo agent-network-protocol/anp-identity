@@ -46,6 +46,13 @@ through `ANP_IDENTITY_REGISTRY_MANIFEST`; the SBOM rejects path/git or mixed ANP
 dependencies. Source development and shared-vector tests may still use the
 adjacent ANP checkout.
 
+Source-mode consumer E2E may stage a private tarball with
+`stage-node-package.mjs --local-candidate` and the normal wrapper/platform
+arguments. This mode requires one exact local ANP dependency, records its actual
+commit and dirty state plus the Cargo lock digest, and marks the package private.
+It rejects `ANP_IDENTITY_REGISTRY_MANIFEST`; omitting the flag retains the registry
+gate. Candidate pack/install evidence does not satisfy registry release checks.
+
 ## Shared test fixtures
 
 When the ANP checkout is not an adjacent `anp/` directory, set
