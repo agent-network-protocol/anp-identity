@@ -73,3 +73,27 @@ test('Web provider exposes no DID root and rejects legacy WBA and root export', 
     kid: `${identity.reference.did}#root`, recipientPublicKey: Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url'),
     requestId: 'web-root-export', userPresenceConfirmed: true }))
 })
+
+
+test('Web provider reconciles terminal CAS rejection through native custody', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'anp-web-conflict-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const provider = await IdentityProvider.initialize(config(root))
+  const lease = await provider.acquireLease({ consumer: 'web-conflict', ttlSeconds: 60,
+    capabilities: ['IDENTITY_CREATE', 'IDENTITY_READ', 'IDENTITY_DOCUMENT_UPDATE'] })
+  const identity = await lease.create(request())
+  const status = await lease.hostStatus(identity.reference)
+  const observation = { document: identity.document, evidence: {
+    documentVersion: status.checkpoint.documentVersion,
+    registryVersion: status.checkpoint.registryVersion,
+    documentDigest: status.checkpoint.documentDigest,
+  } }
+  const change = await lease.prepareDocumentChange(identity.reference, { changes: [{ change: 'replace_services', services: [] }] })
+  const attempt = await change.beginPublication()
+  await change.complete(attempt, { result: 'unknown' })
+  await assert.rejects(change.reconcileRejected(observation))
+  observation.evidence.registryVersion += 1
+  assert.deepEqual(await change.reconcileRejected(observation), { outcome: 'aborted' })
+  assert.equal(await lease.resumeDocumentChange(identity.reference), undefined)
+  assert.deepEqual((await lease.publicIdentity(identity.reference)).document, identity.document)
+})

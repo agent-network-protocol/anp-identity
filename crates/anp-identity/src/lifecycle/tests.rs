@@ -469,7 +469,7 @@ fn lifecycle_prepare_and_abort_failure_points_recover_without_orphans() {
         let mut identity = store.create_identity(spec("abort-failure")).unwrap();
         let prepared = identity.prepare_update(update("request-v2")).unwrap();
         assert!(identity
-            .abort_update_inner(&prepared.revision_id, Some(point))
+            .abort_update_inner(&prepared.revision_id, Some(point), None)
             .is_err());
         drop(identity);
         drop(store);

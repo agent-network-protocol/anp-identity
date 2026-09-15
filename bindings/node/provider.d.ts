@@ -349,6 +349,7 @@ export interface ProviderDocumentChangeSession {
     result: PublicationResult,
   ): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+  reconcileRejected(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
 }
 
 export interface ProviderIdentityTransitionSession {

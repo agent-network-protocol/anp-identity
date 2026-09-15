@@ -1,6 +1,6 @@
 use super::*;
 use crate::facade::{IdentityManager, IdentityManagerConfig, InjectedStoreKey, RootKeySource};
-use crate::host::{DocumentChangeRecoveryPort, HostDocumentChangePhase};
+use crate::host::{ConvergenceWorkflow, DocumentChangeRecoveryPort, HostDocumentChangePhase};
 use crate::{Capabilities, DidCreateSpec, DidProfile, KeyRole, ManagedKeySpec};
 
 #[test]
@@ -390,6 +390,13 @@ fn identity() -> (tempfile::TempDir, ManagedIdentity) {
 }
 
 fn identity_with_services(services: Vec<ServiceSpec>) -> (tempfile::TempDir, ManagedIdentity) {
+    identity_with_profile(services, DidProfile::E1)
+}
+
+fn identity_with_profile(
+    services: Vec<ServiceSpec>,
+    profile: DidProfile,
+) -> (tempfile::TempDir, ManagedIdentity) {
     let root = tempfile::tempdir().unwrap();
     let mut manager = IdentityManager::initialize(IdentityManagerConfig {
         state_root: root.path().to_owned(),
@@ -398,7 +405,7 @@ fn identity_with_services(services: Vec<ServiceSpec>) -> (tempfile::TempDir, Man
     .unwrap();
     let identity = manager
         .create_engine_for_test(DidCreateSpec {
-            profile: DidProfile::E1,
+            profile,
             domain: "example.com".to_owned(),
             port: None,
             path_segments: vec!["facade".to_owned(), "document-change".to_owned()],
@@ -412,7 +419,10 @@ fn identity_with_services(services: Vec<ServiceSpec>) -> (tempfile::TempDir, Man
                     fragment: "request".to_owned(),
                     role: KeyRole::RequestSigning,
                 },
-            ],
+            ]
+            .into_iter()
+            .filter(|key| profile != DidProfile::Web || key.role != KeyRole::RootControl)
+            .collect(),
             external_keys: Vec::new(),
             services,
             agent_description_url: None,
@@ -420,4 +430,54 @@ fn identity_with_services(services: Vec<ServiceSpec>) -> (tempfile::TempDir, Man
         })
         .unwrap();
     (root, identity)
+}
+
+#[test]
+fn web_terminal_rejection_reconciles_only_forward_checkpoint_and_releases_candidate() {
+    let (_root, mut identity) = identity_with_profile(vec![], DidProfile::Web);
+    let old = identity.public_identity().unwrap().document;
+    let mut base = remote(old.clone());
+    base.evidence.document_version = 1;
+    base.evidence.registry_version = 1;
+    identity.adopt_verified_document(base.clone()).unwrap();
+    let mut change = identity
+        .prepare_document_change(rotation("rejected-key"))
+        .unwrap();
+    let candidate = change.candidate().clone();
+    assert!(change.reconcile_rejected(remote(old.clone())).is_err());
+    let attempt = change.begin_publication().unwrap();
+    change
+        .complete(attempt, PublicationResult::Unknown)
+        .unwrap();
+    assert_eq!(
+        change.reconcile(base.clone()).unwrap(),
+        DocumentChangeOutcome::PublicationUncertain
+    );
+    assert!(change.reconcile_rejected(base).is_err());
+    let mut invalid = remote(old.clone());
+    invalid.evidence.document_digest = "wrong".into();
+    assert!(change.reconcile_rejected(invalid).is_err());
+    let mut stale = remote(old.clone());
+    stale.evidence.document_version = 0;
+    assert!(change.reconcile_rejected(stale).is_err());
+    assert!(identity.resume_document_change().unwrap().is_some());
+    assert_eq!(
+        change.reconcile_rejected(remote(old.clone())).unwrap(),
+        DocumentChangeOutcome::Aborted
+    );
+    assert!(identity.resume_document_change().unwrap().is_none());
+    assert_eq!(identity.public_identity().unwrap().document, old);
+    assert!(!identity
+        .public_identity()
+        .unwrap()
+        .active_keys
+        .iter()
+        .any(|key| key.kid.ends_with("#rejected-key")));
+    assert!(change
+        .reconcile_rejected(remote(candidate.candidate_document))
+        .is_err());
+    identity.adopt_verified_document(remote(old)).unwrap();
+    identity
+        .prepare_document_change(rotation("fresh-key"))
+        .unwrap();
 }

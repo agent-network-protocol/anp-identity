@@ -159,6 +159,18 @@ own authorized service workflow. Device IDs observed as removed are persisted
 and cannot be added again, including after reopening the Store. An authoritative
 service must enforce retirement history the local Store has never observed.
 
+A trusted host may call `DocumentChangeSession::reconcile_rejected` (Node
+`reconcileRejected`) only after durably recording the original operation's
+terminal CAS rejection from an idempotent publisher and verifying current
+administrative eligibility. It requires `PublicationUncertain`, a verified
+same-Web-DID document, a monotonically advancing checkpoint, and unchanged local
+key authorization. The existing locked cleanup journal retires pending secrets
+and returns `Aborted`; it does not report the old candidate as committed. The host
+then adopts the current verified document and finishes its durable business
+journal. A timeout, an unclassified error, or a document read alone cannot supply
+this rejection evidence. Normal reconcile and WBA publication behavior are unchanged.
+
+
 ANP Identity is not:
 
 - a DID registry, resolver, hosting service, or publication transport;

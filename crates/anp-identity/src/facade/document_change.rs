@@ -303,6 +303,30 @@ impl DocumentChangeSession {
         }
     }
 
+    /// Reconcile an exact Web operation authoritatively rejected by its publisher.
+    /// The host must verify the original operation's terminal CAS rejection and
+    /// current authorization before calling this method. A timeout or a document
+    /// read alone is insufficient. Pending secret cleanup remains journaled.
+    pub fn reconcile_rejected(
+        &mut self,
+        observation: VerifiedRemoteDocument,
+    ) -> IdentityResult<DocumentChangeOutcome> {
+        validate_evidence(
+            &observation.evidence,
+            &crate::canonical_document_digest(observation.document.as_value())?,
+        )?;
+        let mut engine = self.lock_engine()?;
+        self.required_pending(&engine)?;
+        engine.reconcile_rejected_update(
+            &self.candidate.operation_id,
+            &crate::AdoptVerifiedDocumentSpec {
+                document: observation.document.as_value().clone(),
+                evidence: engine_evidence(&observation.evidence),
+            },
+        )?;
+        Ok(DocumentChangeOutcome::Aborted)
+    }
+
     fn lock_engine(&self) -> IdentityResult<MutexGuard<'_, DidIdentity>> {
         self.engine.lock().map_err(|_| IdentityError::Internal)
     }

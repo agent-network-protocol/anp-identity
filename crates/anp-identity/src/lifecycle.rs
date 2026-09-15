@@ -207,7 +207,15 @@ impl DidIdentity {
     }
 
     pub fn abort_update(&mut self, revision_id: &str) -> DidResult<()> {
-        self.abort_update_inner(revision_id, None)
+        self.abort_update_inner(revision_id, None, None)
+    }
+
+    pub(crate) fn reconcile_rejected_update(
+        &mut self,
+        revision_id: &str,
+        observation: &crate::AdoptVerifiedDocumentSpec,
+    ) -> DidResult<()> {
+        self.abort_update_inner(revision_id, None, Some(observation))
     }
 
     pub fn reconcile_update(
@@ -535,11 +543,48 @@ impl DidIdentity {
         &mut self,
         revision_id: &str,
         failure: Option<LifecycleFailurePoint>,
+        rejection: Option<&crate::AdoptVerifiedDocumentSpec>,
     ) -> DidResult<()> {
         let guard = self.runtime().acquire_write()?;
         let mut record = self.current_record_for_mutation()?;
         let pending = required_pending(&record, revision_id)?.clone();
-        if pending.state != PublicationState::Prepared {
+        if let Some(observation) = rejection {
+            if pending.state != PublicationState::PublicationUncertain
+                || crate::DidProfile::for_did(self.did())? != crate::DidProfile::Web
+            {
+                return Err(DidError::InvalidPublicationState);
+            }
+            crate::adoption::validate_verified_document(
+                &observation.document,
+                &observation.evidence,
+            )?;
+            if observation.document.get("id").and_then(Value::as_str) != Some(self.did()) {
+                return Err(DidError::InvalidIdentity);
+            }
+            crate::adoption::validate_checkpoint_progression(
+                record.checkpoint.as_ref(),
+                &observation.evidence,
+            )?;
+            if let Some(local) = record.local_authorization.as_ref() {
+                crate::adoption::local_authorization_matches(
+                    &record,
+                    &observation.document,
+                    local,
+                )?;
+            } else if let Some(kid) = record.local_request_signing_kid.as_deref() {
+                crate::adoption::request_signing_authorization_matches(
+                    &record,
+                    &observation.document,
+                    kid,
+                )?;
+            }
+            let base = record.checkpoint.as_ref().ok_or(DidError::Conflict)?;
+            if observation.evidence.document_version == base.document_version
+                && observation.evidence.registry_version == base.registry_version
+            {
+                return Err(DidError::Conflict);
+            }
+        } else if pending.state != PublicationState::Prepared {
             return Err(DidError::InvalidPublicationState);
         }
         let journal = UpdateJournal::new(

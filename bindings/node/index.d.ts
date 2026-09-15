@@ -326,6 +326,7 @@ export class DocumentChangeSession {
   beginPublication(): Promise<PublicationAttempt>
   complete(attempt: PublicationAttempt, result: PublicationResult): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+  reconcileRejected(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
 }
 
 export class IdentityTransitionSession {

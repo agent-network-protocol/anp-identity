@@ -138,6 +138,12 @@ class DocumentChangeSession {
       await call(this.#inner.reconcile(verifiedRemoteDocument(observation))),
     )
   }
+
+  async reconcileRejected(observation) {
+    return documentChangeOutcome(
+      await call(this.#inner.reconcileRejected(verifiedRemoteDocument(observation))),
+    )
+  }
 }
 
 class IdentityTransitionSession {

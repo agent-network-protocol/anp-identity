@@ -735,7 +735,7 @@ fn root_kid(document: &Value) -> DidResult<String> {
         .ok_or(DidError::InvalidIdentity)
 }
 
-fn local_authorization_matches(
+pub(crate) fn local_authorization_matches(
     record: &IdentityRecord,
     document: &Value,
     local: &LocalAuthorizationRecord,
@@ -788,7 +788,7 @@ fn key_matches_document(document: &Value, metadata: &KeyMetadata) -> DidResult<(
     Ok(())
 }
 
-fn request_signing_authorization_matches(
+pub(crate) fn request_signing_authorization_matches(
     record: &IdentityRecord,
     document: &Value,
     kid: &str,

@@ -436,6 +436,16 @@ impl JsDocumentChangeSession {
         })
         .await
     }
+
+    #[napi]
+    pub async fn reconcile_rejected(&self, observation: Value) -> Result<Value> {
+        let observation: VerifiedRemoteDocument =
+            serde_json::from_value(observation).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.reconcile_rejected(observation).map_err(map_error)?)
+        })
+        .await
+    }
 }
 
 #[napi(js_name = "IdentityTransitionSession")]
@@ -1390,6 +1400,16 @@ impl JsProviderDocumentChangeSession {
             serde_json::from_value(observation).map_err(invalid_json)?;
         self.with_session(move |session| {
             to_value(session.reconcile(observation).map_err(map_error)?)
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn reconcile_rejected(&self, observation: Value) -> Result<Value> {
+        let observation: VerifiedRemoteDocument =
+            serde_json::from_value(observation).map_err(invalid_json)?;
+        self.with_session(move |session| {
+            to_value(session.reconcile_rejected(observation).map_err(map_error)?)
         })
         .await
     }

@@ -5,6 +5,7 @@ export declare class DocumentChangeSession {
   beginPublication(): Promise<any>
   complete(attempt: any, result: any): Promise<any>
   reconcile(observation: any): Promise<any>
+  reconcileRejected(observation: any): Promise<any>
 }
 export type JsDocumentChangeSession = DocumentChangeSession
 
@@ -66,6 +67,7 @@ export declare class ProviderDocumentChangeSession {
   beginPublication(): Promise<any>
   complete(attempt: any, result: any): Promise<any>
   reconcile(observation: any): Promise<any>
+  reconcileRejected(observation: any): Promise<any>
 }
 export type JsProviderDocumentChangeSession = ProviderDocumentChangeSession
 
