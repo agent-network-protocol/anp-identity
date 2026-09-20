@@ -78,6 +78,9 @@ pub(crate) struct BuiltIdentity {
 
 pub(crate) fn build_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
     spec.validate()?;
+    if spec.profile == crate::DidProfile::Web {
+        return build_web_identity(spec);
+    }
     let managed_keys = spec
         .managed_keys
         .iter()
@@ -190,6 +193,132 @@ pub(crate) fn build_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
         metadata,
         created_at,
     })
+}
+
+fn build_web_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
+    let authority = match spec.port {
+        Some(port) => format!("{}%3A{port}", spec.domain),
+        None => spec.domain.clone(),
+    };
+    let mut did = format!("did:web:{authority}");
+    for segment in &spec.path_segments {
+        did.push(':');
+        did.push_str(segment);
+    }
+    anp::authentication::build_did_web_resolution_url(&did)
+        .map_err(|_| DidError::InvalidIdentity)?;
+    spec.validate_for_did(&did)?;
+    let managed_keys = spec
+        .managed_keys
+        .iter()
+        .map(|key| ManagedPrivateKey::generate(key.fragment.clone(), key.role))
+        .collect::<Vec<_>>();
+    let mut methods = Vec::new();
+    let mut authentication = Vec::new();
+    let mut assertion = Vec::new();
+    let mut agreement = Vec::new();
+    let mut add_key = |kid: String, role: KeyRole, public: PublicKeyMaterial| -> DidResult<()> {
+        methods.push(json!({
+            "id": kid, "type": "Multikey", "controller": did,
+            "publicKeyMultibase": public_key_multibase(&public)?,
+        }));
+        for relationship in relationships(role) {
+            match relationship {
+                DidVerificationRelationship::Authentication => authentication.push(kid.clone()),
+                DidVerificationRelationship::AssertionMethod => assertion.push(kid.clone()),
+                DidVerificationRelationship::KeyAgreement => agreement.push(kid.clone()),
+            }
+        }
+        Ok(())
+    };
+    for key in &managed_keys {
+        add_key(
+            format!("{did}#{}", key.fragment),
+            key.role,
+            key.public_key(),
+        )?;
+    }
+    for key in &spec.external_keys {
+        add_key(
+            canonicalize_kid(&did, &key.kid)?,
+            key.role,
+            key.parse_public_key()?,
+        )?;
+    }
+    let mut document = json!({
+        "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
+        "id": did, "verificationMethod": methods,
+        "authentication": authentication, "assertionMethod": assertion, "keyAgreement": agreement,
+    });
+    let mut services = spec.services.iter().map(service_json).collect::<Vec<_>>();
+    if let Some(url) = &spec.agent_description_url {
+        services.push(
+            json!({"id": "#agent-description", "type": "AgentDescription", "serviceEndpoint": url}),
+        );
+    }
+    for service in &mut services {
+        let id = service["id"].as_str().ok_or(DidError::InvalidService)?;
+        if id.starts_with('#') {
+            service["id"] = Value::String(format!("{did}{id}"));
+        }
+    }
+    if !services.is_empty() {
+        document["service"] = Value::Array(services);
+    }
+    apply_extensions(&mut document, &did, &spec.extensions)?;
+    validate_method_document(&document)?;
+    validate_device_manifest(&document).map_err(|_| DidError::InvalidExtension)?;
+    let created_at = Utc::now().to_rfc3339();
+    let mut metadata = Vec::new();
+    for key in &managed_keys {
+        metadata.push(key_metadata(
+            &document,
+            &format!("{did}#{}", key.fragment),
+            key.role,
+            KeyOrigin::Managed,
+            &created_at,
+        )?);
+    }
+    for key in &spec.external_keys {
+        metadata.push(key_metadata(
+            &document,
+            &canonicalize_kid(&did, &key.kid)?,
+            key.role,
+            KeyOrigin::External,
+            &created_at,
+        )?);
+    }
+    Ok(BuiltIdentity {
+        did,
+        document,
+        managed_keys,
+        metadata,
+        created_at,
+    })
+}
+
+pub(crate) fn validate_method_document(document: &Value) -> DidResult<crate::DidProfile> {
+    let did = document
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or(DidError::InvalidIdentity)?;
+    let profile = crate::DidProfile::for_did(did)?;
+    if !anp::authentication::validate_did_document_method(document, true) {
+        return Err(DidError::InvalidIdentity);
+    }
+    if profile.supports_root_control() {
+        root_key_fingerprint(document)?;
+    }
+    Ok(profile)
+}
+
+pub(crate) fn method_root_fingerprint(document: &Value) -> DidResult<Option<String>> {
+    let profile = validate_method_document(document)?;
+    if profile.supports_root_control() {
+        root_key_fingerprint(document).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 pub(crate) fn public_key_from_secret(

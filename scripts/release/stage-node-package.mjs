@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const stagingRoot = resolve(repositoryRoot, 'dist/node-release/staged')
 const bindingRoot = join(repositoryRoot, 'bindings/node')
+const localCandidate = process.argv.includes('--local-candidate')
 
 function fail(message) {
   throw new Error(message)
@@ -49,17 +50,34 @@ function sourceRevision() {
   }
 }
 
+export function validateAnpResolution(metadata, anpVersion, candidate) {
+  const packages = metadata.packages.filter((pkg) => pkg.name === 'anp')
+  if (!anpVersion || packages.length !== 1 || packages[0].version !== anpVersion ||
+      (candidate ? packages[0].source !== null :
+        packages[0].source !== 'registry+https://github.com/rust-lang/crates.io-index')) {
+    fail(candidate ? 'local candidate must resolve one exact local ANP source' :
+      'release SBOM must resolve the exact published registry ANP')
+  }
+  return packages[0]
+}
+
 function sbom(manifest) {
   const registryManifest = process.env.ANP_IDENTITY_REGISTRY_MANIFEST?.trim()
-  if (!registryManifest) fail('ANP_IDENTITY_REGISTRY_MANIFEST must identify the verified registry build')
-  const metadata = JSON.parse(run('cargo', ['metadata', '--manifest-path', resolve(registryManifest), '--format-version', '1', '--locked']))
+  if (localCandidate && registryManifest) fail('local candidate cannot claim a registry build')
+  if (!localCandidate && !registryManifest) fail('ANP_IDENTITY_REGISTRY_MANIFEST must identify the verified registry build')
+  const buildManifest = localCandidate ? join(repositoryRoot, 'Cargo.toml') : resolve(registryManifest)
+  const metadata = JSON.parse(run('cargo', ['metadata', '--manifest-path', buildManifest, '--format-version', '1', '--locked']))
   const sourceManifest = run('git', ['show', 'HEAD:Cargo.toml'])
   const anpVersion = sourceManifest.match(/^anp\s*=.*version\s*=\s*"=([^"]+)"/m)?.[1]
-  const anpPackages = metadata.packages.filter((pkg) => pkg.name === 'anp')
-  if (!anpVersion || anpPackages.length !== 1 || anpPackages[0].version !== anpVersion ||
-      anpPackages[0].source !== 'registry+https://github.com/rust-lang/crates.io-index') {
-    fail('release SBOM must resolve the exact published registry ANP')
-  }
+  const anp = validateAnpResolution(metadata, anpVersion, localCandidate)
+  const resolution = localCandidate ? {
+    mode: 'local-candidate',
+    anp: {
+      version: anp.version,
+      commit: run('git', ['-C', dirname(anp.manifest_path), 'rev-parse', 'HEAD']),
+      dirty: run('git', ['-C', dirname(anp.manifest_path), 'status', '--short']).length > 0,
+    },
+  } : { mode: 'registry', anp: { version: anp.version, source: anp.source } }
   const cargo = metadata.packages.map((pkg) => ({
     type: 'library',
     name: pkg.name,
@@ -76,18 +94,19 @@ function sbom(manifest) {
     purl: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`,
     scope: 'optional',
   }))
-  return {
+  return { resolution, document: {
     bomFormat: 'CycloneDX',
     specVersion: '1.6',
     version: 1,
     metadata: { component: { type: 'library', name: manifest.name, version: manifest.version } },
     components: [...cargo, ...optional].sort((left, right) =>
       `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`)),
-  }
+  } }
 }
 
 async function writeMetadata(output, manifest, target, binary) {
   const source = sourceRevision()
+  const bill = sbom(manifest)
   const provenance = {
     schemaVersion: 1,
     package: { name: manifest.name, version: manifest.version },
@@ -96,6 +115,8 @@ async function writeMetadata(output, manifest, target, binary) {
       repository: 'https://github.com/agent-network-protocol/anp-identity',
       ...source,
     },
+    dependencyResolution: bill.resolution,
+    ...(localCandidate ? { localCandidate: true, cargoLockSha256: await sha256(join(repositoryRoot, 'Cargo.lock')) } : {}),
     toolchain: { rustc: run('rustc', ['--version']), node: process.version },
     ...(binary ? { binarySha256: await sha256(binary) } : {}),
   }
@@ -103,7 +124,7 @@ async function writeMetadata(output, manifest, target, binary) {
   await writeFile(join(output, 'NOTICE.md'), '# Notices\n\nThird-party components are listed in sbom.cdx.json.\n')
   await writeFile(join(output, 'SOURCE.md'), `# Corresponding Source\n\nRepository: https://github.com/agent-network-protocol/anp-identity\nCommit: ${source.commit}\nTarget: ${target || 'platform-independent-wrapper'}\n`)
   await writeFile(join(output, 'provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`)
-  await writeFile(join(output, 'sbom.cdx.json'), `${JSON.stringify(sbom(manifest), null, 2)}\n`)
+  await writeFile(join(output, 'sbom.cdx.json'), `${JSON.stringify(bill.document, null, 2)}\n`)
 }
 
 async function writeChecksums(output) {
@@ -128,6 +149,7 @@ async function stage() {
     ? bindingRoot
     : resolve(repositoryRoot, argument('package-dir'))
   const manifest = await json(join(packageRoot, 'package.json'))
+  if (localCandidate) manifest.private = true
   await rm(output, { recursive: true, force: true })
   await mkdir(output, { recursive: true })
   await writeFile(join(output, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
@@ -153,4 +175,4 @@ async function stage() {
   process.stdout.write(`${relative(repositoryRoot, output)}\n`)
 }
 
-await stage()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await stage()

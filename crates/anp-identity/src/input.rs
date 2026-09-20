@@ -17,6 +17,25 @@ const MAX_SERVICE_VALUE_LEN: usize = 2048;
 #[serde(rename_all = "snake_case")]
 pub enum DidProfile {
     E1,
+    Web,
+}
+
+impl DidProfile {
+    pub(crate) fn for_did(did: &str) -> DidResult<Self> {
+        if did.starts_with("did:wba:") {
+            Ok(Self::E1)
+        } else if did.starts_with("did:web:")
+            && anp::authentication::build_did_web_resolution_url(did).is_ok()
+        {
+            Ok(Self::Web)
+        } else {
+            Err(DidError::InvalidIdentity)
+        }
+    }
+
+    pub fn supports_root_control(self) -> bool {
+        self == Self::E1
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -123,7 +142,7 @@ pub struct DidCreateSpec {
 impl DidCreateSpec {
     pub fn validate(&self) -> DidResult<()> {
         validate_domain(&self.domain)?;
-        if self.path_segments.is_empty() {
+        if self.profile == DidProfile::E1 && self.path_segments.is_empty() {
             return Err(DidError::EmptyPath);
         }
         for segment in &self.path_segments {
@@ -134,7 +153,7 @@ impl DidCreateSpec {
             .iter()
             .filter(|key| key.role == KeyRole::RootControl)
             .count();
-        if root_count != 1 {
+        if root_count != usize::from(self.profile.supports_root_control()) {
             return Err(DidError::InvalidManagedRootCount);
         }
         if self

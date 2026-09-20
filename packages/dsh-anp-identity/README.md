@@ -27,6 +27,12 @@ This package supplies that coordination layer. ANP Identity remains the source o
 - Bounded authenticated HTTP dispatch with exact HTTPS-origin allowlists, a 4 MiB body limit, managed-header rejection, and manual redirects.
 - A separate Host Provider lease for AWiki IM Core and similar trusted native consumers. Host-only operations include sealed ECDH, sealed import/export, enrollment, Root Transfer, and exact HTTP header patches.
 
+Creation accepts the native `profile: 'e1' | 'web'` through the same client
+lease. Web omits the DID `root_control` key while retaining Store encryption,
+purpose-scoped signing, document changes and Host enrollment. Web Host status has
+`rootKeyFingerprint: null`; Root Import/Transfer remain WBA-only. The public
+types are imported from the native package, without a second method model here.
+
 ## What it does not provide
 
 - It is not a DID registry, resolver, publication server, backup system, or wallet UI.

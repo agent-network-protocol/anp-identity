@@ -39,7 +39,7 @@ fn v1b_enrollment_adopts_verified_device_then_revokes_when_remote_document_remov
     assert_eq!(identity.state(), IdentityState::Enrolling);
     assert_eq!(identity.root_capability(), RootCapabilityState::Absent);
     assert_eq!(
-        prepared.root_key_fingerprint,
+        prepared.root_key_fingerprint.as_deref(),
         identity.root_key_fingerprint()
     );
     assert_eq!(prepared.checkpoint, *identity.checkpoint().unwrap());

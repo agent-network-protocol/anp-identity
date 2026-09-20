@@ -71,7 +71,7 @@ export interface PreparedHttpSignatureAttempt {
 
 export interface IdentityHostStatus {
   rootCapability: 'absent' | 'pending' | 'active'
-  rootKeyFingerprint: string
+  rootKeyFingerprint: string | null
   checkpoint?: HostDocumentCheckpoint
 }
 
@@ -238,7 +238,7 @@ export interface EnrollmentProposal {
   enrollmentId: string
   identity: IdentityReference
   kind: EnrollmentProposalKind
-  rootKeyFingerprint: string
+  rootKeyFingerprint: string | null
   checkpoint: HostDocumentCheckpoint
 }
 
@@ -353,6 +353,7 @@ export interface ProviderDocumentChangeSession {
     result: PublicationResult,
   ): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+  reconcileRejected(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
 }
 
 export interface ProviderIdentityTransitionSession {

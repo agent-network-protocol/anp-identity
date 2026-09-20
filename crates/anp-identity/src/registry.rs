@@ -109,7 +109,7 @@ pub(crate) struct IdentityRecord {
     #[serde(default)]
     pub(crate) root_capability: RootCapabilityState,
     #[serde(default)]
-    pub(crate) root_key_fingerprint: String,
+    pub(crate) root_key_fingerprint: Option<String>,
     #[serde(default)]
     pub(crate) checkpoint: Option<DocumentCheckpoint>,
     // Missing in older stores: never infer unpublished authority from version 1 alone.
@@ -127,12 +127,42 @@ pub(crate) struct IdentityRecord {
     pub(crate) pending_root_transfer: Option<PendingRootTransferRecord>,
     #[serde(default)]
     pub(crate) root_transfer_replays: Vec<RootTransferReplayRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) retired_device_ids: Vec<String>,
     pub(crate) created_at: String,
     #[serde(default)]
     pub(crate) pending_revision: Option<PendingRevisionRecord>,
 }
 
 impl IdentityRecord {
+    // Called under the existing write lock before accepting a document checkpoint.
+    pub(crate) fn observe_devices(&mut self, next: &Value) -> DidResult<()> {
+        let ids = |document: &Value| -> std::collections::BTreeSet<String> {
+            document
+                .get("deviceManifest")
+                .and_then(|manifest| manifest.get("devices"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|device| device.get("device_id").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect()
+        };
+        let next_ids = ids(next);
+        if self
+            .retired_device_ids
+            .iter()
+            .any(|id| next_ids.contains(id))
+        {
+            return Err(DidError::InvalidExtension);
+        }
+        self.retired_device_ids
+            .extend(ids(&self.document).difference(&next_ids).cloned());
+        self.retired_device_ids.sort();
+        self.retired_device_ids.dedup();
+        Ok(())
+    }
+
     pub(crate) fn summary(&self) -> IdentitySummary {
         IdentitySummary {
             identity_id: self.identity_id.clone(),
@@ -410,8 +440,24 @@ pub(crate) fn read_identity(root: &Path, identity_id: &str) -> DidResult<Identit
     if record.schema_version != IDENTITY_SCHEMA_VERSION || record.identity_id != identity_id {
         return Err(DidError::InvalidIdentity);
     }
-    if record.root_key_fingerprint.is_empty() {
-        record.root_key_fingerprint = crate::document::root_key_fingerprint(&record.document)?;
+    let profile = crate::DidProfile::for_did(&record.did)?;
+    if profile.supports_root_control()
+        && record
+            .root_key_fingerprint
+            .as_deref()
+            .is_none_or(str::is_empty)
+    {
+        record.root_key_fingerprint =
+            Some(crate::document::root_key_fingerprint(&record.document)?);
+    } else if !profile.supports_root_control()
+        && (record.root_key_fingerprint.is_some()
+            || record.root_capability != RootCapabilityState::Absent
+            || record
+                .keys
+                .iter()
+                .any(|key| key.role == crate::KeyRole::RootControl))
+    {
+        return Err(DidError::InvalidIdentity);
     }
     if record.checkpoint.is_none() {
         record.checkpoint = Some(DocumentCheckpoint {
@@ -604,7 +650,7 @@ pub(crate) struct NewIdentityRecord {
     pub(crate) keys: Vec<KeyMetadata>,
     pub(crate) capabilities: Capabilities,
     pub(crate) root_capability: RootCapabilityState,
-    pub(crate) root_key_fingerprint: String,
+    pub(crate) root_key_fingerprint: Option<String>,
     pub(crate) checkpoint: DocumentCheckpoint,
     pub(crate) local_authorization: Option<LocalAuthorizationRecord>,
     pub(crate) created_at: String,
@@ -631,6 +677,7 @@ pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
         pending_request_signing: None,
         pending_root_transfer: None,
         root_transfer_replays: Vec::new(),
+        retired_device_ids: Vec::new(),
         created_at: input.created_at,
         pending_revision: None,
     }

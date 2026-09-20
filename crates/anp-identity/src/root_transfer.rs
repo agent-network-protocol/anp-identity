@@ -196,7 +196,7 @@ impl DidIdentity {
     pub fn confirm_root_promotion(&mut self, spec: RootPromotionSpec) -> DidResult<()> {
         crate::adoption::validate_verified_document(&spec.document, &spec.evidence)?;
         if spec.document.get("id").and_then(Value::as_str) != Some(self.did())
-            || root_key_fingerprint(&spec.document)? != self.root_key_fingerprint()
+            || Some(root_key_fingerprint(&spec.document)?.as_str()) != self.root_key_fingerprint()
         {
             return Err(DidError::InvalidRootTransfer);
         }
@@ -699,7 +699,7 @@ fn verify_root_public(
     let expected =
         anp::authentication::extract_public_key(&method).map_err(|_| DidError::InvalidPublicKey)?;
     if !public_keys_equal(public, &expected)
-        || root_key_fingerprint(&record.document)? != record.root_key_fingerprint
+        || Some(root_key_fingerprint(&record.document)?) != record.root_key_fingerprint
     {
         return Err(DidError::InvalidPublicKey);
     }

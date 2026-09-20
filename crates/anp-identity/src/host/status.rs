@@ -22,7 +22,7 @@ pub struct HostDocumentCheckpoint {
 #[serde(deny_unknown_fields)]
 pub struct IdentityHostStatus {
     pub root_capability: HostRootCapability,
-    pub root_key_fingerprint: String,
+    pub root_key_fingerprint: Option<String>,
     pub checkpoint: Option<HostDocumentCheckpoint>,
 }
 
@@ -41,7 +41,7 @@ impl IdentityStatusPort for ManagedIdentity {
                 RootCapabilityState::Pending => HostRootCapability::Pending,
                 RootCapabilityState::Active => HostRootCapability::Active,
             },
-            root_key_fingerprint: engine.root_key_fingerprint().to_owned(),
+            root_key_fingerprint: engine.root_key_fingerprint().map(ToOwned::to_owned),
             checkpoint: engine
                 .checkpoint()
                 .map(|checkpoint| HostDocumentCheckpoint {

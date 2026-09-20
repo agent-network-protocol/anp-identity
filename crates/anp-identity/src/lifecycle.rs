@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use anp::authentication::{validate_device_manifest, validate_did_document_binding};
+use anp::authentication::validate_device_manifest;
 
 use crate::document::{
     ed25519_public_multibase, key_metadata, public_keys_equal, service_json, sign_root_document,
-    ManagedPrivateKey,
+    validate_method_document, ManagedPrivateKey,
 };
 use crate::input::{canonicalize_kid, validate_fragment};
 use crate::keystore::{SealIfAbsent, SecretRef};
@@ -207,7 +207,15 @@ impl DidIdentity {
     }
 
     pub fn abort_update(&mut self, revision_id: &str) -> DidResult<()> {
-        self.abort_update_inner(revision_id, None)
+        self.abort_update_inner(revision_id, None, None)
+    }
+
+    pub(crate) fn reconcile_rejected_update(
+        &mut self,
+        revision_id: &str,
+        observation: &crate::AdoptVerifiedDocumentSpec,
+    ) -> DidResult<()> {
+        self.abort_update_inner(revision_id, None, Some(observation))
     }
 
     pub fn reconcile_update(
@@ -220,7 +228,7 @@ impl DidIdentity {
             return Err(DidError::InvalidPublicationState);
         }
         if observed_remote_document.get("id").and_then(Value::as_str) != Some(self.did())
-            || !validate_did_document_binding(observed_remote_document, true)
+            || validate_method_document(observed_remote_document).is_err()
         {
             return Err(DidError::InvalidIdentity);
         }
@@ -230,6 +238,10 @@ impl DidIdentity {
             return Ok(ReconcileOutcome::Committed);
         }
         if observed_digest == canonical_digest(self.document())? {
+            // An old HTTPS document cannot prove a Web publication was rejected.
+            if crate::DidProfile::for_did(self.did())? == crate::DidProfile::Web {
+                return Ok(ReconcileOutcome::RemoteOld);
+            }
             self.transition_publication(
                 revision_id,
                 PublicationState::PublicationUncertain,
@@ -497,6 +509,7 @@ impl DidIdentity {
                 replaced.state = KeyState::Retired;
             }
         }
+        record.observe_devices(&pending.candidate_document)?;
         record.keys.extend(pending.new_key_metadata);
         record.document = pending.candidate_document;
         record.revision = match evidence {
@@ -530,11 +543,48 @@ impl DidIdentity {
         &mut self,
         revision_id: &str,
         failure: Option<LifecycleFailurePoint>,
+        rejection: Option<&crate::AdoptVerifiedDocumentSpec>,
     ) -> DidResult<()> {
         let guard = self.runtime().acquire_write()?;
         let mut record = self.current_record_for_mutation()?;
         let pending = required_pending(&record, revision_id)?.clone();
-        if pending.state != PublicationState::Prepared {
+        if let Some(observation) = rejection {
+            if pending.state != PublicationState::PublicationUncertain
+                || crate::DidProfile::for_did(self.did())? != crate::DidProfile::Web
+            {
+                return Err(DidError::InvalidPublicationState);
+            }
+            crate::adoption::validate_verified_document(
+                &observation.document,
+                &observation.evidence,
+            )?;
+            if observation.document.get("id").and_then(Value::as_str) != Some(self.did()) {
+                return Err(DidError::InvalidIdentity);
+            }
+            crate::adoption::validate_checkpoint_progression(
+                record.checkpoint.as_ref(),
+                &observation.evidence,
+            )?;
+            if let Some(local) = record.local_authorization.as_ref() {
+                crate::adoption::local_authorization_matches(
+                    &record,
+                    &observation.document,
+                    local,
+                )?;
+            } else if let Some(kid) = record.local_request_signing_kid.as_deref() {
+                crate::adoption::request_signing_authorization_matches(
+                    &record,
+                    &observation.document,
+                    kid,
+                )?;
+            }
+            let base = record.checkpoint.as_ref().ok_or(DidError::Conflict)?;
+            if observation.evidence.document_version == base.document_version
+                && observation.evidence.registry_version == base.registry_version
+            {
+                return Err(DidError::Conflict);
+            }
+        } else if pending.state != PublicationState::Prepared {
             return Err(DidError::InvalidPublicationState);
         }
         let journal = UpdateJournal::new(
@@ -720,16 +770,19 @@ fn build_candidate_document(
         }
         object.insert("service".to_string(), Value::Array(output));
     }
-    let root = record
-        .keys
-        .iter()
-        .find(|metadata| metadata.role == KeyRole::RootControl)
-        .ok_or(DidError::InvalidIdentity)?;
-    let root_secret = identity.load_managed_secret(root)?;
-    let signed = sign_root_document(&document, &root.kid, &root_secret, proof_domain)?;
-    if !validate_did_document_binding(&signed, true) {
-        return Err(DidError::InvalidIdentity);
-    }
+    let signed = if crate::DidProfile::for_did(&record.did)?.supports_root_control() {
+        let root = record
+            .keys
+            .iter()
+            .find(|metadata| metadata.role == KeyRole::RootControl)
+            .ok_or(DidError::InvalidIdentity)?;
+        let root_secret = identity.load_managed_secret(root)?;
+        sign_root_document(&document, &root.kid, &root_secret, proof_domain)?
+    } else {
+        // The Host authenticates the operation; HTTPS publication has no WBA root proof.
+        document
+    };
+    validate_method_document(&signed)?;
     validate_device_manifest(&signed).map_err(|_| DidError::InvalidExtension)?;
     Ok(CandidateChanges {
         document: signed,
@@ -827,13 +880,15 @@ fn apply_device_mutations(
         .map_err(|_| DidError::InvalidExtension)?;
     let mut added_keys = Vec::new();
     let mut retired_kids = Vec::new();
+    let mut retired_device_ids = record.retired_device_ids.clone();
     for mutation in mutations {
         match mutation {
             DeviceMutationSpec::Add { device } => {
                 validate_device_add(device)?;
                 let signing_kid = canonicalize_kid(&record.did, &device.signing_key.kid)?;
                 let e2ee_kid = canonicalize_kid(&record.did, &device.e2ee_key.kid)?;
-                if signing_kid == e2ee_kid
+                if retired_device_ids.contains(&device.device_id)
+                    || signing_kid == e2ee_kid
                     || record
                         .keys
                         .iter()
@@ -913,6 +968,7 @@ fn apply_device_mutations(
                     .position(|entry| entry.device_id == *device_id)
                     .ok_or(DidError::KeyNotFound)?;
                 let removed = current.devices.remove(index);
+                retired_device_ids.push(removed.device_id.clone());
                 methods_mut(object)?.retain(|method| {
                     method.get("id").and_then(Value::as_str)
                         != Some(removed.signing_key_id.as_str())

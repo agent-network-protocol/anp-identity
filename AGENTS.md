@@ -7,7 +7,10 @@ Behavior changes and verification follow the relevant [Verification Policy](../.
 sections; production behavior needs owning unit coverage and applicable System/product E2E review.
 If Harness is absent, use local docs/tests/CI and disclose missing acceptance evidence.
 
-- Scope v1 to E1 identities. Do not add K1, PlainLegacy, P-256 legacy E2EE,
+- Support E1 and rootless Web identity creation, device enrollment/adoption, and
+  normal document/device changes. Web has no DID RootControl, Root Import,
+  root transfer, or recovery. The Store encryption root remains method-independent.
+  Do not add K1, PlainLegacy, P-256 legacy E2EE,
   backup, root-provider rekey, or root-control rotation. The approved private-key
   egress exception is the default-off `root-export` Rust API used by the
   existing `RootKeyEnvelopeV1` transfer flow. Do not generalize it to other key

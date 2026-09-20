@@ -250,7 +250,7 @@ impl DidStore {
         }
         verify_all_persisted_keys(&self.runtime, &built, &secret_refs)?;
 
-        let root_key_fingerprint = crate::document::root_key_fingerprint(&built.document)?;
+        let root_key_fingerprint = crate::document::method_root_fingerprint(&built.document)?;
         let checkpoint = DocumentCheckpoint {
             document_version: 1,
             registry_version: 1,
@@ -264,7 +264,11 @@ impl DidStore {
             document: built.document,
             keys: built.metadata,
             capabilities: spec.capabilities,
-            root_capability: RootCapabilityState::Active,
+            root_capability: if spec.profile.supports_root_control() {
+                RootCapabilityState::Active
+            } else {
+                RootCapabilityState::Absent
+            },
             root_key_fingerprint,
             checkpoint,
             local_authorization,

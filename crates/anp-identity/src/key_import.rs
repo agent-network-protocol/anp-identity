@@ -193,7 +193,7 @@ impl DidStore {
             keys: metadata,
             capabilities: spec.capabilities,
             root_capability: RootCapabilityState::Absent,
-            root_key_fingerprint: root_fingerprint,
+            root_key_fingerprint: Some(root_fingerprint),
             checkpoint: crate::DocumentCheckpoint {
                 document_version: spec.evidence.document_version,
                 registry_version: spec.evidence.registry_version,
@@ -317,7 +317,7 @@ impl DidStore {
             keys: vec![root_metadata, request_metadata],
             capabilities: spec.capabilities,
             root_capability: RootCapabilityState::Absent,
-            root_key_fingerprint: root_fingerprint,
+            root_key_fingerprint: Some(root_fingerprint),
             checkpoint: crate::DocumentCheckpoint {
                 document_version: spec.evidence.document_version,
                 registry_version: spec.evidence.registry_version,
@@ -430,7 +430,7 @@ impl DidStore {
             keys: metadata,
             capabilities: spec.capabilities,
             root_capability: RootCapabilityState::Active,
-            root_key_fingerprint: root_key_fingerprint_from_import(&imported)?,
+            root_key_fingerprint: Some(root_key_fingerprint_from_import(&imported)?),
             checkpoint: crate::DocumentCheckpoint {
                 document_version: spec.evidence.document_version,
                 registry_version: spec.evidence.registry_version,

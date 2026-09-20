@@ -103,7 +103,7 @@ export interface DeviceManifestEntry {
 }
 
 export interface CreateIdentityRequest {
-  profile: 'e1'
+  profile: 'e1' | 'web'
   domain: string
   port?: number
   pathSegments: string[]
@@ -326,6 +326,7 @@ export class DocumentChangeSession {
   beginPublication(): Promise<PublicationAttempt>
   complete(attempt: PublicationAttempt, result: PublicationResult): Promise<DocumentChangeOutcome>
   reconcile(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
+  reconcileRejected(observation: VerifiedRemoteDocument): Promise<DocumentChangeOutcome>
 }
 
 export class IdentityTransitionSession {

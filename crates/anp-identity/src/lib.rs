@@ -1,4 +1,4 @@
-//! Stateful E1 DID identity primitives with role-scoped private-key custody.
+//! Stateful E1 and Web DID identity primitives with role-scoped private-key custody.
 
 mod adoption;
 mod crypto_ops;
