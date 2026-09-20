@@ -1046,6 +1046,31 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn adopt_verified_sibling_document(
+        &self,
+        identity: JsIdentityRef,
+        remote: Value,
+    ) -> Result<Value> {
+        use anp_identity::host::ConvergenceWorkflow as _;
+
+        let reference = identity.into();
+        let remote: VerifiedRemoteDocument =
+            serde_json::from_value(remote).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+            move |manager| {
+                let mut identity = manager.get(&reference).map_err(map_error)?;
+                to_value(
+                    identity
+                        .adopt_verified_sibling_document(remote)
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+
+    #[napi]
     pub async fn begin_device_enrollment(
         &self,
         request: Value,

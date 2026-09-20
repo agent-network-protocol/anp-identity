@@ -241,8 +241,10 @@ pub const anp_identity::host::WRAPPED_ROOT_ENVELOPE_TYPE: &str
 pub const anp_identity::host::WRAPPED_ROOT_ENVELOPE_VERSION: u32
 pub trait anp_identity::host::ConvergenceWorkflow
 pub fn anp_identity::host::ConvergenceWorkflow::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+pub fn anp_identity::host::ConvergenceWorkflow::adopt_verified_sibling_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
 impl anp_identity::host::ConvergenceWorkflow for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+pub fn anp_identity::ManagedIdentity::adopt_verified_sibling_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
 pub trait anp_identity::host::DocumentChangeRecoveryPort
 pub fn anp_identity::host::DocumentChangeRecoveryPort::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
 impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
@@ -532,6 +534,7 @@ pub fn anp_identity::ManagedIdentity::sign_origin_proof(&self, anp_identity::Ori
 pub fn anp_identity::ManagedIdentity::verify(&self, anp_identity::VerifyRequest) -> anp_identity::IdentityResult<anp_identity::VerificationOutcome>
 impl anp_identity::host::ConvergenceWorkflow for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
+pub fn anp_identity::ManagedIdentity::adopt_verified_sibling_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
 impl anp_identity::host::HttpRequestSigningPort for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::prepare_http_signature(&self, anp_identity::host::ExactHttpRequest) -> anp_identity::IdentityResult<anp_identity::host::PreparedHttpSignatureAttempt>
 impl anp_identity::host::IdentityStatusPort for anp_identity::ManagedIdentity

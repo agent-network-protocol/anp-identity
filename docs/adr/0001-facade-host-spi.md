@@ -90,6 +90,20 @@ custody imports identity keys through the sealed Host SPI into that new Store.
 
 ## Step 0 validation
 
+### Strict sibling document convergence
+
+`ConvergenceWorkflow::adopt_verified_sibling_document` is a separate Host entrypoint
+for a controller adopting another device's verified publication. The caller must
+verify its remote authorization and document checkpoint. Under the same exclusive
+store lock used by transition preparation, custody rejects pending document
+revisions and active identity-transition journals involving either this predecessor
+or successor. It requires an active identity and active root capability, preserves
+the pinned root and local key authorization, and rejects checkpoint regression.
+It neither consumes local publication operations nor applies the initial proof
+confirmation exception. Failed local authorization does not persist revocation
+through this entrypoint. Existing `adopt_verified_document` behavior, including
+Recovery and enrollment convergence, remains unchanged.
+
 The decision is accepted after executable spikes, not solely by design review.
 The N-API ThreadsafeFunction spike completes a real Origin Proof across the
 Rust/TypeScript boundary with bounded revoke, cancellation, timeout, provider

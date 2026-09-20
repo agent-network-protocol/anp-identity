@@ -165,6 +165,9 @@ class ProviderLease {
   adoptVerifiedDocument(reference, remote) {
     return call(this.#inner.adoptVerifiedDocument(reference, verifiedRemoteDocument(remote)))
   }
+  adoptVerifiedSiblingDocument(reference, remote) {
+    return call(this.#inner.adoptVerifiedSiblingDocument(reference, verifiedRemoteDocument(remote)))
+  }
 
   async beginDeviceEnrollment(request) {
     return new ProviderEnrollmentSession(

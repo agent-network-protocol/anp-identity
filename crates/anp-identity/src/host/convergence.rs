@@ -21,9 +21,34 @@ pub trait ConvergenceWorkflow {
         &mut self,
         remote: VerifiedRemoteDocument,
     ) -> IdentityResult<ConvergenceOutcome>;
+
+    /// Adopts a sibling publication only while no local transition is pending.
+    fn adopt_verified_sibling_document(
+        &mut self,
+        _remote: VerifiedRemoteDocument,
+    ) -> IdentityResult<ConvergenceOutcome> {
+        Err(crate::IdentityError::CapabilityUnavailable)
+    }
 }
 
 impl ConvergenceWorkflow for ManagedIdentity {
+    fn adopt_verified_sibling_document(
+        &mut self,
+        remote: VerifiedRemoteDocument,
+    ) -> IdentityResult<ConvergenceOutcome> {
+        let outcome =
+            self.lock_engine()?
+                .adopt_verified_sibling_document(AdoptVerifiedDocumentSpec {
+                    document: remote.document.into_value(),
+                    evidence: evidence(remote.evidence),
+                })?;
+        Ok(match outcome {
+            AdoptDocumentOutcome::Updated => ConvergenceOutcome::Updated,
+            AdoptDocumentOutcome::Unchanged => ConvergenceOutcome::Unchanged,
+            _ => return Err(crate::IdentityError::InvalidDocumentChangeState),
+        })
+    }
+
     fn adopt_verified_document(
         &mut self,
         remote: VerifiedRemoteDocument,

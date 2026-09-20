@@ -1409,6 +1409,10 @@ class HostLease implements HostProviderLease, DisposableLease {
     reference: IdentityReference,
     remote: import('./types.js').VerifiedRemoteDocument,
   ) => this.call('IDENTITY_DOCUMENT_UPDATE', () => this.native.adoptVerifiedDocument(reference, remote))
+  adoptVerifiedSiblingDocument = (
+    reference: IdentityReference,
+    remote: import('./types.js').VerifiedRemoteDocument,
+  ) => this.call('IDENTITY_DOCUMENT_UPDATE', () => this.native.adoptVerifiedSiblingDocument(reference, remote))
   beginDeviceEnrollment = (request: NativeProvider.DeviceEnrollmentRequest) =>
     this.call('IDENTITY_CREATE', () => this.native.beginDeviceEnrollment(request))
   beginRequestSigningEnrollment = (request: NativeProvider.RequestSigningEnrollmentRequest) =>

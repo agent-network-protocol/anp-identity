@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod sibling_convergence;
+
 fn transition_fixture_root(override_path: Option<std::ffi::OsString>) -> PathBuf {
     override_path
         .filter(|path| !path.to_string_lossy().trim().is_empty())

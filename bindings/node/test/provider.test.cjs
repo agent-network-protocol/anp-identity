@@ -204,6 +204,11 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
   })
   assert.equal(changed.outcome, 'committed')
   const acceptedCheckpoint = (await lease.hostStatus(created.reference)).checkpoint
+  assert.equal(await lease.adoptVerifiedSiblingDocument(created.reference, {
+    document: candidate.candidateDocument,
+    evidence: acceptedCheckpoint,
+  }), 'unchanged')
+
   assert.equal(
     await enrollment.activate({
       document: candidate.candidateDocument,

@@ -505,6 +505,22 @@ impl DidIdentity {
         &mut self,
         spec: AdoptVerifiedDocumentSpec,
     ) -> DidResult<AdoptDocumentOutcome> {
+        self.adopt_verified_document_inner(spec, false)
+    }
+
+    /// Converges a sibling publication without consuming any local operation.
+    pub fn adopt_verified_sibling_document(
+        &mut self,
+        spec: AdoptVerifiedDocumentSpec,
+    ) -> DidResult<AdoptDocumentOutcome> {
+        self.adopt_verified_document_inner(spec, true)
+    }
+
+    fn adopt_verified_document_inner(
+        &mut self,
+        spec: AdoptVerifiedDocumentSpec,
+        sibling_only: bool,
+    ) -> DidResult<AdoptDocumentOutcome> {
         validate_verified_document(&spec.document, &spec.evidence)?;
         if spec.document.get("id").and_then(Value::as_str) != Some(self.did()) {
             return Err(DidError::InvalidIdentity);
@@ -517,7 +533,33 @@ impl DidIdentity {
         if record.pending_revision.is_some() {
             return Err(DidError::PendingRevisionExists);
         }
-        if !is_initial_proof_confirmation(&record, &spec.document, &spec.evidence)? {
+        if sibling_only {
+            if record.state != IdentityState::Active
+                || record.root_capability != RootCapabilityState::Active
+            {
+                return Err(DidError::KeyNotUsable);
+            }
+            // Transition preparation uses this same store write lock but does
+            // not advance the identity generation. Inspect its journal here,
+            // not in a separate host preflight that could race preparation.
+            if crate::registry::list_identity_transition_journals(self.runtime().root())?
+                .iter()
+                .any(|journal| {
+                    (journal.predecessor_identity_id == record.identity_id
+                        || journal.successor_identity_id == record.identity_id)
+                        && matches!(
+                            journal.state,
+                            crate::registry::IdentityTransitionJournalState::Prepared
+                                | crate::registry::IdentityTransitionJournalState::PublicationInFlight
+                                | crate::registry::IdentityTransitionJournalState::PublicationUncertain
+                        )
+                })
+            {
+                return Err(DidError::Conflict);
+            }
+        }
+        if sibling_only || !is_initial_proof_confirmation(&record, &spec.document, &spec.evidence)?
+        {
             validate_checkpoint_progression(record.checkpoint.as_ref(), &spec.evidence)?;
         }
         if root_key_fingerprint(&spec.document)? != record.root_key_fingerprint {
@@ -536,6 +578,9 @@ impl DidIdentity {
         } else {
             true
         };
+        if sibling_only && !local_authorized {
+            return Err(DidError::KeyRoleViolation);
+        }
         let outcome =
             match record.state {
                 IdentityState::Creating => return Err(DidError::InvalidIdentity),
@@ -584,7 +629,15 @@ impl DidIdentity {
         record.checkpoint = Some(checkpoint(&spec.evidence));
         record.initial_publication_pending = false;
         record.revision = spec.evidence.document_version;
-        persist_state_transition(self, &guard, &mut record)?;
+        if sibling_only {
+            // Sibling convergence cannot change the registry summary. Persist
+            // only the identity revision under its generation CAS, just like
+            // a document update, so a live manager retains its registry view.
+            record.generation = record.generation.checked_add(1).ok_or(DidError::Conflict)?;
+            write_identity(self.runtime().root(), &guard, &record)?;
+        } else {
+            persist_state_transition(self, &guard, &mut record)?;
+        }
         drop(guard);
         self.replace_record(record);
         Ok(outcome)

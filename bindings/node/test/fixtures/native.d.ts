@@ -108,6 +108,7 @@ export declare class ProviderLease {
   prepareIdentityTransition(request: any): Promise<JsProviderIdentityTransitionSession>
   resumeIdentityTransition(expectedCurrentDid: string): Promise<JsProviderIdentityTransitionSession | null>
   adoptVerifiedDocument(identity: JsIdentityRef, remote: any): Promise<any>
+  adoptVerifiedSiblingDocument(identity: JsIdentityRef, remote: any): Promise<any>
   beginDeviceEnrollment(request: any): Promise<JsProviderEnrollmentSession>
   beginRequestSigningEnrollment(request: any): Promise<JsProviderEnrollmentSession>
   resumeEnrollment(identity: JsIdentityRef): Promise<JsProviderEnrollmentSession | null>

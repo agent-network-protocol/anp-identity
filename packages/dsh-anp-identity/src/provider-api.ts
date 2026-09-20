@@ -125,6 +125,10 @@ export interface HostProviderLease {
     reference: IdentityReference,
     remote: VerifiedRemoteDocument,
   ): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>
+  adoptVerifiedSiblingDocument(
+    reference: IdentityReference,
+    remote: VerifiedRemoteDocument,
+  ): Promise<'activated' | 'updated' | 'unchanged' | 'revoked'>
   beginDeviceEnrollment(request: DeviceEnrollmentRequest): Promise<ProviderEnrollmentSession>
   beginRequestSigningEnrollment(request: RequestSigningEnrollmentRequest): Promise<ProviderEnrollmentSession>
   resumeEnrollment(reference: IdentityReference): Promise<ProviderEnrollmentSession | undefined>
