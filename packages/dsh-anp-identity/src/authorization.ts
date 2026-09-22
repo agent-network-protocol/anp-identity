@@ -1,3 +1,4 @@
+import { syncDirectory } from './sync-directory.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -598,8 +599,7 @@ export class AuthorizationEngine {
       await file.close()
       this.options.fault?.('before_rename')
       await rename(temporary, this.statePath)
-      const directory = await open(this.stateRoot, 'r')
-      try { await directory.sync() } finally { await directory.close() }
+      await syncDirectory(this.stateRoot)
       this.options.fault?.('after_rename')
     } finally {
       await file.close()

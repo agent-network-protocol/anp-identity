@@ -1,3 +1,4 @@
+import { syncDirectory } from './sync-directory.js'
 import { randomUUID } from 'node:crypto'
 import {
   mkdir,
@@ -322,12 +323,7 @@ export class CatalogStore {
       handle = undefined
       await rename(temp, path)
       this.#fault(`after_${kind}_rename`)
-      const directory = await open(dirname(path), 'r')
-      try {
-        await directory.sync()
-      } finally {
-        await directory.close()
-      }
+      await syncDirectory(dirname(path))
     } finally {
       await handle?.close().catch(() => {})
       await rm(temp, { force: true }).catch(() => {})
