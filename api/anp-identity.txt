@@ -84,7 +84,7 @@ pub anp_identity::host::EnrollmentProposal::checkpoint: anp_identity::host::Host
 pub anp_identity::host::EnrollmentProposal::enrollment_id: alloc::string::String
 pub anp_identity::host::EnrollmentProposal::identity: anp_identity::IdentityRef
 pub anp_identity::host::EnrollmentProposal::kind: anp_identity::host::EnrollmentProposalKind
-pub anp_identity::host::EnrollmentProposal::root_key_fingerprint: alloc::string::String
+pub anp_identity::host::EnrollmentProposal::root_key_fingerprint: core::option::Option<alloc::string::String>
 pub struct anp_identity::host::EnrollmentPublicKey
 pub anp_identity::host::EnrollmentPublicKey::kid: alloc::string::String
 pub anp_identity::host::EnrollmentPublicKey::public_key_multibase: alloc::string::String
@@ -119,7 +119,7 @@ pub anp_identity::host::HttpRequestSigningOptions::nonce: core::option::Option<a
 pub struct anp_identity::host::IdentityHostStatus
 pub anp_identity::host::IdentityHostStatus::checkpoint: core::option::Option<anp_identity::host::HostDocumentCheckpoint>
 pub anp_identity::host::IdentityHostStatus::root_capability: anp_identity::host::HostRootCapability
-pub anp_identity::host::IdentityHostStatus::root_key_fingerprint: alloc::string::String
+pub anp_identity::host::IdentityHostStatus::root_key_fingerprint: core::option::Option<alloc::string::String>
 pub struct anp_identity::host::IssuedAuthorizationContext
 pub anp_identity::host::IssuedAuthorizationContext::capability: alloc::string::String
 pub anp_identity::host::IssuedAuthorizationContext::consumer: alloc::string::String
@@ -308,6 +308,7 @@ pub anp_identity::CreateIdentityExtension::DeviceManifest
 pub anp_identity::CreateIdentityExtension::DeviceManifest::devices: alloc::vec::Vec<anp_identity::DeviceManifestEntryInput>
 pub enum anp_identity::CreateIdentityProfile
 pub anp_identity::CreateIdentityProfile::E1
+pub anp_identity::CreateIdentityProfile::Web
 pub enum anp_identity::DocumentChange
 pub anp_identity::DocumentChange::AddAuthenticationKey
 pub anp_identity::DocumentChange::AddAuthenticationKey::key: anp_identity::PublicKeyInput
@@ -459,6 +460,7 @@ pub fn anp_identity::DocumentChangeSession::begin_publication(&mut self) -> anp_
 pub fn anp_identity::DocumentChangeSession::candidate(&self) -> &anp_identity::PreparedDocumentChange
 pub fn anp_identity::DocumentChangeSession::complete(&mut self, anp_identity::PublicationAttempt, anp_identity::PublicationResult) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
 pub fn anp_identity::DocumentChangeSession::reconcile(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
+pub fn anp_identity::DocumentChangeSession::reconcile_rejected(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
 impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
 pub fn anp_identity::DocumentChangeSession::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
 pub struct anp_identity::ExternalPublicKeyInput
