@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.3
+          ref: 0ba814aadc6567cdba366a0550f79e433233e687
           path: anp
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 1.0.3
+          ref: 0ba814aadc6567cdba366a0550f79e433233e687
           path: anp
       - uses: dtolnay/rust-toolchain@stable
         with:
