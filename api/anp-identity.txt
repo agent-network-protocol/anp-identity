@@ -459,6 +459,7 @@ pub fn anp_identity::DocumentChangeSession::begin_publication(&mut self) -> anp_
 pub fn anp_identity::DocumentChangeSession::candidate(&self) -> &anp_identity::PreparedDocumentChange
 pub fn anp_identity::DocumentChangeSession::complete(&mut self, anp_identity::PublicationAttempt, anp_identity::PublicationResult) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
 pub fn anp_identity::DocumentChangeSession::reconcile(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
+pub fn anp_identity::DocumentChangeSession::reconcile_rejected(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
 impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
 pub fn anp_identity::DocumentChangeSession::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
 pub struct anp_identity::ExternalPublicKeyInput
