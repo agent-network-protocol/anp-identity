@@ -201,7 +201,7 @@ requests to an independent HTTPS process backed by the ANP Python verifier. A
 tampered POST must be rejected. The temporary DSH profile, Store, certificate,
 and tarballs are removed after the run.
 
-The management UI tests render the real DSH primitives. Version `0.1.5-rc.1` of
+The management UI tests render the real DSH primitives. Version `0.1.5-rc.2` of
 `@deepseek-ai/dsh-client-ui-primitives` imports syntax-highlighting, Markdown,
 terminal, and styling packages from its entry point but lists them only as its
 own development dependencies. We explicitly include those imports as development
