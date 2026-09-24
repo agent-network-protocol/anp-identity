@@ -27,14 +27,20 @@ the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
 The Rust crate pins ANP Rust `1.0.3`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
-packages. The Node artifact workflow accepts an explicit `build_only` dispatch
-for releases that intentionally omit install tests; normal CI keeps those tests.
+packages. Manual dispatch of the Node artifact workflow defaults to
+`build_only=true`: it builds release packages without install tests. Select
+`build_only=false` only when the user explicitly requests those tests. Push/PR
+CI keeps its tests. Packaging the DSH Identity npm package runs build and
+static package checks; run `npm run verify` separately only when tests are
+explicitly requested.
 
 The Node release is one wrapper plus five optional native packages for macOS
 x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
 host-specific addon and installation does not compile Rust. The coordinated
-artifacts are built and clean-installed by
+artifacts are built by
 [`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
+That workflow clean-installs them only for push/PR CI or an explicit manual
+`build_only=false` request.
 
 Native release builds use `scripts/release/prepare-registry.py --prepare` to
 snapshot the committed source into a separate build directory and replace only

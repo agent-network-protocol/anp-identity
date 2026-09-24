@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       build_only:
-        description: Build release artifacts without running install tests
+        description: Build release artifacts without install tests (default for manual release runs)
         required: false
-        default: false
+        default: true
         type: boolean
   pull_request:
     paths:
@@ -211,7 +211,7 @@ jobs:
           retention-days: 7
 
   packed-install:
-    if: ${{ !inputs.build_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.build_only }}
     name: Packed install ${{ matrix.target.name }} / Node ${{ matrix.node }}
     needs: [build-platform, build-wrapper]
     runs-on: ${{ matrix.target.runner }}
@@ -261,8 +261,9 @@ jobs:
             --wrapper "${wrapper}" --expect-missing
 
   release-candidate:
-    name: Assemble verified candidate
+    name: Assemble release candidate
     needs: [build-platform, build-wrapper, packed-install]
+    if: ${{ always() && needs.build-platform.result == 'success' && needs.build-wrapper.result == 'success' && (inputs.build_only || needs.packed-install.result == 'success') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4

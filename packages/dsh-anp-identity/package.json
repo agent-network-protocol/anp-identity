@@ -55,7 +55,8 @@
     "check:public": "npm run build && node scripts/public-snapshot.mjs",
     "check:generated": "node scripts/check-generated.mjs",
     "verify": "npm run check:public && npm run typecheck && npm run check:generated && npm test",
-    "prepack": "npm run verify",
+    "verify:package": "npm run check:public && npm run typecheck && npm run check:generated",
+    "prepack": "npm run verify:package",
     "test:functional": "node scripts/run-functional-e2e.mjs"
   },
   "keywords": [
