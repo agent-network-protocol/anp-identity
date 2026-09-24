@@ -25,7 +25,7 @@ records, generations, journals, or the internal Store engine. The one explicit
 plaintext exception is the default-off Rust `root-export` feature required by
 the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
 
-The Rust crate pins ANP Rust `1.0.3`. Rust and native Node packages have
+The Rust crate pins ANP Rust `1.0.5`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
 packages. Manual dispatch of the Node artifact workflow defaults to
 `build_only=true`: it builds release packages without install tests. Select
