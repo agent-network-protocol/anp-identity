@@ -8,23 +8,6 @@ on:
         required: false
         default: false
         type: boolean
-  pull_request:
-    paths:
-      - '.github/workflows/native-node-artifacts.yml'
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'bindings/node/**'
-      - 'crates/anp-identity/**'
-      - 'scripts/release/**'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/native-node-artifacts.yml'
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'bindings/node/**'
-      - 'crates/anp-identity/**'
-      - 'scripts/release/**'
 
 permissions:
   contents: read
