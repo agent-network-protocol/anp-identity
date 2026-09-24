@@ -1,6 +1,6 @@
 {
   "name": "@agent-network-protocol/dsh-anp-identity",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "ANP Identity management plugin for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -136,7 +136,7 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.6.2",
-    "@agent-network-protocol/anp-identity": "0.2.2"
+    "@agent-network-protocol/anp-identity": "0.2.3"
   },
   "devDependencies": {
     "@agent-network-protocol/anp-identity": "file:../../bindings/node",
