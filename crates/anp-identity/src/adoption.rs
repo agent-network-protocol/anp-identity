@@ -614,6 +614,7 @@ impl DidIdentity {
             return Ok(outcome);
         }
 
+        refresh_compatible_local_profiles(&mut record, &spec.document);
         record.observe_devices(&spec.document)?;
         record.document = spec.document;
         record.checkpoint = Some(checkpoint(&spec.evidence));
@@ -822,11 +823,49 @@ pub(crate) fn local_authorization_matches(
     if matches.len() != 1
         || matches[0].signing_key_id != local.signing_kid
         || matches[0].e2ee_key_id != local.e2ee_kid
-        || matches[0].profiles != local.profiles
+        || !compatible_local_profiles(&local.profiles, &matches[0].profiles)
     {
         return Err(DidError::InvalidExtension);
     }
     Ok(())
+}
+
+// A root-authorized, additive P6 compatibility upgrade is not device revocation.
+// All key/relationship checks above remain mandatory; no profile removal or
+// arbitrary capability changes can use this exception.
+fn compatible_local_profiles(old: &[String], new: &[String]) -> bool {
+    old == new
+        || ([
+            "anp.core.binding.v1",
+            "anp.identity.discovery.v1",
+            "anp.group.e2ee.v2",
+        ]
+        .iter()
+        .all(|p| old.iter().any(|v| v == p))
+            && !old.iter().any(|p| p == "anp.group.base.v2")
+            && new.len() == old.len() + 1
+            && new.starts_with(old)
+            && new.last().is_some_and(|p| p == "anp.group.base.v2"))
+}
+
+pub(crate) fn refresh_compatible_local_profiles(record: &mut IdentityRecord, document: &Value) {
+    let Some(local) = record.local_authorization.as_ref() else {
+        return;
+    };
+    if local_authorization_matches(record, document, local).is_err() {
+        return;
+    }
+    let Ok(Some(manifest)) = validate_device_manifest(document) else {
+        return;
+    };
+    let Some(device) = manifest
+        .devices
+        .iter()
+        .find(|d| d.device_id == local.device_id)
+    else {
+        return;
+    };
+    record.local_authorization.as_mut().unwrap().profiles = device.profiles.clone();
 }
 
 fn key_matches_document(document: &Value, metadata: &KeyMetadata) -> DidResult<()> {

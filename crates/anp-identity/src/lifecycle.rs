@@ -69,8 +69,16 @@ pub struct DeviceAddSpec {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum DeviceMutationSpec {
-    Add { device: DeviceAddSpec },
-    Remove { device_id: String },
+    Add {
+        device: DeviceAddSpec,
+    },
+    Remove {
+        device_id: String,
+    },
+    AddProfiles {
+        device_id: String,
+        profiles: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -509,6 +517,10 @@ impl DidIdentity {
                 replaced.state = KeyState::Retired;
             }
         }
+        crate::adoption::refresh_compatible_local_profiles(
+            &mut record,
+            &pending.candidate_document,
+        );
         record.observe_devices(&pending.candidate_document)?;
         record.keys.extend(pending.new_key_metadata);
         record.document = pending.candidate_document;
@@ -549,9 +561,7 @@ impl DidIdentity {
         let mut record = self.current_record_for_mutation()?;
         let pending = required_pending(&record, revision_id)?.clone();
         if let Some(observation) = rejection {
-            if pending.state != PublicationState::PublicationUncertain
-                || crate::DidProfile::for_did(self.did())? != crate::DidProfile::Web
-            {
+            if pending.state != PublicationState::PublicationUncertain {
                 return Err(DidError::InvalidPublicationState);
             }
             crate::adoption::validate_verified_document(
@@ -560,6 +570,11 @@ impl DidIdentity {
             )?;
             if observation.document.get("id").and_then(Value::as_str) != Some(self.did()) {
                 return Err(DidError::InvalidIdentity);
+            }
+            if crate::document::method_root_fingerprint(&observation.document)?
+                != record.root_key_fingerprint
+            {
+                return Err(DidError::RootKeyMismatch);
             }
             crate::adoption::validate_checkpoint_progression(
                 record.checkpoint.as_ref(),
@@ -883,6 +898,32 @@ fn apply_device_mutations(
     let mut retired_device_ids = record.retired_device_ids.clone();
     for mutation in mutations {
         match mutation {
+            DeviceMutationSpec::AddProfiles {
+                device_id,
+                profiles,
+            } => {
+                if profiles.is_empty()
+                    || profiles
+                        .iter()
+                        .any(|profile| profile.trim().is_empty() || profile.trim() != profile)
+                {
+                    return Err(DidError::InvalidExtension);
+                }
+                let entry = manifest
+                    .as_mut()
+                    .and_then(|value| {
+                        value
+                            .devices
+                            .iter_mut()
+                            .find(|entry| entry.device_id == *device_id)
+                    })
+                    .ok_or(DidError::KeyNotFound)?;
+                for profile in profiles {
+                    if !entry.profiles.contains(profile) {
+                        entry.profiles.push(profile.clone());
+                    }
+                }
+            }
             DeviceMutationSpec::Add { device } => {
                 validate_device_add(device)?;
                 let signing_kid = canonicalize_kid(&record.did, &device.signing_key.kid)?;

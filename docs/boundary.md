@@ -161,3 +161,9 @@ are imported into the new plugin-owned Store through the request-bound sealed
 Host SPI, verified there, and only then selected by AWiki's existing atomic
 cutover workflow. Plaintext imported key material never enters a TypeScript
 DTO, log, catalog, or journal.
+
+## Additive device profile changes
+
+`DocumentChange::AddDeviceProfiles` uses the existing publication journal and generation CAS; it preserves keys, relationships, services and previous profiles. Verified adoption treats the exact append of `anp.group.base.v2` to a P1/P2-v1 + P6-v2 local device as a compatible capability update, not revocation. Arbitrary additions, removals, reordered existing profiles and changed keys do not use this exception. Local authorization profiles converge under the same store lock.
+
+Explicit terminal publication rejection can reconcile WBA as well as Web only with a forward verified checkpoint, unchanged pinned root fingerprint and intact local key authority. An uncertain network outcome alone never authorizes abort.

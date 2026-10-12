@@ -307,6 +307,36 @@ fn v1b_lifecycle_adds_and_removes_an_external_device_as_one_published_revision()
         Err(DidError::ExternalKeyOperation)
     );
 
+    // Profile upgrade is additive and cannot replace keys or older capabilities.
+    let before = identity.document().clone();
+    let upgraded = identity
+        .prepare_update(DocumentUpdateSpec {
+            request_signing_rotation: None,
+            request_signing_mutations: Vec::new(),
+            device_mutations: vec![DeviceMutationSpec::AddProfiles {
+                device_id: "peer-device".into(),
+                profiles: vec!["anp.group.base.v2".into(), "anp.core.binding.v1".into()],
+            }],
+            services: None,
+        })
+        .unwrap();
+    let mut expected = before.clone();
+    expected["deviceManifest"]["devices"][0]["profiles"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!("anp.group.base.v2"));
+    expected.as_object_mut().unwrap().remove("proof");
+    let mut actual = upgraded.candidate_document.clone();
+    actual.as_object_mut().unwrap().remove("proof");
+    assert_eq!(actual, expected);
+    identity.begin_publication(&upgraded.revision_id).unwrap();
+    identity.mark_published(&upgraded.revision_id).unwrap();
+    identity.commit_update(&upgraded.revision_id).unwrap();
+    assert_eq!(
+        identity.key_metadata(&signing_kid).unwrap().origin,
+        KeyOrigin::External
+    );
+
     let removed = identity
         .prepare_update(DocumentUpdateSpec {
             request_signing_rotation: None,
