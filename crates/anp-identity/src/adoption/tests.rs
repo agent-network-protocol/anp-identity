@@ -504,3 +504,30 @@ fn evidence(
         document_digest: canonical_document_digest(document).unwrap(),
     }
 }
+
+#[test]
+fn compatible_group_profile_append_is_narrow_and_preserves_old_order() {
+    let old: Vec<String> = [
+        "anp.core.binding.v1",
+        "anp.identity.discovery.v1",
+        "anp.group.base.v1",
+        "anp.group.e2ee.v2",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    let mut next = old.clone();
+    next.push("anp.group.base.v2".into());
+    assert!(super::compatible_local_profiles(&old, &next));
+    assert!(super::compatible_local_profiles(&old, &old));
+    let mut removed = next.clone();
+    removed.remove(2);
+    assert!(!super::compatible_local_profiles(&old, &removed));
+    let mut reordered = next.clone();
+    reordered.swap(0, 1);
+    assert!(!super::compatible_local_profiles(&old, &reordered));
+    let mut arbitrary = old.clone();
+    arbitrary.push("anp.unknown.v1".into());
+    assert!(!super::compatible_local_profiles(&old, &arbitrary));
+    assert!(!super::compatible_local_profiles(&old[..2], &next));
+}

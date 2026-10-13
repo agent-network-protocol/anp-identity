@@ -37,6 +37,10 @@ pub enum DocumentChange {
     RemoveDevice {
         device_id: String,
     },
+    AddDeviceProfiles {
+        device_id: String,
+        profiles: Vec<String>,
+    },
     ReplaceServices {
         services: Vec<IdentityService>,
     },
@@ -416,6 +420,15 @@ impl DocumentChangeRequest {
                 }
                 DocumentChange::RemoveDevice { device_id } => {
                     device_mutations.push(DeviceMutationSpec::Remove { device_id });
+                }
+                DocumentChange::AddDeviceProfiles {
+                    device_id,
+                    profiles,
+                } => {
+                    device_mutations.push(DeviceMutationSpec::AddProfiles {
+                        device_id,
+                        profiles,
+                    });
                 }
                 DocumentChange::ReplaceServices {
                     services: replacements,
