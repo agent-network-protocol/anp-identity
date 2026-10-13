@@ -1,4 +1,4 @@
-name: Singapore Identity Source Artifacts
+name: ANP Identity Node Artifacts
 
 on:
   workflow_dispatch:
@@ -15,15 +15,14 @@ permissions:
 env:
   RUST_TOOLCHAIN: 1.88.0
   RUSTUP_TOOLCHAIN: 1.88.0
+  ANP_IDENTITY_REGISTRY_MANIFEST: ${{ github.workspace }}/anp-identity-registry/Cargo.toml
 
 jobs:
   build-platform:
-    if: github.ref == 'refs/heads/test/singapore-release-20261012'
     name: Build ${{ matrix.target_name }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         include:
           - target_name: linux-x64-gnu
@@ -73,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 4998230c73ed5a1057f0dc9f25223edb72613efd
+          ref: 1.0.3
           path: anp
       - name: Set up Rust
         shell: bash
@@ -84,13 +83,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
-      - name: Verify frozen source ANP build
+      - name: Prepare exact registry ANP build
         working-directory: anp-identity
         shell: bash
-        run: cargo metadata --locked --format-version 1 > /dev/null
+        run: python3 scripts/release/prepare-registry.py --prepare ../anp-identity-registry
       - name: Build release addon
         if: matrix.linux_gnu == false
-        working-directory: anp-identity
+        working-directory: anp-identity-registry
         shell: bash
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/anp-identity/target
@@ -98,7 +97,7 @@ jobs:
         run: cargo build --locked --release -p anp-identity-node --target "${{ matrix.rust_target }}"
       - name: Build Linux addon in manylinux 2.28
         if: matrix.linux_gnu
-        working-directory: anp-identity
+        working-directory: anp-identity-registry
         shell: bash
         run: |
           docker run --rm \
@@ -137,7 +136,7 @@ jobs:
         env:
           ANP_IDENTITY_SOURCE_SHA: ${{ github.sha }}
         run: |
-          node scripts/release/stage-node-package.mjs --local-candidate \
+          node scripts/release/stage-node-package.mjs \
             --kind platform \
             --package-dir "${{ matrix.package_dir }}" \
             --target "${{ matrix.target_name }}" \
@@ -165,7 +164,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: agent-network-protocol/anp
-          ref: 4998230c73ed5a1057f0dc9f25223edb72613efd
+          ref: 1.0.3
           path: anp
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -173,15 +172,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
-      - name: Verify frozen source ANP metadata
+      - name: Prepare exact registry ANP metadata
         working-directory: anp-identity
-        run: cargo metadata --locked --format-version 1 > /dev/null
+        run: python3 scripts/release/prepare-registry.py --prepare ../anp-identity-registry
       - name: Stage and audit wrapper
         working-directory: anp-identity
         env:
           ANP_IDENTITY_SOURCE_SHA: ${{ github.sha }}
         run: |
-          node scripts/release/stage-node-package.mjs --local-candidate \
+          node scripts/release/stage-node-package.mjs \
             --kind wrapper \
             --output dist/node-release/staged/wrapper
           node scripts/release/pack-node-package.mjs \
@@ -201,7 +200,6 @@ jobs:
     runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         node: [22.19.0, 24]
         target:
