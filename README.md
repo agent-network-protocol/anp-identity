@@ -29,8 +29,8 @@ The Rust crate pins ANP Rust `1.0.6`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
 packages. Manual dispatch of the Node artifact workflow defaults to
 `build_only=true`: it builds release packages without install tests. Select
-`build_only=false` only when the user explicitly requests those tests. Push/PR
-CI keeps its tests. Packaging the DSH Identity npm package runs build and
+`build_only=false` only when the user explicitly requests those tests.
+Packaging the DSH Identity npm package runs build and
 static package checks; run `npm run verify` separately only when tests are
 explicitly requested.
 
@@ -39,8 +39,10 @@ x64/arm64, Linux glibc x64/arm64, and Windows x64. The wrapper never embeds a
 host-specific addon and installation does not compile Rust. The coordinated
 artifacts are built by
 [`native-node-artifacts.yml`](.github/workflows/native-node-artifacts.yml).
-That workflow clean-installs them only for push/PR CI or an explicit manual
-`build_only=false` request.
+That workflow clean-installs them on Node.js 22.19.0, 24, and 26 across all five
+native platforms only when explicitly dispatched with `build_only=false`.
+The default `build_only=true` path builds and packages the registry-based
+artifacts without running installation checks.
 
 Native release builds use `scripts/release/prepare-registry.py --prepare` to
 snapshot the committed source into a separate build directory and replace only
