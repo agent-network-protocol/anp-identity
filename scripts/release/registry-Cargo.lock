@@ -63,9 +63,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anp"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25d0c844ca1813afc710bb8e973942ced1f5e8d36a0b743947b01c845138050"
+checksum = "23539d9863e5ad8fc0e9c6bc5cbd668e5c186bfa5386c48ed7e1edede2466331"
 dependencies = [
  "base64",
  "bs58",
@@ -96,7 +96,7 @@ dependencies = [
 
 [[package]]
 name = "anp-identity"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anp",
  "base64",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "anp-identity-node"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anp-identity",
  "napi",
