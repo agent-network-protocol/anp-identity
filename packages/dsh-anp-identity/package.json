@@ -136,10 +136,10 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.6.2",
-    "@agent-network-protocol/anp-identity": "0.2.4"
+    "@agent-network-protocol/anp-identity": "0.2.5"
   },
   "devDependencies": {
-    "@agent-network-protocol/anp-identity": "file:../../bindings/node",
+    "@agent-network-protocol/anp-identity": "0.2.5",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
     "@deepseek-ai/dsh-api-gateway": "0.1.5-rc.2",

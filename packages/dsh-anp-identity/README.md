@@ -54,6 +54,10 @@ The package installs the exact compatible ANP Identity wrapper. That wrapper
 selects the prebuilt native package for the current platform; users do not need
 Rust or a source checkout.
 
+The current source pins `@agent-network-protocol/anp-identity@0.2.5` from npm
+for both runtime and development dependencies. The lockfile includes the exact
+registry wrapper and its five platform packages.
+
 Load the Service before its Provider. The included `cordis.patch.yml` is a starting point:
 
 The shipping DSH layer grants `@awiki/dsh-plugin` client and Host Provider
