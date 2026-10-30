@@ -5,7 +5,11 @@ mod http_signing;
 mod key_agreement;
 #[cfg(feature = "key-import")]
 mod migration;
+#[cfg(feature = "pin-recovery")]
+mod pin_recovery;
 mod proofs;
+#[cfg(feature = "pin-recovery")]
+pub use pin_recovery::*;
 mod provider_authorization;
 mod root_transfer;
 mod sealed_handoff;

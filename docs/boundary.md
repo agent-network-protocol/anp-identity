@@ -4,10 +4,13 @@
 
 Private keys normally remain behind the Rust/FFI boundary. Public APIs may
 return DID documents, public keys, metadata, signatures, verification results,
-and ECDH results. The single plaintext egress exception is the default-off
+and ECDH results. One plaintext egress exception is the default-off
 `root-export` Rust API used by an existing, user-confirmed
 `RootKeyEnvelopeV1` transfer. It does not apply to any other key role and is
-not exposed by the default Node binding.
+not exposed by the default Node binding. The separately approved default-off
+`pin-recovery` Rust capability permits single-root encrypted PIN backup and
+operation-bound pending recovery under [its custody contract](pin-root-recovery.md).
+It does not export private material through Node or Dart.
 
 This is a logical API boundary, not process isolation. A Node native addon shares
 an address space with its host. A compromised host process, malicious native
@@ -59,7 +62,11 @@ document, and the operation enters the same pending promotion state used by a
 wrapped-root import. The plaintext is held only in zeroizing memory and is never
 written to a host DTO, journal, log, temporary file, or FFI value.
 
-No other plaintext private-key ingress is part of the boundary.
+PIN recovery is a separate Rust-only ingress under the `pin-recovery` feature.
+It accepts only a root matching the verified current DID and operation binding,
+stages fresh device keys atomically, and grants normal authority only after
+exact remote device-commit reconciliation. It never fabricates legacy transfer
+evidence. No general private-key backup or ingress is introduced.
 
 In External Provider mode, legacy root and migration imports use a reverse
 sealed handoff. ANP Identity generates a one-time X25519 recipient inside Rust,
@@ -77,7 +84,8 @@ user-confirmation interaction and must call the API only after that confirmation
 in the existing Root Transfer flow. The output is intended only for immediate
 construction of a canonical `RootKeyEnvelopeV1` inside an end-to-end encrypted
 P5 message. It must not be written to a DTO, pending journal, log, error,
-temporary file, or backup.
+temporary file, or general backup. The separate PIN-specific export is only for
+immediate encryption inside Rust Core as specified by the custody contract.
 
 Senders emit only `RootKeyEnvelopeV1`. There is no negotiation flag, wrapped
 send branch, or automatic fallback. New and old senders therefore use the same

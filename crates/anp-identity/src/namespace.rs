@@ -91,12 +91,46 @@ impl DidStore {
         Ok(())
     }
 
+    #[cfg(feature = "pin-recovery")]
+    pub(crate) fn discard_pin_recovery_namespace(
+        &mut self,
+        did: &str,
+        identity_id: &str,
+        expected_identity_generation: u64,
+        binding: &crate::pin_recovery::PinRecoveryBinding,
+    ) -> DidResult<()> {
+        self.delete_identity_namespace_checked(
+            did,
+            self.registry_generation,
+            true,
+            None,
+            Some((identity_id, expected_identity_generation, binding)),
+        )
+    }
+
     fn delete_identity_namespace_inner(
         &mut self,
         did: &str,
         expected_generation: u64,
         discard_pending_changes: bool,
         failure: Option<NamespaceDeleteFailurePoint>,
+    ) -> DidResult<()> {
+        self.delete_identity_namespace_checked(
+            did,
+            expected_generation,
+            discard_pending_changes,
+            failure,
+            None,
+        )
+    }
+
+    fn delete_identity_namespace_checked(
+        &mut self,
+        did: &str,
+        expected_generation: u64,
+        discard_pending_changes: bool,
+        failure: Option<NamespaceDeleteFailurePoint>,
+        pin_expected: Option<(&str, u64, &crate::pin_recovery::PinRecoveryBinding)>,
     ) -> DidResult<()> {
         let guard = self.runtime.acquire_write()?;
         let mut registry = read_registry(self.runtime.root())?;
@@ -105,7 +139,7 @@ impl DidStore {
         {
             let already_deleted = !registry.identities.contains_key(did)
                 && registry.generation == expected_generation.saturating_add(1);
-            if already_deleted {
+            if already_deleted && pin_expected.is_none() {
                 self.registry_generation = registry.generation;
                 return Ok(());
             }
@@ -117,7 +151,35 @@ impl DidStore {
             .cloned()
             .ok_or(DidError::IdentityNotFound)?;
         let record = read_identity(self.runtime.root(), &summary.identity_id)?;
-        if record.did != did
+        if let Some((identity_id, generation, binding)) = pin_expected {
+            if record.identity_id != identity_id || record.generation != generation {
+                return Err(DidError::Conflict);
+            }
+            let pin = record
+                .pin_recovery
+                .as_ref()
+                .ok_or(DidError::InvalidPublicationState)?;
+            if pin.binding != *binding
+                || pin.phase != crate::pin_recovery::PinRecoveryPhase::Prepared
+                || record.state != IdentityState::Enrolling
+                || record.root_capability != crate::RootCapabilityState::Pending
+                || record.pending_enrollment.is_none()
+                || record.pending_request_signing.is_some()
+                || record.pending_revision.is_some()
+                || record.pending_root_transfer.is_some()
+                || record.keys.len() != 3
+                || record.keys.iter().any(|key| {
+                    key.origin != KeyOrigin::Managed
+                        || key.state != crate::KeyState::Pending
+                        || key.material_erased
+                })
+            {
+                return Err(DidError::InvalidPublicationState);
+            }
+        }
+        if record.pin_recovery.as_ref().is_some_and(|pin| {
+            pin.phase == crate::pin_recovery::PinRecoveryPhase::PublicationUncertain
+        }) || record.did != did
             || record.state == IdentityState::Creating
             || (!discard_pending_changes
                 && (record.pending_revision.is_some()

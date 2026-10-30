@@ -125,6 +125,8 @@ pub(crate) struct IdentityRecord {
     pub(crate) pending_request_signing: Option<PendingRequestSigningRecord>,
     #[serde(default)]
     pub(crate) pending_root_transfer: Option<PendingRootTransferRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) pin_recovery: Option<crate::pin_recovery::PinRecoveryRecord>,
     #[serde(default)]
     pub(crate) root_transfer_replays: Vec<RootTransferReplayRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -676,6 +678,7 @@ pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
         pending_enrollment: None,
         pending_request_signing: None,
         pending_root_transfer: None,
+        pin_recovery: None,
         root_transfer_replays: Vec::new(),
         retired_device_ids: Vec::new(),
         created_at: input.created_at,

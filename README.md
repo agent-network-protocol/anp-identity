@@ -21,9 +21,11 @@ Applications use a small, purpose-oriented API:
   key agreement, migration, and Root Transfer.
 
 The ordinary API does not expose private keys, raw ECDH results, storage
-records, generations, journals, or the internal Store engine. The one explicit
-plaintext exception is the default-off Rust `root-export` feature required by
-the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
+records, generations, journals, or the internal Store engine. The default-off Rust `root-export` feature permits the existing, user-confirmed
+`RootKeyEnvelopeV1` transfer protocol. A separate default-off `pin-recovery`
+capability permits single-root encrypted PIN backup and operation-bound pending
+recovery; see [the custody contract](docs/pin-root-recovery.md). Neither exposes
+private material through Node or Dart.
 
 The Rust crate pins ANP Rust `1.0.7`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
@@ -240,6 +242,7 @@ Optional Rust features are default-off:
 |---|---|
 | `key-import` | A trusted one-way migration host |
 | `root-export` | A trusted, user-confirmed legacy `RootKeyEnvelopeV1` sender |
+| `pin-recovery` | Trusted Rust Core for single-root PIN backup and pending device recovery |
 
 Rust 1.88 or newer is required. The Node package requires Node.js 18 or newer.
 DSH consumers require Node.js `^22.19.0 || >=24.0.0`.

@@ -48,7 +48,9 @@ The following decisions are normative:
 - AWiki continues to own Bearer tokens, challenges, response interpretation,
   and retry policy. ANP Identity signs one exact attempt.
 - Rust `key-import` and `root-export` remain default-off. Root export is limited
-  to the user-confirmed `RootKeyEnvelopeV1` workflow.
+  to the user-confirmed `RootKeyEnvelopeV1` workflow. The later approved
+  default-off `pin-recovery` exception is specified separately in the
+  [PIN custody contract](../pin-root-recovery.md); it adds no Node/Dart egress.
 - Direct and External implementations satisfy the same contract tests.
 - The DSH consumer build has a dependency-tree gate proving that it does not
   statically link `anp-identity`.

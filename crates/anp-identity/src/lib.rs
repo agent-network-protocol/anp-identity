@@ -14,6 +14,7 @@ mod keystore;
 mod lifecycle;
 mod manifest;
 mod namespace;
+mod pin_recovery;
 mod platform;
 mod registry;
 mod root_transfer;

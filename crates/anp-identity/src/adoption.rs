@@ -130,7 +130,31 @@ impl DidStore {
         &mut self,
         spec: EnrollmentSpec,
     ) -> DidResult<(DidIdentity, PreparedEnrollment)> {
+        self.prepare_enrollment_with_pin(spec, None)
+    }
+
+    pub(crate) fn prepare_enrollment_with_pin(
+        &mut self,
+        spec: EnrollmentSpec,
+        pin: Option<crate::pin_recovery::PinRootMaterial>,
+    ) -> DidResult<(DidIdentity, PreparedEnrollment)> {
         validate_enrollment_spec(&spec)?;
+        if let Some(pin) = &pin {
+            let root = optional_root_metadata(&spec.verified_document, "")?
+                .ok_or(DidError::RootCapabilityUnavailable)?;
+            let public = public_key_from_secret(KeyRole::RootControl, &pin.secret)?;
+            let method = find_verification_method(&spec.verified_document, &root.kid)
+                .ok_or(DidError::RootKeyMismatch)?;
+            let expected = anp::authentication::extract_public_key(&method)
+                .map_err(|_| DidError::RootKeyMismatch)?;
+            if root.kid != pin.record.binding.root_kid
+                || root.public_key_multibase != pin.record.binding.root_public_key_multibase
+                || spec.verified_document["id"] != pin.record.binding.did
+                || !public_keys_equal(&public, &expected)
+            {
+                return Err(DidError::RootKeyMismatch);
+            }
+        }
         let did = spec
             .verified_document
             .get("id")
@@ -165,7 +189,7 @@ impl DidStore {
         );
         let e2ee_key =
             ManagedPrivateKey::generate(spec.device_e2ee_fragment.clone(), KeyRole::E2eeAgreement);
-        let secret_refs = vec![
+        let mut secret_refs = vec![
             SecretRef {
                 identity_id: identity_id.clone(),
                 key_id: signing_kid.clone(),
@@ -179,6 +203,14 @@ impl DidStore {
                 version: 1,
             },
         ];
+        if let Some(pin) = &pin {
+            secret_refs.push(SecretRef {
+                identity_id: identity_id.clone(),
+                key_id: pin.record.binding.root_kid.clone(),
+                role: KeyRole::RootControl,
+                version: 1,
+            });
+        }
         let journal = CreationJournal::new(
             transaction_id.clone(),
             identity_id.clone(),
@@ -210,7 +242,31 @@ impl DidStore {
             }
         }
 
-        let root_metadata = optional_root_metadata(&spec.verified_document, &created_at)?;
+        let mut root_metadata = optional_root_metadata(&spec.verified_document, &created_at)?;
+        if let Some(pin) = &pin {
+            let secret_ref = &secret_refs[2];
+            self.runtime.key_store().seal_if_absent(
+                &guard,
+                self.runtime.root_key(),
+                secret_ref.clone(),
+                crate::secret::SecretBytes::new(pin.secret.expose().to_vec()),
+            )?;
+            let sealed = self
+                .runtime
+                .key_store()
+                .open(self.runtime.root_key(), secret_ref)?;
+            if !public_keys_equal(
+                &public_key_from_secret(KeyRole::RootControl, &sealed)?,
+                &public_key_from_secret(KeyRole::RootControl, &pin.secret)?,
+            ) {
+                return Err(DidError::RootKeyMismatch);
+            }
+            let root = root_metadata
+                .as_mut()
+                .ok_or(DidError::RootCapabilityUnavailable)?;
+            root.origin = KeyOrigin::Managed;
+            root.state = KeyState::Pending;
+        }
         let signing_metadata = key_metadata_from_public(
             &signing_kid,
             KeyRole::DeviceSigning,
@@ -251,6 +307,10 @@ impl DidStore {
             created_at: created_at.clone(),
         });
         record.state = IdentityState::Enrolling;
+        if let Some(pin) = pin {
+            record.root_capability = RootCapabilityState::Pending;
+            record.pin_recovery = Some(pin.record);
+        }
         record.pending_enrollment = Some(PendingEnrollmentRecord {
             enrollment_id: enrollment_id.clone(),
             local_authorization,
@@ -521,6 +581,13 @@ impl DidIdentity {
         }
         if record.pending_revision.is_some() {
             return Err(DidError::PendingRevisionExists);
+        }
+        if record
+            .pin_recovery
+            .as_ref()
+            .is_some_and(|pin| pin.phase != crate::pin_recovery::PinRecoveryPhase::Active)
+        {
+            return Err(DidError::InvalidPublicationState);
         }
         if sibling_only {
             if record.state != IdentityState::Active

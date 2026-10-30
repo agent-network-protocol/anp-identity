@@ -359,7 +359,11 @@ impl DidIdentity {
         Ok(metadata)
     }
 
-    fn sign_prepared(&self, metadata: &KeyMetadata, message: &[u8]) -> DidResult<Vec<u8>> {
+    pub(crate) fn sign_prepared(
+        &self,
+        metadata: &KeyMetadata,
+        message: &[u8],
+    ) -> DidResult<Vec<u8>> {
         let secret = self.load_managed_secret(metadata)?;
         let signing_key = ed25519_signing_key(&secret)?;
         use ed25519_dalek::Signer;
@@ -386,6 +390,7 @@ impl DidIdentity {
             return Err(DidError::Conflict);
         }
         if current.state != crate::IdentityState::Enrolling
+            || current.pin_recovery.is_some()
             || current
                 .pending_enrollment
                 .as_ref()

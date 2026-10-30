@@ -16,6 +16,7 @@ categories = ["authentication", "cryptography"]
 default = []
 key-import = []
 root-export = []
+pin-recovery = ["key-import", "root-export"]
 
 [dependencies]
 anp.workspace = true
