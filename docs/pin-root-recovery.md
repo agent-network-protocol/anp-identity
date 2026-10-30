@@ -130,6 +130,9 @@ Prepared -> PublicationUncertain -> Active. Only exact authoritative
 NotCommitted reconciliation allows PublicationUncertain -> Prepared. A new
 challenge can then use a newer trusted base with the same generated device.
 Unknown status never authorizes deletion, abort, another device or activation.
+A later successful V4 can instead enter terminal SupersededByV4 under the narrow
+unprojected-custody evidence and scope described below; this does not reinterpret
+the earlier unknown device submission as NotCommitted.
 
 All three keys are sealed by the existing keystore. The existing creation
 journal, cross-process exclusive lock, generation CAS and crash cleanup stage
@@ -148,3 +151,130 @@ Owning Rust unit tests cover key matching, export confirmation/CAS, sealed
 pending, restart idempotency, JWS bytes/signatures, candidate tampering, restricted
 signing, exact committed checkpoints, uncertain deletion and reconciliation.
 System Test and Linux App acceptance remain owned by the integration plan.
+
+## S4: exact V4 supersession of unprojected PIN custody
+
+Status: approved and implemented on 2026-10-31. Existing IdentityTransitionOutcome::Committed only
+records publication of a transition; it does not revoke the predecessor's
+custody. The Prepared-only PIN cancellation API cannot represent an uncertain
+PIN device commit that may have succeeded before V4 retired the old binding.
+Neither an ordinary binding change nor a fabricated NotCommitted observation
+is sufficient authority.
+
+One Rust-only companion method is available on IdentityManager:
+
+```rust
+fn retire_pin_root_recovery_after_v4(
+    &mut self,
+    request: PinRecoveryV4RetirementRequest,
+) -> IdentityResult<PinRecoveryV4RetirementOutcome>;
+
+struct PinRecoveryV4RetirementRequest {
+    identity: IdentityRef,
+    expected_generation: u64,
+    binding: PinRecoveryBinding,
+    scope: PinRecoveryV4RetirementScope,
+    evidence: VerifiedPinRecoveryV4Supersession,
+}
+
+enum PinRecoveryV4RetirementScope {
+    UnprojectedPinRecovery {
+        never_projected: bool,
+        absent_from_previous_custody: bool,
+    },
+}
+
+struct VerifiedPinRecoveryV4Supersession {
+    v4_operation_id: String,
+    v4_intent_hash: String,
+    account_user_id: String,
+    full_handle: String,
+    previous_did: String,
+    previous_binding_generation: String,
+    successor_did: String,
+    successor_binding_generation: String,
+    committed_checkpoint: HostDocumentCheckpoint,
+    current_binding: PinRecoveryCurrentBinding,
+    current_document: VerifiedRemoteDocument,
+}
+
+struct PinRecoveryCurrentBinding {
+    full_handle: String,
+    did: String,
+    binding_generation: String,
+}
+
+struct PinRecoveryV4RetirementOutcome {
+    identity: IdentityRef,
+    generation: u64,
+}
+```
+
+Both scope assertions must be true. Core must hold its owner/operation lock
+while proving that this exact reference is absent from current and historical
+projections and all previous_custody retention records. If Core cannot prove
+that scope, custody is preserved. ANP Identity does not have access to Core's
+projection databases and treats this as an explicit verified-host attestation.
+A PIN-origin identity that was ever projected or used remains governed by the
+existing V4 historical-custody retention policy and cannot use this cleanup.
+
+These are verified-host evidence, analogous to VerifiedRemoteDocument, not new
+network credentials. Core constructs them only after checking its durable V4
+RecoveryIntentV4, successful RecoveryRemoteResultV4 and exact initiator transition
+marker, then independently checking the current authoritative Handle binding.
+The result must be `recovered`, match the intent/operation/contract/account/Handle,
+and name the same successor. An incomplete or superseded V4 does not qualify.
+The V4 intent hash is the existing `sha256:`-prefixed digest; no second V4 wire
+schema, JWT, OTP, grant or private material crosses this custody API. The V4
+operation ID preserves its existing 1–128 Unicode-scalar, no-whitespace/C0/DEL
+contract (including recover_v4_<base64url>); it is not required to be a UUID.
+The old PIN operation ID keeps the separate Realm UUID constraint. Provider
+code does not infer successful V4 from a changed DID, a failed PIN operation or a
+predecessor publication journal alone.
+
+Under the existing cross-process exclusive lock and identity generation CAS,
+ANP Identity checks:
+
+- Exact store/identity ID, old DID and complete persisted PinRecoveryBinding,
+  including old PIN operation, target, root, slot, DPoP key and binding generation.
+- V4 account/Handle/previous DID/previous generation equal that old binding;
+  successor DID differs and its canonical decimal generation strictly advances.
+- Current authoritative Handle/DID/generation equal the V4 successor fields.
+  The successor document passes existing active E1/WBA proof and RootControl
+  validation and names a different Ed25519 root. Its checkpoint equals or advances the V4 committed checkpoint;
+  the same document version cannot carry a different full-document digest.
+- The namespace is specifically PIN-origin Prepared, PublicationUncertain or
+  Active, has its expected three managed keys, and has no unrelated pending
+  document/root transfer or identity-transition publication. All three phases
+  require the unprojected scope assertions. Active is included only for the
+  crash window after custody activation but before Core ever saved an identity
+  projection; ordinary active identities and historical retained custody are
+  excluded even if they originally came from PIN recovery.
+
+The method first persists a terminal `SupersededByV4` PIN phase and public
+supersession evidence, marks the identity/key authority Revoked, removes pending
+enrollment authority and sets RootCapability to Absent. It uses the existing
+state-transition journal and never activates the old root. Subsequent old sign,
+completion, resume-to-active and pending promotion paths must reject. The public
+outcome returns only the old exact reference and resulting local generation.
+Repeating the same immutable V4 claim and scope is idempotent using the original
+or resulting generation. Its freshly verified successor document may advance,
+while the committed checkpoint and current binding stay bound to that claim.
+A changed binding or V4 operation cannot claim a previous isolation.
+
+Core durably records its exact cleanup claim before invoking this method. After
+isolation it may use the existing ordinary delete on the returned old reference;
+no generic-delete permission is widened. A deletion failure leaves an inert,
+encrypted namespace and retryable cleanup, not usable old authority. Core only
+removes the matching PIN Vault operation and secret state after custody cleanup
+is confirmed. The claim survives a crash between isolation, namespace deletion
+and Vault deletion, and must preserve any replacement identity or unrelated
+operation. Successor activation does not depend on resurrecting or exporting
+the old root, and a failed old-namespace cleanup does not undo successful V4.
+
+Required focused tests cover all three PIN-origin phases, an old PIN operation
+that remotely committed before V4, exact cross-account/Handle/DID/generation
+rejections, active non-PIN rejection, concurrent old completion versus isolation,
+state-transition crash recovery, identical retry and deletion/Vault failure
+replay. This extension does not declare historical PIN device commit failure;
+it records that a later verified V4 permanently superseded that authority.

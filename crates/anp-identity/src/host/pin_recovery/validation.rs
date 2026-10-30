@@ -388,7 +388,7 @@ pub(super) fn validate_challenge(
 }
 // These checks mirror RootChallengePayload/Intent in Realm Docs/02. They run
 // before binding comparison or signing, including fields nullable in one phase.
-fn uuid(value: &str) -> bool {
+pub(super) fn uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| {
             if matches!(index, 8 | 13 | 18 | 23) {
@@ -398,7 +398,7 @@ fn uuid(value: &str) -> bool {
             }
         })
 }
-fn hash32(value: &str) -> bool {
+pub(super) fn hash32(value: &str) -> bool {
     value.len() == 43
         && URL_SAFE_NO_PAD
             .decode(value)
@@ -413,7 +413,7 @@ fn registration_version(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn generation(value: &str) -> bool {
+pub(super) fn generation(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && !value.starts_with('0')

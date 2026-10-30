@@ -1,4 +1,6 @@
 //! Rust-only, operation-bound PIN backup and recovered-root custody.
+mod retirement;
+pub use retirement::*;
 mod validation;
 use super::{
     EnrollmentProposal, EnrollmentProposalKind, EnrollmentPublicKey, HostDocumentCheckpoint,
@@ -262,6 +264,7 @@ impl PinRootRecoveryPort for IdentityManager {
                 challenge_id: None,
                 signed_document: None,
                 signed_payload: None,
+                superseded_by_v4: None,
             },
         };
         let (engine, _) = self.engine.prepare_enrollment_with_pin(

@@ -999,3 +999,5 @@ fn pin_cancel_never_deletes_uncertain_or_active_custody() {
     );
     assert_eq!(fixture.manager.list().unwrap().len(), 1);
 }
+
+mod v4_retirement;

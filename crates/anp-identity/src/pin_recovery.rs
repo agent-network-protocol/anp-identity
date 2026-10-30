@@ -29,6 +29,7 @@ pub enum PinRecoveryPhase {
     Prepared,
     PublicationUncertain,
     Active,
+    SupersededByV4,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -40,6 +41,16 @@ pub(crate) struct PinRecoveryRecord {
     pub(crate) challenge_id: Option<String>,
     pub(crate) signed_document: Option<Value>,
     pub(crate) signed_payload: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) superseded_by_v4: Option<PinRecoveryV4RetirementRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PinRecoveryV4RetirementRecord {
+    pub(crate) source_generation: u64,
+    pub(crate) evidence: Value,
+    pub(crate) scope: Value,
 }
 
 pub(crate) struct PinRootMaterial {
