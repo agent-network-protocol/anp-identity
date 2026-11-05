@@ -16,7 +16,7 @@ import { EncryptedManagementCredentialBroker } from '../../src/management-creden
 import type { NativeProviderRegistry } from '../../src/provider-api.js'
 import type { ProtocolIdentityClient, ProtocolUsePolicy } from '../../src/protocol-client.js'
 import { exactHttps } from '../../src/publication-http.js'
-import type { PublicationCapabilities } from '../../src/publication-types.js'
+import type { OAuthClientIdentity, PublicationCapabilities } from '../../src/publication-types.js'
 
 interface RegisteredProtocolFixtureOptions {
   publicationOrigin: string
@@ -32,6 +32,13 @@ interface RegisteredProtocolFixtureOptions {
   publicationCapabilities?: PublicationCapabilities
   redirectUris?: string[]
 }
+interface PublicationSnapshot {
+  version: number
+  keyId: string
+  metadataSha256: string
+  jwksSha256: string
+}
+interface RotationResult extends PublicationSnapshot { previous: PublicationSnapshot }
 interface BridgeHttpReply { status: number; headers: Record<string, string>; body: string }
 interface PendingReply {
   resolve(value: unknown): void
@@ -57,6 +64,10 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
   policyRef: string
   readonly publicMaterials: { metadata: string; jwks: string }
   publicDocument(): Promise<JsonValue>
+  /** Publish a fresh same-DID key through actual C/B management; never changes the protocol Context. */
+  rotateOAuthKey(): Promise<RotationResult>
+  /** Close the real C provider registration/leases, not the underlying Store or OS keyring. */
+  closeRegisteredProvider(): Promise<{ closed: 'c-native-provider-registration'; storeLocked: false }>
   provenance: { publisher: 'user-service'; registration: 'production-command'; publication: 'prepare-bind-activate-readback'; machineOnly: true; metadataSha256: string; jwksSha256: string }
   dispose(): Promise<void>
 }> {
@@ -144,14 +155,14 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
       host.provide('loader', { *entries() { yield* entries } })
       await host.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: [consumer, '@fixture/registered-creator'], userConsumers: policy ? [consumer] : ['@fixture/registered-creator'], protocolPolicies: policy ? [policy] : [] })
       const service = host.anpIdentity as AnpIdentityService
-      ;(service as unknown as NativeProviderRegistry).registerProvider({ protocol: 'anp-identity-node-provider/1', provider })
+      const unregisterProvider = (service as unknown as NativeProviderRegistry).registerProvider({ protocol: 'anp-identity-node-provider/1', provider })
       await service.health()
       const install = async (name: string) => {
         let installed!: Context
         await host.plugin(Object.assign((value: Context) => { installed = value }, { inject: ['anpIdentity'] }))
         entries.push({ options: { name }, disabled: false, fiber: installed.fiber }); return installed
       }
-      return { host, install }
+      return { host, install, unregisterProvider }
     }
     stage = 'management-approval'
     const initial = await startHost()
@@ -173,7 +184,7 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
     const backend = await managerService.configureManagedPublicationBackend(managerContext, 'registered-machine', { reference, origin, credentials, fetch: transport })
     closeBackend = backend.dispose
     stage = 'real-publication'
-    const published = await manager.publishIdentity({ reference, config: { backend: 'registered-machine', documentId: backend.documentId, clientName: 'Registered machine component', redirectUris: [], activeKid: reference.did + '#oauth', capabilities: { mcpMachine: true, papSession: false, papAccount: false } } })
+    let published = await manager.publishIdentity({ reference, config: { backend: 'registered-machine', documentId: backend.documentId, clientName: 'Registered machine component', redirectUris: [], activeKid: reference.did + '#oauth', capabilities: { mcpMachine: true, papSession: false, papAccount: false } } })
     if (published.state !== 'published' || !published.clientId || !published.jwksUri || published.algorithm !== 'ES256') throw new Error('registered_protocol_not_published')
     stage = 'raw-b-readback'
     const readBytes = async (url: string) => {
@@ -181,25 +192,32 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
       if (response.status !== 200 || response.redirected || !(response.headers.get('content-type') ?? '').startsWith('application/json')) throw new Error('registered_protocol_public_readback_failed')
       return await response.text()
     }
-    const [metadata, jwks] = await Promise.all([readBytes(published.clientId), readBytes(published.jwksUri)])
-    const publicMetadata = JSON.parse(metadata)
-    const publicJwks = JSON.parse(jwks)
-    if (publicMetadata.client_id !== published.clientId || new URL(publicMetadata.client_id).origin !== origin
-      || publicMetadata.jwks_uri !== published.jwksUri || JSON.stringify(publicMetadata.grant_types) !== '["client_credentials"]'
-      || JSON.stringify(publicMetadata.response_types) !== '[]' || JSON.stringify(publicMetadata.redirect_uris) !== '[]'
-      || publicMetadata.token_endpoint_auth_method !== 'private_key_jwt' || publicMetadata.token_endpoint_auth_signing_alg !== 'ES256'
-      || publicJwks.keys?.length !== 1 || publicJwks.keys[0]?.kid !== published.keyId) throw new Error('registered_protocol_public_material_mismatch')
+    const readMaterials = async (current: OAuthClientIdentity) => {
+      if (current.state !== 'published' || !current.clientId || !current.jwksUri || current.algorithm !== 'ES256'
+        || !Number.isSafeInteger(current.version) || !current.version || !current.keyId) throw new Error('registered_protocol_not_published')
+      const [metadata, jwks] = await Promise.all([readBytes(current.clientId), readBytes(current.jwksUri)])
+      const publicMetadata = JSON.parse(metadata)
+      const publicJwks = JSON.parse(jwks)
+      if (publicMetadata.client_id !== current.clientId || new URL(publicMetadata.client_id).origin !== origin
+        || publicMetadata.jwks_uri !== current.jwksUri || JSON.stringify(publicMetadata.grant_types) !== '["client_credentials"]'
+        || JSON.stringify(publicMetadata.response_types) !== '[]' || JSON.stringify(publicMetadata.redirect_uris) !== '[]'
+        || publicMetadata.token_endpoint_auth_method !== 'private_key_jwt' || publicMetadata.token_endpoint_auth_signing_alg !== 'ES256'
+        || publicJwks.keys?.length !== 1 || publicJwks.keys[0]?.kid !== current.keyId) throw new Error('registered_protocol_public_material_mismatch')
+      return { metadata, jwks }
+    }
+    let { metadata, jwks } = await readMaterials(published)
     const sha = (value: string) => createHash('sha256').update(value).digest('hex')
-    const publicDocument = async (): Promise<JsonValue> => {
+    const readNativeDocument = async (current: OAuthClientIdentity, metadataBytes: string): Promise<JsonValue> => {
       if (disposed) throw new Error('registered_protocol_fixture_disposed')
       const lease = provider.acquireLease({ consumer: 'registered-public-read', capabilities: ['IDENTITY_READ'], ttlSeconds: 60 })
       try {
         const document = (await lease.publicIdentity(reference)).document
         const services = (document as { service?: Array<Record<string, unknown>> }).service?.filter(value => value.type === 'ANPCIMD') ?? []
-        if (services.length !== 1 || services[0]!.serviceEndpoint !== published.clientId || services[0]!.anp_metadata_sha256 !== sha(metadata)) throw new Error('registered_protocol_public_binding_mismatch')
+        if (services.length !== 1 || services[0]!.serviceEndpoint !== current.clientId || services[0]!.anp_metadata_sha256 !== sha(metadataBytes)) throw new Error('registered_protocol_public_binding_mismatch')
         return structuredClone(document)
       } finally { lease.dispose() }
     }
+    const publicDocument = () => readNativeDocument(published, metadata)
     await publicDocument()
     stage = 'explicit-policy-reopen'
     stage = 'dispose-initial-backend'
@@ -214,9 +232,50 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
     const consumerContext = await reopened.install(consumer)
     stage = 'bind-protocol-client'
     const client = (consumerContext.anpIdentity as AnpIdentityService).bindProtocolConsumer(consumerContext)
+    const snapshot = (): PublicationSnapshot => ({ version: published.version!, keyId: published.keyId!, metadataSha256: sha(metadata), jwksSha256: sha(jwks) })
+    let rotationCount = 0
+    let rotating = false
+    let pendingRotation: { keyId: string; previous: PublicationSnapshot } | undefined
+    let rotationManagement: { service: AnpIdentityService; context: Context; backend: string; documentId: string } | undefined
+    const rotateOAuthKey = async (): Promise<RotationResult> => {
+      if (disposed || rotating) throw new Error('registered_protocol_rotation_unavailable')
+      rotating = true
+      try {
+        if (!rotationManagement) {
+          const managementContext = await reopened.install('@agent-network-protocol/dsh-anp-identity/management-remote')
+          const service = managementContext.anpIdentity as AnpIdentityService
+          const configured = await service.configureManagedPublicationBackend(managementContext, 'registered-rotation', { reference, origin, credentials, fetch: transport })
+          if (configured.documentId !== backend.documentId) { configured.dispose(); throw new Error('registered_protocol_document_changed') }
+          closeBackend = configured.dispose
+          rotationManagement = { service, context: managementContext, backend: 'registered-rotation', documentId: configured.documentId }
+        }
+        pendingRotation ??= { keyId: reference.did + '#oauth-rotation-' + (rotationCount + 1), previous: snapshot() }
+        const pending = pendingRotation
+        const next = await rotationManagement.service.acquireManagement(rotationManagement.context).publishIdentity({ reference, config: {
+          backend: rotationManagement.backend, documentId: rotationManagement.documentId, clientName: 'Registered machine component',
+          redirectUris: [], activeKid: pending.keyId, capabilities: { mcpMachine: true, papSession: false, papAccount: false },
+        } })
+        if (next.clientId !== published.clientId || !next.version || next.version <= pending.previous.version || next.keyId !== pending.keyId) throw new Error('registered_protocol_rotation_mismatch')
+        const latest = await readMaterials(next)
+        await readNativeDocument(next, latest.metadata)
+        // Replace only after real activation and raw readback. Existing caller snapshots remain unchanged.
+        published = next; metadata = latest.metadata; jwks = latest.jwks
+        rotationCount += 1; pendingRotation = undefined
+        return { ...snapshot(), previous: { ...pending.previous } }
+      } catch (error) {
+        const rawCode = (error as { code?: unknown } | null)?.code
+        const code = typeof rawCode === 'string' && /^[a-zA-Z0-9_:-]{1,64}$/u.test(rawCode) ? rawCode : 'unclassified'
+        throw new Error('registered_protocol_rotation_failed:' + code)
+      } finally { rotating = false }
+    }
+    const closeRegisteredProvider = async () => {
+      if (disposed || rotating) throw new Error('registered_protocol_close_unavailable')
+      await reopened.unregisterProvider()
+      return { closed: 'c-native-provider-registration' as const, storeLocked: false as const }
+    }
     return { context: consumerContext, client, reference, policyRef,
-      get publicMaterials() { return { metadata, jwks } }, publicDocument,
-      provenance: { publisher: 'user-service', registration: 'production-command', publication: 'prepare-bind-activate-readback', machineOnly: true, metadataSha256: sha(metadata), jwksSha256: sha(jwks) }, dispose }
+      get publicMaterials() { return { metadata, jwks } }, publicDocument, rotateOAuthKey, closeRegisteredProvider,
+      get provenance() { return { publisher: 'user-service' as const, registration: 'production-command' as const, publication: 'prepare-bind-activate-readback' as const, machineOnly: true as const, metadataSha256: sha(metadata), jwksSha256: sha(jwks) } }, dispose }
   } catch (error) {
     const rawCode = (error as { code?: unknown } | null)?.code
     const code = typeof rawCode === 'string' && /^[a-zA-Z0-9_:-]{1,64}$/u.test(rawCode) ? rawCode : 'unclassified'
