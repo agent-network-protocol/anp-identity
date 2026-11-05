@@ -55,6 +55,7 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
           integrations: [],
         },
       ]);
+      await expect(invoke('registrationBootstrapStatus')).resolves.toEqual([]);
       await expect(
         invoke("decide", {
           input: {
@@ -89,6 +90,10 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
         "acquireProvider",
         "exportPrivateKey",
         "requestCreateIdentity",
+        'registerLocalIdentity',
+        'configureManagedPublicationBackend',
+        'pinManagementContext',
+        'bindPapHostConsumer',
       ])
         await expect(invoke(method)).rejects.toMatchObject({
           code: "gateway/invocation-unavailable",

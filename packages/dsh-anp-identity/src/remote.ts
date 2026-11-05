@@ -36,6 +36,7 @@ const decision = version
   })
   .strict();
 const methods = [
+  ["registrationBootstrapStatus", undefined],
   ["listIdentities", undefined],
   ["listRequests", z.boolean().optional()],
   ["getRequest", z.string().min(1)],

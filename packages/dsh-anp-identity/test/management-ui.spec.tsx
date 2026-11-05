@@ -28,6 +28,7 @@ import type {
   AuthorizationRequest,
   CapabilitySnapshot,
 } from "../src/authorization-types.js";
+import type { RegistrationBootstrapStatus } from '../src/registration-bootstrap.js';
 
 const identity: ManagedIdentitySummary = {
   reference: {
@@ -104,6 +105,7 @@ function fixture(
   let grants = initialGrants;
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
+    registrationBootstrapStatus: vi.fn(async () => ok<RegistrationBootstrapStatus[]>([])),
     listIdentities: vi.fn(async () => ok(identities)),
     listRequests: vi.fn(async (history?: boolean) =>
       ok(
@@ -185,6 +187,20 @@ function fixture(
 afterEach(cleanup);
 
 describe("Identity management UI against Host-shaped Remote", () => {
+  it('shows safe registration phases and references without claiming an automatic protocol permission grant', async () => {
+    const f = fixture();
+    f.remote.registrationBootstrapStatus.mockResolvedValue({ ok: true, value: [{
+      id: 'work', requestId: 'create-work', phase: 'published', reference: identity.reference,
+      clientId: 'https://identity.example/user-service/v1/agent-clients/work/client.json',
+    }] });
+    f.render();
+    await act(() => f.controller.refresh());
+    expect(screen.getByText('协议身份注册')).toBeTruthy();
+    expect(screen.getByText('注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。')).toBeTruthy();
+    expect(screen.getByText('本地身份引用')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/access_token|accessToken|ciphertext|claim_secret/u);
+    f.controller.dispose();
+  });
   it("keeps complete identity values copyable while switching compact identity cards", async () => {
     const f = fixture();
     const copy = vi.spyOn(f.controller, "copy").mockResolvedValue(undefined);

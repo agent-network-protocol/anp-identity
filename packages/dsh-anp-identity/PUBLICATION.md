@@ -50,3 +50,63 @@ Leases bind publication key/version, policy generation and native-provider gener
 Owner unit/Loader/UI tests cover migration, approvals, revocation, publication recovery, independent grants and the protocol lease. `test/protocol-native.spec.ts` exercises real C authorization and real A ES256/PAP custody with independent signature verification; its local publication acceptance fixture is not User Service control-plane evidence.
 
 `test/management-live.spec.ts` is an opt-in fixed local component contract. Set `DSH_IDENTITY_USER_SERVICE_SOURCE` to the B candidate and `DSH_IDENTITY_PYTHON` to its environment, then run `npx vitest run test/management-live.spec.ts`. The bridge uses actual production registration, factor verification, MySQL transactions, Registry, Device Access, management proofs and publication. Only external synthetic email delivery is substituted. One case creates E1 and Web identities consecutively in the same Store with explicit protocol approval and callback-free machine publication. A separate case performs actual PAP account publication, device-bound relay registration, public callback receipt, original-device one-shot pickup and replay denial. `test/helpers/managed-callback-fixture.ts` exports that real C/A/B setup to the PAP adapter component tests, without returning a native lease or management credential. This is not product E2E, System Test or deployment evidence.
+
+## Fresh Host registration bootstrap
+
+The optional `./protocol-bootstrap` plugin submits a stable `usage: protocol` creation request from its actual Loader-installed Context. It never approves that request. The existing `management-remote` accepts optional non-secret `registrationBootstrap` configuration; only its constructor-captured root management Context continues an approved, successfully created reference. The default bundle leaves this flow disabled and keeps the unconfigured manager compatible. The [first-stage patch](examples/fresh-bootstrap.cordis.patch.yml) contains deployment placeholders, not credentials. Retain existing approved consumers when adapting it.
+
+The Host needs the matching local native API v2/ES256 candidate and the actual `@deepseek-ai/dsh-credentials@0.1.5-rc.2` record API with a writable protected provider. `credentials-local@0.1.5-rc.2` supplies owner-only file protection and a writer lock. Native Store custody remains independently configured, normally keyring without a silent file fallback. No AWiki messaging/Core credential is imported. Candidate provenance is separate from registry version numbers.
+
+User Service must opt into the independent product. The client sends `X-AWiki-Client-Version: dsh-identity/1106/<version>` on its fixed-origin factor and management requests, reading version from the actual installed C package. It never borrows an AWiki version or accepts a version override from configuration. The server's `products.identity` entry defines the accepted release/version floor; an absent or disabled entry in an enforced deployment still rejects it. Deploy the new server implementation before its new policy file. Public server-info fields and an observe-only environment do not grant admission. C exposes only `client_upgrade_required`, without relaying server text or upgrade URLs.
+
+The manager pins the approved reference's actual ready provider generation before factor work. It sends one Handle-bound activation email and polls the same full Handle/email target. The user completes User Service's normal email page and Turnstile verification; C never reads an activation token or automatically confirms it. The existing register/Registry checks must succeed before encrypted credential storage, driver installation, ES256 enrollment and publication. The controller cannot switch to a replacement provider. Original manager identity and provider generation are rechecked after native/key/body awaits, before physical HTTP, and before returning results.
+
+Safe status phases are `awaiting_approval`, `awaiting_email_verification`, `registering`, `publishing`, `published`, `blocked` and `registration_uncertain`; a disposed controller reports `disposed`. Only phases, closed reasons and public identity/client references reach the manager UI. Mail-send and registration-start intents are durable before their physical requests. Restart does not resend an uncertain mail attempt or repeat a possibly committed registration. Cancellation cannot roll back a server transaction already sent; an unknown registration result requires management recovery.
+
+Each stable bootstrap id owns its own broker directory. Its 32-byte master comes from real atomic owner-scoped Host credential records, not ENV, the identity Root Key, UI/model input or a fallback key file. Existing keys are not rewritten. A durable marker and matching journal protect an established key even before the first Device Access ciphertext exists. Missing used keys, bad records, readonly storage or lifecycle loss fail closed. Do not rename ids/request ids or delete state to force a retry; restore the matching credential record, broker and journal together. This Host provider's file protection is not an OS Secret Service guarantee.
+
+### One-time protocol permission setup
+
+`published` confirms registration/publication, not D/F authorization. Copy the safe `{storeId, identityId, did}` from the manager, add an explicit `protocolPolicies` entry and matching consumer configuration, then restart the Host. The new reference is unknown before creation, so this implementation does not create a guessed policy or an automatic policy template. This is identity/profile/scope setup, not an approval for every remote station. Keep an explicit absolute expiry unchanged across restart; never silently renew it with a fresh `Date.now()` expression.
+
+For a machine connection, add `@deepseek-ai/dsh-mcp-client` to both `allowConsumers` and `userConsumers`, not `allowProviderConsumers`. Preserve the service's other fields and use this policy with the real copied reference and target URLs:
+
+```json
+{"id":"work-mcp","version":1,"consumer":"@deepseek-ai/dsh-mcp-client","owner":"@agent-network-protocol/dsh-anp-identity","identity":{"storeId":"COPIED_STORE_ID","identityId":"COPIED_IDENTITY_ID","did":"COPIED_DID"},"profiles":["mcp_machine"],"issuers":["https://issuer.example"],"resources":["https://resource.example/mcp"],"publicTargets":false,"scopes":["agent.self.read","catalog.read"],"expiresAt":1800000000000}
+```
+
+A matching actual Loader row is:
+
+```yaml
+- insert:
+    - id: work-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      inject: ['anpIdentity', 'credentials']
+      config:
+        transport: streamable-http
+        serverName: work
+        url: https://resource.example/mcp
+        authentication:
+          mode: cimd-client-credentials
+          connectionId: work-mcp
+          identityRef: { storeId: COPIED_STORE_ID, identityId: COPIED_IDENTITY_ID, did: COPIED_DID }
+          policyRef: work-mcp
+          requestedScopes: [agent.self.read, catalog.read]
+          issuer: https://issuer.example
+          stateRoot: /home/dsh/.dsh/mcp-credentials
+          encryptionKeyRef: EXISTING_PROTECTED_MCP_KEY
+```
+
+`EXISTING_PROTECTED_MCP_KEY` must already be a real Host credential reference with D's required 32-byte base64url key. Do not put a literal secret in the patch. D owns that separate token-store prerequisite and persistent connection-id/fence management. An administrator may explicitly choose `publicTargets: true` for unfamiliar public targets while retaining fixed profiles, scope ceilings and expiry; C never widens it. The remote AS independently decides admission and business permissions.
+
+For PAP, first publish the chosen PAP capability. Configure a separate policy for exactly `@agentconnect/dsh-pap/plugin`, with `pap_session`/`pap_account` profiles and the intended Company/issuer/resource/scope ceiling. Its actual plugin configuration is `{enabled:true, identityRef:<copied reference>, policyRef:<configured id>, stateRoot:<private F directory>}`. F's manager and tools are separate canonical entries, not the signing consumer. A no-AS Session does not require a callback driver or account capability. Product account handoff selects only the published fixed HTTPS relay; the independent engine loopback lane is not its fallback.
+
+### Target-bound PAP Host factory
+
+`bindPapHostConsumer(actualInstalledContext)` accepts only the actual installed F plugin allowed by Host policy. `resolveBinding(reference, policyRef, profile)` reads an existing matching policy and current published identity, returning only the public binding and an optional matching HTTPS relay. It never invents a policy for a fresh reference. Status/tools cannot revive a disposed factory; explicit identity selection or reload must bind again and acquire fresh leases.
+
+`callbackManagementFor({identityRef,policyRef,targetRef})` additionally requires C's current opaque account target from the same installed fiber. Issuer, resource, scopes, publication and provider/manager generations are checked around execution. The existing encrypted broker records public transaction-to-target metadata, and claim checks that binding before a physical request. Another Company/resource/scope cannot consume the transaction. The object exposes only register/claim and `dispose`, with no Native Provider, Device Access, general HTTP or arbitrary proof purpose. Private claim results are not cached or written to the operation journal.
+
+The bootstrap registration configuration/journal remain fixed for a stable id; this MVP has no configuration-migration or uncertain-registration recovery UI. Current Linux component evidence does not claim other-platform broker permission handling or OS keyring auto-lock acceptance. The strict component runs production admission, email factors, SQL, Registry and proofs; only external SMTP delivery and exact Siteverify transport are captured, under a test-user control unavailable to C's fetch adapter. Real Loader tests cover scoped ordinary consumers; management and legacy Provider admission remain root-only, and direct ACP-style `ctx.plugin()` without a trusted installation entry is rejected.
+
+The opt-in `test/registration-bootstrap-live.spec.ts` uses the actual Loader-installed manager, requester, native provider and registry credential provider. Its E1 cases cover missing/low-version admission, an incorrect email token hash, user confirmation, publication/readback and same-state restart without another email or registration. Two precise lifecycle cases close the real provider after an email-status body await and after a successful registration response: the first sends no further email/register request; the second retains `registration_uncertain` and sends no Registry request or credential write. It does not claim to undo the already committed remote registration. Run this component with `DSH_IDENTITY_USER_SERVICE_SOURCE=<strict B candidate> DSH_IDENTITY_PYTHON=<B Python>` and `node node_modules/vitest/vitest.mjs run test/registration-bootstrap-live.spec.ts` under its source/native test configuration. The strict bridge requires the independently enabled `dsh-identity/1106` policy and matching native API v2 candidate. Without the opt-in environment, normal owner collection skips the live cases.

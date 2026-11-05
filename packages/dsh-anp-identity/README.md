@@ -60,6 +60,8 @@ registry wrapper and its five platform packages.
 
 Load the Service before its Provider. The included `cordis.patch.yml` is a starting point:
 
+The source candidate also provides an opt-in fresh protocol registration flow through `./protocol-bootstrap` and the existing manager's non-secret `registrationBootstrap` configuration. It retains real creation approval, User Service email/Turnstile confirmation, Registry verification and encrypted Host credential custody. It requires independent `dsh-identity/1106` admission and a matching native API v2 candidate; the same registry version number alone does not prove those methods exist. [Publication and fresh setup](PUBLICATION.md#fresh-host-registration-bootstrap) describes the two-stage Host configuration. Published state does not automatically grant MCP/PAP permission.
+
 The shipping DSH layer grants `@awiki/dsh-plugin` client and Host Provider
 access by default so the documented two-plugin AWiki installation works without
 an extra local patch. Set `DSH_ANP_IDENTITY_ALLOW_CONSUMERS` and

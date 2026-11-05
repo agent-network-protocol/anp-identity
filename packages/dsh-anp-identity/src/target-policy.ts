@@ -4,7 +4,11 @@ import type { IdentityReference } from '@agent-network-protocol/anp-identity'
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider'
 import type { VerifiedCaller } from './authorization-types.js'
 import type { PublicationCoordinator } from './publication.js'
-import type { ProtocolUsePolicy, ProtocolIdentityClient, ProtocolSignerLease, ProtocolKeyReference, ValidatedTargetEvidence } from './protocol-client.js'
+import type { PublicationRecord } from './publication-types.js'
+import type { ProtocolUsePolicy, ProtocolIdentityClient, ProtocolSignerLease, ProtocolKeyReference, ValidatedTargetEvidence, PapHostConsumer } from './protocol-client.js'
+import { PapCallbackManagementError, PapCallbackOperationSchema } from './pap-callback.js'
+import type { PapCallbackManagementOperations, PapCallbackOperation, PapCallbackRegisterOperation, PapCallbackClaimOperation,
+  PapCallbackRegistrationResult, PapCallbackClaimResult } from './pap-callback.js'
 import { exactHttps } from './publication-http.js'
 import { pluginError } from './errors.js'
 
@@ -24,8 +28,20 @@ export interface ProtocolAuthorityHost {
   providerGeneration(): unknown
   withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
 }
+/** Private manager-owned driver and encrypted public transaction bindings. No credential value is returned. */
+export interface PapCallbackHostAuthority {
+  assertActive(): Promise<void>
+  operations: PapCallbackManagementOperations
+  reserve(transactionId: string, binding: Record<string, unknown>): Promise<Record<string, unknown>>
+  read(transactionId: string): Promise<Record<string, unknown> | undefined>
+}
+interface PapTarget {
+  fiber: Context['fiber']; identity: IdentityReference; policy: ProtocolUsePolicy
+  evidence: ValidatedTargetEvidence; scopes: string[]; check(): Promise<PublicationRecord>
+}
 /** The trusted adapter validates public discovery; this authority enforces identity and permission policy. */
 export class ProtocolIdentityAuthority {
+  private readonly targets = new WeakMap<object, PapTarget>()
   constructor(private readonly policies: readonly ProtocolUsePolicy[], private readonly host: ProtocolAuthorityHost,
     private readonly publications: PublicationCoordinator) {
     this.policies = structuredClone(policies)
@@ -65,6 +81,7 @@ export class ProtocolIdentityAuthority {
         checkCaller()
         if (disposed || Date.now() >= policy.expiresAt || Date.now() >= evidence.expiresAt) throw pluginError('capability_forbidden')
         const record = await this.publications.requirePublished(input.identityRef)
+        checkCaller()
         if (publicationVersion !== undefined && (record.version !== publicationVersion || record.key.kid !== publicationKid)) throw pluginError('capability_forbidden')
         if (record.key.alg !== 'ES256' || !record.config.capabilities
           || evidence.profile === 'mcp_machine' && !record.config.capabilities.mcpMachine
@@ -85,7 +102,11 @@ export class ProtocolIdentityAuthority {
       }
       const run = async (method: string, request: unknown) => {
         await check()
-        const result = await this.host.withNative(native => invoke(native, method, input.identityRef, request))
+        const result = await this.host.withNative(async native => {
+          await check()
+          const value = await invoke(native, method, input.identityRef, request)
+          await check(); return value
+        })
         await check()
         return result
       }
@@ -151,8 +172,103 @@ export class ProtocolIdentityAuthority {
       })
       const initial = await check()
       publicationVersion = initial.version; publicationKid = initial.key.kid
+      this.targets.set(targetRef, { fiber: context.fiber, identity: structuredClone(input.identityRef), policy,
+        evidence, scopes: [...new Set(input.requestedScopes)].sort(), check })
       return lease
     } })
+  }
+  /** Bind the exact installed PAP plugin; publication and callback data never replace its Host policy. */
+  bindPapHost(context: Context, callbackAuthority: (identity: IdentityReference, backend: string) => Promise<PapCallbackHostAuthority>): PapHostConsumer {
+    const caller = this.host.resolveCaller(context)
+    if (caller.consumer !== '@agentconnect/dsh-pap/plugin') throw pluginError('consumer_forbidden')
+    const generation = this.host.providerGeneration()
+    const selectedPolicies = new Set<ProtocolUsePolicy>()
+    let disposed = false
+    const checkActive = () => {
+      const current = this.host.resolveCaller(context)
+      if (disposed || current.consumer !== caller.consumer || this.host.providerGeneration() !== generation) throw pluginError('provider_disposed')
+      this.host.assertCaller(current)
+      if ([...selectedPolicies].some(policy => Date.now() >= policy.expiresAt)) throw pluginError('capability_forbidden')
+    }
+    const assertActive = async () => { checkActive() }
+    const policyFor = (identity: IdentityReference, policyRef: string, profile: 'pap_session' | 'pap_account') => {
+      const policy = this.policies.find(value => value.id === policyRef && value.consumer === caller.consumer && same(value.identity, identity))
+      if (!policy || !policy.profiles.includes(profile) || Date.now() >= policy.expiresAt) throw pluginError('capability_forbidden')
+      selectedPolicies.add(policy); return policy
+    }
+    const publishedFor = async (identity: IdentityReference, profile: 'pap_session' | 'pap_account') => {
+      const record = await this.publications.requirePublished(identity)
+      if (record.key.alg !== 'ES256' || !record.config.capabilities?.papSession
+        || profile === 'pap_account' && !record.config.capabilities.papAccount) throw pluginError('provider_incompatible')
+      return record
+    }
+    const relay = (record: PublicationRecord): string | undefined => {
+      const uri = new URL(record.clientId).origin + '/user-service/v1/pap-callback'
+      return record.config.redirectUris.includes(uri) ? uri : undefined
+    }
+    return Object.freeze<PapHostConsumer>({
+      assertActive,
+      dispose: () => { disposed = true },
+      resolveBinding: async (identity, policyRef, profile) => {
+        checkActive(); const policy = policyFor(identity, policyRef, profile)
+        const record = await publishedFor(identity, profile)
+        checkActive()
+        await this.host.withNative(async native => { checkActive(); await native.publicIdentity(identity); checkActive() })
+        checkActive()
+        const current = await publishedFor(identity, profile)
+        checkActive()
+        if (record.version !== current.version || record.key.kid !== current.key.kid) throw pluginError('capability_forbidden')
+        const redirectUri = profile === 'pap_account' ? relay(current) : undefined
+        return { binding: { identityRef: structuredClone(identity), ownerRef: policy.owner, clientId: current.clientId },
+          ...(redirectUri ? { redirectUri } : {}) }
+      },
+      callbackManagementFor: async input => {
+        await assertActive(); const policy = policyFor(input.identityRef, input.policyRef, 'pap_account')
+        const target = this.targets.get(input.targetRef)
+        if (!target || target.fiber !== context.fiber || !same(target.identity, input.identityRef)
+          || target.policy !== policy || target.evidence.profile !== 'pap_account') throw pluginError('capability_forbidden')
+        const record = await target.check(); const redirectUri = relay(record)
+        if (!redirectUri) throw new PapCallbackManagementError('callback_redirect_mismatch')
+        const authority = await callbackAuthority(input.identityRef, record.config.backend)
+        let released = false
+        const check = async () => {
+          await assertActive()
+          if (released) throw pluginError('provider_disposed')
+          await target.check(); await authority.assertActive()
+          checkActive()
+        }
+        await check()
+        const binding = { schema: 'pap-host-target/1', consumer: caller.consumer, policyRef: policy.id,
+          issuer: target.evidence.issuer, resource: target.evidence.resource, scopes: target.scopes,
+          clientId: record.clientId, redirectUri }
+        function execute(command: PapCallbackRegisterOperation): Promise<PapCallbackRegistrationResult>
+        function execute(command: PapCallbackClaimOperation): Promise<PapCallbackClaimResult>
+        async function execute(command: PapCallbackOperation): Promise<PapCallbackRegistrationResult | PapCallbackClaimResult> {
+          const parsed = PapCallbackOperationSchema.safeParse(command)
+          if (!parsed.success) throw pluginError('invalid_request')
+          const operation = parsed.data
+          await check()
+          if (operation.action === 'pap-callback-register') {
+            if (operation.callback.client_id !== record.clientId || operation.callback.issuer !== target!.evidence.issuer
+              || operation.callback.redirect_uri !== redirectUri) throw pluginError('capability_forbidden')
+            const saved = await authority.reserve(operation.callback.transaction_id, binding)
+            if (JSON.stringify(saved) !== JSON.stringify(binding)) throw pluginError('capability_forbidden')
+            await check()
+            const result = await authority.operations.execute(operation)
+            await check(); checkActive(); return result
+          }
+          const saved = await authority.read(operation.callback.transaction_id)
+          if (!saved || JSON.stringify(saved) !== JSON.stringify(binding)) throw pluginError('capability_forbidden')
+          await check()
+          checkActive()
+          const result = await authority.operations.execute(operation)
+          await check()
+          if (result.iss !== target!.evidence.issuer) throw pluginError('capability_forbidden')
+          return result
+        }
+        return Object.freeze({ execute, dispose: () => { released = true } })
+      },
+    })
   }
   private validateEvidence(evidence: ValidatedTargetEvidence): void {
     for (const value of [evidence.issuer, evidence.resource, evidence.sources.resource, evidence.sources.authorizationServer,

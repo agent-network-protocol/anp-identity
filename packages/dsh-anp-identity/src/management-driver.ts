@@ -44,10 +44,18 @@ export async function createManagedPublicationDriver(input: {
   fetch?: typeof fetch
   /** Supplied by the Host installer to revoke this driver with its management Context and provider generation. */
   assertActive?: () => Promise<void>
+  /** Synchronous final epoch check immediately before physical sends and after body/native awaits. */
+  assertCurrent?: () => void
 }): Promise<ManagedPublicationDriver> {
   const origin = exactHttps(input.origin)
   if (new URL(origin).origin !== origin) throw pluginError('invalid_request')
-  const send = input.fetch ?? fetch
+  const transport = input.fetch ?? fetch
+  const send: typeof fetch = async (request, init) => {
+    await input.assertActive?.(); input.assertCurrent?.()
+    const response = await transport(request, init)
+    try { await input.assertActive?.(); input.assertCurrent?.(); return response }
+    catch (error) { await response.body?.cancel(); throw error }
+  }
   const reference = Object.freeze(structuredClone(input.reference))
   const credential = async () => {
     const value = await input.credentials.get(reference, origin)
@@ -65,6 +73,7 @@ export async function createManagedPublicationDriver(input: {
       const result = parsePublicJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts)))
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw pluginError('provider_incompatible')
       const object = result as Record<string, unknown>
+      input.assertCurrent?.()
       if (response.status !== 200) throw papCallbackManagementError(object) ?? pluginError('provider_unavailable')
       return object
     } finally { await reader?.cancel(); reader?.releaseLock() }
@@ -150,6 +159,7 @@ export async function createManagedPublicationDriver(input: {
       const response = await send(new Request(`${origin}/user-service/v1/agent-clients/${id}/${part}`, { redirect: 'manual', signal: AbortSignal.timeout(15000) }))
       if (response.status !== 200 || response.redirected) { await response.body?.cancel(); throw pluginError('provider_unavailable') }
       const text = await response.text()
+      input.assertCurrent?.()
       if (Buffer.byteLength(text) > 32768) throw pluginError('provider_incompatible')
       parsePublicJson(text)
       return text
@@ -246,10 +256,13 @@ export async function registerLocalIdentity(input: {
   fetch?: typeof fetch
   managementAudience?: string
   handleDomain?: string
+  assertActive?: () => void
 }): Promise<{ did: string; deviceId: string; state: 'registered' }> {
+  input.assertActive?.()
   const origin = exactHttps(input.origin)
   if (new URL(origin).origin !== origin || !input.reference.did.startsWith('did:wba:') && !input.reference.did.startsWith('did:web:')) throw pluginError('provider_incompatible')
   const identity = await input.withNative(native => native.publicIdentity(input.reference))
+  input.assertActive?.()
   const document = identity.document as Record<string, unknown>
   // The live Registry below is authoritative; this list only identifies the locally held candidate key.
   const candidates = identity.activeKeys.filter(key => key.purposes.includes('device_assertion'))
@@ -266,12 +279,19 @@ export async function registerLocalIdentity(input: {
       return signer.call(native, input.reference, { key: { kid: candidates[0]!.kid }, business_projection: projection })
     })
   } else if (registration.registration_operation_id) throw pluginError('invalid_request')
-  const send = input.fetch ?? fetch
+  const transport = input.fetch ?? fetch
+  const send: typeof fetch = async (request, init) => {
+    input.assertActive?.()
+    const response = await transport(request, init)
+    try { input.assertActive?.(); return response }
+    catch (error) { await response.body?.cancel(); throw error }
+  }
   const response = await send(new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'register',
       params: { ...registration, did_document: identity.document, is_agent: true, ...(bootstrap ? { bootstrap_proof: bootstrap } : {}) } }) }))
   if (response.status !== 200 || response.redirected) { await response.body?.cancel(); throw pluginError('provider_unavailable') }
   const bytes = await response.text()
+  input.assertActive?.()
   if (Buffer.byteLength(bytes) > 32768) throw pluginError('provider_incompatible')
   const envelope = parsePublicJson(bytes) as { result?: Record<string, unknown>; error?: unknown }
   const result = envelope.result
@@ -281,6 +301,7 @@ export async function registerLocalIdentity(input: {
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'device_registry_get', params: {} }) }))
   if (registryResponse.status !== 200 || registryResponse.redirected) { await registryResponse.body?.cancel(); throw pluginError('provider_unavailable') }
   const registryBytes = await registryResponse.text()
+  input.assertActive?.()
   if (Buffer.byteLength(registryBytes) > 32768) throw pluginError('provider_incompatible')
   const registryEnvelope = parsePublicJson(registryBytes) as { result?: Registry; error?: unknown }
   const registry = registryEnvelope.result
@@ -288,8 +309,10 @@ export async function registerLocalIdentity(input: {
   if (registryEnvelope.error || registry?.did !== input.reference.did || !device || device.status !== 'active'
     || device.role !== 'admin' || !device.management_ready) throw pluginError('provider_unavailable')
   await input.credentials.set(input.reference, origin, { accessToken: token, deviceId: device.device_id, signingKeyId: device.signing_key_id, ...(web ? { audience: input.managementAudience! } : {}) })
+  input.assertActive?.()
   await input.withNative(native => native.adoptVerifiedDocument(input.reference, { document: identity.document,
     evidence: { documentVersion: registry.checkpoint.document_version, registryVersion: registry.checkpoint.registry_version, documentDigest: registry.checkpoint.document_hash } }))
+  input.assertActive?.()
   return { did: input.reference.did, deviceId: device.device_id, state: 'registered' }
 }
 

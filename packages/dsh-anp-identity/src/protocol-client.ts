@@ -1,6 +1,18 @@
 /** Host-only protocol identity leases. These objects never cross Remote or tool APIs. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
+import type { PapCallbackManagementOperations } from './pap-callback.js'
+
+/** Installed PAP Host capability. Callback operations additionally require a current opaque C target. */
+export interface PapHostConsumer {
+  resolveBinding(identityRef: IdentityReference, policyRef: string, profile: 'pap_session' | 'pap_account'): Promise<{
+    binding: { identityRef: IdentityReference; ownerRef: string; clientId: string }
+    redirectUri?: string
+  }>
+  callbackManagementFor(input: { identityRef: IdentityReference; policyRef: string; targetRef: object }): Promise<PapCallbackManagementOperations & { dispose(): void }>
+  assertActive(): Promise<void>
+  dispose(): void
+}
 
 export interface ValidatedTargetEvidence {
   profile: 'mcp_machine' | 'pap_session' | 'pap_account'

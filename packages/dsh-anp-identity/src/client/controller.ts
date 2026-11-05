@@ -1,4 +1,5 @@
 import type { OAuthClientIdentity } from "../publication-types.js";
+import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 import type { IdentityReference } from "@agent-network-protocol/anp-identity";
 import type {
@@ -16,7 +17,7 @@ export type ManagementRemote = {
   [K in keyof IdentityManagement]: (
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
-};
+} & { registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>> };
 export type ManagerModal =
   | { readonly kind: "request"; readonly review: RequestReview }
   | { readonly kind: "result"; readonly review: RequestReview }
@@ -28,6 +29,7 @@ export type ManagerModal =
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
   readonly loading: boolean;
+  readonly bootstraps: readonly RegistrationBootstrapStatus[];
   readonly identities: readonly ManagedIdentitySummary[];
   readonly requests: readonly AuthorizationRequest[];
   readonly history: readonly AuthorizationRequest[];
@@ -51,6 +53,7 @@ export const identityReference = (
 export class IdentityController {
   private view: ManagerView = {
     loading: true,
+    bootstraps: [],
     identities: [],
     requests: [],
     history: [],
@@ -111,10 +114,12 @@ export class IdentityController {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     try {
-      const [identities, requests] = await Promise.all([
+      const [identities, requests, bootstrapResult] = await Promise.all([
         this.call("listIdentities"),
         this.call("listRequests", false),
+        this.remote.registrationBootstrapStatus?.(),
       ]);
+      if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
       const selectedKey = identities.some(
         (i) => identityKey(identityReference(i)) === this.view.selectedKey,
       )
@@ -125,6 +130,7 @@ export class IdentityController {
       const changed = selectedKey !== this.view.selectedKey;
       this.patch({
         loading: false,
+        bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
         requests: requests
           .filter((r) => r.status === "pending")

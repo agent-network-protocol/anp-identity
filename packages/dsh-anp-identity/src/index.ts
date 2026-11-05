@@ -1,7 +1,10 @@
 import type { PapCallbackManagementOperations } from './pap-callback.js'
 import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
+import { installedConsumerEntries, resolveInstalledConsumer } from './installed-consumer.js'
 import { ProtocolIdentityAuthority } from './target-policy.js'
-import type { ProtocolUsePolicy, ProtocolIdentityClient } from './protocol-client.js'
+import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js'
+import type { PapCallbackHostAuthority } from './target-policy.js'
+import { PapCallbackManagementError } from './pap-callback.js'
 import { PublicationCoordinator } from './publication.js'
 import { exactHttps } from './publication-http.js'
 import type { PublicationBackend } from './publication-types.js'
@@ -221,6 +224,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   private providerSlot: ProviderSlot | undefined
   private readonly publications: PublicationCoordinator
   private readonly publicationBackends = new Map<string, PublicationBackend>()
+  private readonly papCallbackAuthorities = new Map<string, { reference: IdentityReference; generation: symbol; authority: PapCallbackHostAuthority }>()
   private readonly protocols: ProtocolIdentityAuthority
   private readonly users: UserIdentityService
   private readonly hostContext: Context
@@ -253,7 +257,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       const previous = rawPrevious as { name?: string }
       if (active === false || entry?.disabled) this.cancelDisabledRequests(previous?.name ?? entry?.options?.name)
       try {
-        for (const candidate of this.installedEntries()) {
+        for (const candidate of installedConsumerEntries(this.hostContext)) {
           if (candidate.disabled) this.cancelDisabledRequests(candidate.options.name)
         }
       } catch { /* The Host may not have installed a loader yet. */ }
@@ -261,7 +265,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     ctx.on('internal/plugin', fiber => {
       if (ctx.fiber.state > 2) return
       try {
-        for (const entry of this.installedEntries()) {
+        for (const entry of installedConsumerEntries(this.hostContext)) {
           if (sameFiber(entry.fiber, fiber) && entry.disabled) this.cancelDisabledRequests(entry.options.name)
         }
       } catch { /* A transient missing loader is not an uninstall decision. */ }
@@ -862,6 +866,20 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   bindProtocolConsumer(context: Context): ProtocolIdentityClient { return this.protocols.bind(context) }
 
+  /** Bind the actual installed PAP Host. Private callback access additionally requires its current opaque target.
+   * @param context - Original Loader-installed PAP plugin Context.
+   * @returns Public identity selection and target-bound, closed callback operations.
+   */
+  bindPapHostConsumer(context: Context): PapHostConsumer {
+    return this.protocols.bindPapHost(context, async (reference, backend) => {
+      const entry = this.papCallbackAuthorities.get(backend)
+      if (!entry || entry.reference.storeId !== reference.storeId || entry.reference.identityId !== reference.identityId
+        || entry.reference.did !== reference.did) throw new PapCallbackManagementError('management_auth_required')
+      await entry.authority.assertActive()
+      return entry.authority
+    })
+  }
+
   /** Install a real device-authorized backend; the document id comes from authenticated resolve. */
   async configureManagedPublicationBackend(context: Context, name: string, input: {
     reference: IdentityReference; origin: string; credentials: ManagementCredentialBroker; fetch?: typeof fetch
@@ -869,26 +887,95 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     this.assertManagementContext(context)
     const slot = this.requireSlot()
     let disposed = false
-    const driver = await createManagedPublicationDriver({ ...input, withNative: operation => this.withPublicationNative(operation),
-      assertActive: async () => {
-        if (disposed) throw pluginError('provider_disposed')
-        this.assertManagementContext(context)
-        this.assertSlot(slot)
-      } })
+    const assertCurrent = () => {
+      if (disposed) throw pluginError('provider_disposed')
+      // Preserve the original installed manager Context even when a different service consumer invokes a capability.
+      const managerService = context.get('anpIdentity') as AnpIdentityService
+      managerService.assertManagementContext(context)
+      managerService.assertSlot(slot)
+    }
+    const assertActive = async () => { assertCurrent() }
+    const driver = await createManagedPublicationDriver({ ...input,
+      withNative: async operation => {
+        assertCurrent()
+        const result = await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(async native => {
+          assertCurrent(); const value = await operation(native); assertCurrent(); return value
+        })
+        assertCurrent(); return result
+      }, assertActive, assertCurrent })
     this.assertManagementContext(context)
     const dispose = this.registerPublicationBackend(context, name, driver.backend)
+    const generation = Symbol('pap-callback-manager')
+    const reference = Object.freeze(structuredClone(input.reference))
+    const origin = input.origin
+    const prefix = 'pap-host-target:'
+    const assertAuthority = async () => {
+      await assertActive()
+      const managerService = context.get('anpIdentity') as AnpIdentityService
+      if (managerService.publicationBackends.get(name) !== driver.backend
+        || managerService.papCallbackAuthorities.get(name)?.generation !== generation) throw pluginError('provider_disposed')
+      assertCurrent()
+    }
+    const authority: PapCallbackHostAuthority = {
+      assertActive: assertAuthority,
+      operations: Object.freeze({ execute: driver.execute }),
+      reserve: async (transactionId, binding) => {
+        await assertAuthority()
+        const result = await input.credentials.reserveOperation(reference, origin, prefix + transactionId, binding)
+        await assertAuthority(); return result
+      },
+      read: async transactionId => {
+        await assertAuthority()
+        const credential = await input.credentials.get(reference, origin)
+        await assertAuthority()
+        return credential?.operationBindings?.[prefix + transactionId]
+      },
+    }
+    this.papCallbackAuthorities.set(name, { reference, generation, authority })
     return { backend: name, documentId: driver.documentId, callbackManagement: Object.freeze({ execute: driver.execute }),
-      dispose: () => { disposed = true; dispose() } }
+      dispose: () => {
+        disposed = true; dispose()
+        if (this.papCallbackAuthorities.get(name)?.generation === generation) this.papCallbackAuthorities.delete(name)
+      } }
   }
 
   /** Register the public local Manifest through User Service and persist its verified management credential. */
   async registerLocalIdentity(context: Context, input: {
     reference: IdentityReference; origin: string; credentials: ManagementCredentialBroker; registration: LocalRegistrationInput; managementAudience?: string; handleDomain?: string; fetch?: typeof fetch
+    /** Optional tighter Host lifecycle fence, never a source of management authority. */
+    assertActive?: () => void
   }): Promise<{ did: string; deviceId: string; state: 'registered' }> {
-    this.assertManagementContext(context)
-    const result = await registerLocalIdentity({ ...input, withNative: operation => this.withPublicationNative(operation) })
-    this.assertManagementContext(context)
+    const assertActive = await this.pinManagementContext(context, input.reference, input.assertActive)
+    const result = await registerLocalIdentity({ ...input, assertActive, withNative: async operation => {
+      assertActive()
+      const value = await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(async native => {
+        assertActive(); const output = await operation(native); assertActive(); return output
+      })
+      assertActive(); return value
+    } })
+    assertActive()
     return result
+  }
+
+  /** Pin the actual ready provider for an approved local identity and the original manager Context.
+   * @param context - Original root-installed manager Context.
+   * @param reference - Local identity whose current provider is being pinned.
+   * @param additionalCheck - Optional stricter Host lifecycle check.
+   * @returns A synchronous fence that never switches to a replacement provider.
+   */
+  async pinManagementContext(context: Context, reference: IdentityReference, additionalCheck?: () => void): Promise<() => void> {
+    additionalCheck?.(); this.assertManagementContext(context)
+    const slot = this.requireSlot()
+    const assertActive = () => {
+      additionalCheck?.()
+      const manager = context.get('anpIdentity') as AnpIdentityService
+      manager.assertManagementContext(context); manager.assertSlot(slot)
+    }
+    await this.awaitProvider(slot); assertActive()
+    await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(async native => {
+      assertActive(); await native.publicIdentity(reference); assertActive()
+    })
+    assertActive(); return assertActive
   }
 
   /** Host-only manager; the ordinary consumer facade never exposes this object. */
@@ -907,19 +994,24 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       || manager.disabled || !manager.fiber || ![1, 2].includes(manager.fiber.state)) throw pluginError('consumer_forbidden')
   }
 
-  acquireManagement(context?: Context): IdentityManagement {
+  acquireManagement(context?: Context, additionalCheck?: () => void): IdentityManagement {
+    additionalCheck?.()
     this.assertManagementContext(context)
     const ready = async () => {
+      additionalCheck?.()
       this.assertManagementContext(context)
       await this.users.ready
-      await this.awaitProvider(this.requireSlot())
+      additionalCheck?.(); this.assertManagementContext(context)
+      const slot = this.requireSlot()
+      await this.awaitProvider(slot)
+      additionalCheck?.(); this.assertManagementContext(context); this.assertSlot(slot)
     }
     return Object.freeze({
       retryPublication: async reference => {
         await ready()
         const entry = findEntry(await this.loadCatalog(this.requireSlot()), reference)
         if (!entry?.publication) throw pluginError('provider_unavailable')
-        return this.acquireManagement(context).publishIdentity({ reference, config: entry.publication.config })
+        return this.acquireManagement(context, additionalCheck).publishIdentity({ reference, config: entry.publication.config })
       },
       publicationStatus: async reference => { await ready(); return this.publications.status(reference) },
       publishIdentity: async input => {
@@ -1056,7 +1148,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   }
 
   private resolveInstalledCaller(context: Context): VerifiedCaller {
-    const entry = this.installedEntries().find(value => sameFiber(value.fiber, context.fiber))
+    const entry = resolveInstalledConsumer(this.hostContext, context)
     if (!entry || entry.disabled || !this.resolvedConfig.userConsumers.has(entry.options.name)
       || ![1, 2].includes(entry.fiber!.state)) throw pluginError('consumer_forbidden')
     return { consumer: entry.options.name, displayName: entry.options.name }
@@ -1064,7 +1156,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   private assertInstalledCaller(caller: VerifiedCaller): void {
     if (this.disabledFences.has(caller.consumer)) throw pluginError('consumer_forbidden')
-    const entry = this.installedEntries().find(value => value.options.name === caller.consumer
+    const entry = installedConsumerEntries(this.hostContext).find(value => value.options.name === caller.consumer
       && !value.disabled && value.fiber !== undefined && [1, 2].includes(value.fiber.state))
     if (!entry || !this.resolvedConfig.userConsumers.has(caller.consumer)) throw pluginError('consumer_forbidden')
   }
@@ -1932,6 +2024,7 @@ export type { PublicationConfig, PublicationBackend, OAuthClientIdentity } from 
 export { EncryptedManagementCredentialBroker } from './management-credentials.js'
 export { createManagedPublicationDriver, registerLocalIdentity } from './management-driver.js'
 export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegistrationInput } from './management-driver.js'
+export type { PapHostConsumer } from './protocol-client.js'
 
 export { PapCallbackManagementError } from './pap-callback.js'
 export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult,

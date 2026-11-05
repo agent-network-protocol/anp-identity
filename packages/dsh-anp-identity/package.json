@@ -39,6 +39,10 @@
     "./protocol-client": {
       "types": "./lib/protocol-client.d.ts",
       "default": "./lib/protocol-client.js"
+    },
+    "./protocol-bootstrap": {
+      "types": "./lib/protocol-bootstrap.d.ts",
+      "default": "./lib/protocol-bootstrap.js"
     }
   },
   "files": [
@@ -106,7 +110,8 @@
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.1",
-    "react": "^18.3.1"
+    "react": "^18.3.1",
+    "@deepseek-ai/dsh-credentials": "0.1.5-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-typert-protocol": {
@@ -134,6 +139,9 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials": {
       "optional": true
     }
   },
@@ -186,7 +194,9 @@
     "shiki": "^4.3.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "zod": "^4.6.2"
+    "zod": "^4.6.2",
+    "@deepseek-ai/dsh-credentials": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-credentials-local": "0.1.5-rc.2"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

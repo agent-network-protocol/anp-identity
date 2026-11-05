@@ -1,7 +1,7 @@
 // ===== index.d.ts =====
 import type { PapCallbackManagementOperations } from './pap-callback.js';
 import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
-import type { ProtocolUsePolicy, ProtocolIdentityClient } from './protocol-client.js';
+import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
 import type { PublicationBackend } from './publication-types.js';
 import { Service, type Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
@@ -47,6 +47,7 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     private providerSlot;
     private readonly publications;
     private readonly publicationBackends;
+    private readonly papCallbackAuthorities;
     private readonly protocols;
     private readonly users;
     private readonly hostContext;
@@ -82,6 +83,11 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     /** Host-bound ordinary facade; request inputs never select a caller. */
     bindUserConsumer(context: Context): UserIdentityClient;
     bindProtocolConsumer(context: Context): ProtocolIdentityClient;
+    /** Bind the actual installed PAP Host. Private callback access additionally requires its current opaque target.
+     * @param context - Original Loader-installed PAP plugin Context.
+     * @returns Public identity selection and target-bound, closed callback operations.
+     */
+    bindPapHostConsumer(context: Context): PapHostConsumer;
     /** Install a real device-authorized backend; the document id comes from authenticated resolve. */
     configureManagedPublicationBackend(context: Context, name: string, input: {
         reference: IdentityReference;
@@ -103,15 +109,24 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
         managementAudience?: string;
         handleDomain?: string;
         fetch?: typeof fetch;
+        /** Optional tighter Host lifecycle fence, never a source of management authority. */
+        assertActive?: () => void;
     }): Promise<{
         did: string;
         deviceId: string;
         state: 'registered';
     }>;
+    /** Pin the actual ready provider for an approved local identity and the original manager Context.
+     * @param context - Original root-installed manager Context.
+     * @param reference - Local identity whose current provider is being pinned.
+     * @param additionalCheck - Optional stricter Host lifecycle check.
+     * @returns A synchronous fence that never switches to a replacement provider.
+     */
+    pinManagementContext(context: Context, reference: IdentityReference, additionalCheck?: () => void): Promise<() => void>;
     /** Host-only manager; the ordinary consumer facade never exposes this object. */
     registerPublicationBackend(context: Context, name: string, backend: PublicationBackend): () => void;
     private assertManagementContext;
-    acquireManagement(context?: Context): IdentityManagement;
+    acquireManagement(context?: Context, additionalCheck?: () => void): IdentityManagement;
     private assertNoHostAssociations;
     private managementIdentities;
     private installedEntries;
@@ -136,6 +151,7 @@ export type { PublicationConfig, PublicationBackend, OAuthClientIdentity } from 
 export { EncryptedManagementCredentialBroker } from './management-credentials.js';
 export { createManagedPublicationDriver, registerLocalIdentity } from './management-driver.js';
 export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegistrationInput } from './management-driver.js';
+export type { PapHostConsumer } from './protocol-client.js';
 export { PapCallbackManagementError } from './pap-callback.js';
 export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult, PapCallbackRegisterOperation, PapCallbackClaimOperation, PapCallbackManagementOperations, PapCallbackManagementErrorCode } from './pap-callback.js';
 
@@ -366,6 +382,27 @@ export declare function bindIdentityClient(ctx: Context): UserIdentityClient;
 /** Host-only protocol identity leases. These objects never cross Remote or tool APIs. */
 import type { Context } from '@deepseek-ai/cordis';
 import type { IdentityReference } from '@agent-network-protocol/anp-identity';
+import type { PapCallbackManagementOperations } from './pap-callback.js';
+/** Installed PAP Host capability. Callback operations additionally require a current opaque C target. */
+export interface PapHostConsumer {
+    resolveBinding(identityRef: IdentityReference, policyRef: string, profile: 'pap_session' | 'pap_account'): Promise<{
+        binding: {
+            identityRef: IdentityReference;
+            ownerRef: string;
+            clientId: string;
+        };
+        redirectUri?: string;
+    }>;
+    callbackManagementFor(input: {
+        identityRef: IdentityReference;
+        policyRef: string;
+        targetRef: object;
+    }): Promise<PapCallbackManagementOperations & {
+        dispose(): void;
+    }>;
+    assertActive(): Promise<void>;
+    dispose(): void;
+}
 export interface ValidatedTargetEvidence {
     profile: 'mcp_machine' | 'pap_session' | 'pap_account';
     issuer: string;
@@ -479,26 +516,115 @@ export interface ProtocolIdentityClient {
  */
 export declare function bindProtocolIdentityClient(context: Context): ProtocolIdentityClient;
 
+// ===== protocol-bootstrap.d.ts =====
+/** Optional installed consumer that requests user approval before creating a protocol identity. */
+import type { Context } from '@deepseek-ai/cordis';
+import z from '@deepseek-ai/schemastery';
+export declare const PROTOCOL_BOOTSTRAP_CONSUMER = "@agent-network-protocol/dsh-anp-identity/protocol-bootstrap";
+export declare const name = "anp-identity-protocol-bootstrap";
+export declare const inject: string[];
+export interface Config {
+    requestId: string;
+    profile: 'e1' | 'web';
+    label: string;
+    domain: string;
+    path: string;
+    /** Canonical full Handle shown in the creation approval. */
+    handle: string;
+    providerReadyTimeoutMs: number;
+}
+export declare const Config: z<Config>;
+/** Submit one stable request from this actual installed Context; this never approves or registers it.
+ * @param context - Loader-installed ordinary consumer.
+ * @param config - Non-secret local creation request and bounded provider startup wait.
+ */
+export declare function apply(context: Context, config: Config): Promise<void>;
+
+// ===== registration-bootstrap.d.ts =====
+/** Private Host orchestration from a real creation approval to verified device publication. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { IdentityReference } from '@agent-network-protocol/anp-identity';
+import type AnpIdentityService from './index.js';
+import type { IdentityManagement } from './management-types.js';
+import { z } from 'zod';
+export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
+    id: z.ZodString;
+    requestId: z.ZodString;
+    stateRoot: z.ZodString;
+    origin: z.ZodString;
+    email: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+    clientName: z.ZodString;
+    capabilities: z.ZodDefault<z.ZodObject<{
+        mcpMachine: z.ZodBoolean;
+        papSession: z.ZodBoolean;
+        papAccount: z.ZodBoolean;
+    }, z.core.$strict>>;
+    redirectUris: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    managementAudience: z.ZodDefault<z.ZodString>;
+    pollIntervalMs: z.ZodDefault<z.ZodNumber>;
+    providerReadyTimeoutMs: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strict>;
+export type RegistrationBootstrapConfig = z.infer<typeof RegistrationBootstrapConfigSchema>;
+export type RegistrationBootstrapInput = z.input<typeof RegistrationBootstrapConfigSchema>;
+export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'registering' | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed';
+export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required';
+/** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
+export interface RegistrationBootstrapStatus {
+    id: string;
+    requestId: string;
+    phase: RegistrationBootstrapPhase;
+    reason?: RegistrationBootstrapReason;
+    reference?: IdentityReference;
+    clientId?: string;
+}
+export interface RegistrationBootstrapController {
+    status(): RegistrationBootstrapStatus;
+    dispose(): Promise<void>;
+}
+/** Install the configured manager-owned flow. Its caller supplies the actual management facade and Context.
+ * @param options - Non-secret configuration, actual Host management authority and optional HTTP transport.
+ * @returns A safe status projection and quiescent disposer.
+ */
+export declare function startRegistrationBootstrap(options: {
+    context: Context;
+    service: AnpIdentityService;
+    manager: IdentityManagement;
+    config: RegistrationBootstrapConfig;
+    fetch?: typeof fetch;
+}): RegistrationBootstrapController;
+
 // ===== target-policy.d.ts =====
 /** Context-bound protocol authorization with opaque target, scope and temporary-key references. */
 import type { Context } from '@deepseek-ai/cordis';
+import type { IdentityReference } from '@agent-network-protocol/anp-identity';
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider';
 import type { VerifiedCaller } from './authorization-types.js';
 import type { PublicationCoordinator } from './publication.js';
-import type { ProtocolUsePolicy, ProtocolIdentityClient } from './protocol-client.js';
+import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
+import type { PapCallbackManagementOperations } from './pap-callback.js';
 export interface ProtocolAuthorityHost {
     resolveCaller(context: Context): VerifiedCaller;
     assertCaller(caller: VerifiedCaller): void;
     providerGeneration(): unknown;
     withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
 }
+/** Private manager-owned driver and encrypted public transaction bindings. No credential value is returned. */
+export interface PapCallbackHostAuthority {
+    assertActive(): Promise<void>;
+    operations: PapCallbackManagementOperations;
+    reserve(transactionId: string, binding: Record<string, unknown>): Promise<Record<string, unknown>>;
+    read(transactionId: string): Promise<Record<string, unknown> | undefined>;
+}
 /** The trusted adapter validates public discovery; this authority enforces identity and permission policy. */
 export declare class ProtocolIdentityAuthority {
     private readonly policies;
     private readonly host;
     private readonly publications;
+    private readonly targets;
     constructor(policies: readonly ProtocolUsePolicy[], host: ProtocolAuthorityHost, publications: PublicationCoordinator);
     bind(context: Context): ProtocolIdentityClient;
+    /** Bind the exact installed PAP plugin; publication and callback data never replace its Host policy. */
+    bindPapHost(context: Context, callbackAuthority: (identity: IdentityReference, backend: string) => Promise<PapCallbackHostAuthority>): PapHostConsumer;
     private validateEvidence;
     private validateRequest;
 }
@@ -539,6 +665,8 @@ export declare function createManagedPublicationDriver(input: {
     fetch?: typeof fetch;
     /** Supplied by the Host installer to revoke this driver with its management Context and provider generation. */
     assertActive?: () => Promise<void>;
+    /** Synchronous final epoch check immediately before physical sends and after body/native awaits. */
+    assertCurrent?: () => void;
 }): Promise<ManagedPublicationDriver>;
 /** Registration fields supplied through the trusted Host management flow, never persisted in the catalog. */
 export interface LocalRegistrationInput {
@@ -563,6 +691,7 @@ export declare function registerLocalIdentity(input: {
     fetch?: typeof fetch;
     managementAudience?: string;
     handleDomain?: string;
+    assertActive?: () => void;
 }): Promise<{
     did: string;
     deviceId: string;
@@ -1114,10 +1243,19 @@ import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import type { IdentityReference } from "@agent-network-protocol/anp-identity";
 import type { AuthorizationDecision } from "./authorization-types.js";
 import type { RequestVersion, RevokeGrantInput, DeleteManagedIdentityInput } from "./management-types.js";
+import z from '@deepseek-ai/schemastery';
+import type { RegistrationBootstrapInput } from './registration-bootstrap.js';
+export interface Config {
+    registrationBootstrap?: RegistrationBootstrapInput;
+}
+export declare const Config: z<Config>;
 export declare class IdentityManagerRemote extends TypertRemoteService {
     static inject: string[];
+    static Config: z<Config>;
     private readonly manager;
-    constructor(ctx: Context);
+    private readonly bootstrap;
+    constructor(ctx: Context, config?: Config);
+    registrationBootstrapStatus(): import("./registration-bootstrap.js").RegistrationBootstrapStatus[];
     listIdentities(): Promise<import("./management-types.js").ManagedIdentitySummary[]>;
     listRequests(input?: boolean): Promise<import("./authorization-types.js").AuthorizationRequest[]>;
     getRequest(input: string): Promise<import("./management-types.js").RequestReview>;

@@ -14,7 +14,7 @@
 - HTTP 请求如何完成身份认证，同时不把可复用 Header patch 交给调用方；
 - 多 DID、通用 handle、consumer grant 和删除保护如何保持一致。
 
-ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。当前发布扩展将 catalog 升级为 v3，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
+ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。当前发布扩展将 catalog 升级为 v4，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
 
 ## 主要能力
 
@@ -34,6 +34,8 @@ ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 
 - consumer 名称是同进程策略与诊断边界，可防误用，但不是针对同一 Node.js 进程内恶意代码的沙箱。
 
 完整边界见 [BOUNDARY.md](./BOUNDARY.md)。
+
+本轮源码候选还提供显式启用的 fresh 协议身份注册：`./protocol-bootstrap` 发起真实创建审批，现有 manager 的非秘密 `registrationBootstrap` 配置继续 User Service 邮箱/Turnstile 确认、Registry 验证及加密 Host 凭据保管。它要求独立 `dsh-identity/1106` 产品准入和匹配的 native API v2 候选；registry 版本号相同不代表已含这些方法。[发布与 fresh 设置](PUBLICATION.md#fresh-host-registration-bootstrap)说明分两阶段配置真实 Host；“已发布”不自动表示 MCP/PAP 已获使用许可。
 
 ## 安装与配置
 

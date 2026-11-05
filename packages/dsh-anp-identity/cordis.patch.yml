@@ -25,3 +25,10 @@
 
     - id: anp-identity-manager
       name: '@agent-network-protocol/dsh-anp-identity/management-remote'
+      config:
+        registrationBootstrap: !!js process.env.DSH_ANP_IDENTITY_REGISTRATION_BOOTSTRAP === undefined ? undefined : JSON.parse(process.env.DSH_ANP_IDENTITY_REGISTRATION_BOOTSTRAP)
+
+    - id: anp-identity-protocol-bootstrap
+      name: '@agent-network-protocol/dsh-anp-identity/protocol-bootstrap'
+      disabled: !!js process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP === undefined
+      config: !!js process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP === undefined ? {} : JSON.parse(process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP)
