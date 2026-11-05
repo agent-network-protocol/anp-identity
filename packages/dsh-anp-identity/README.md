@@ -66,6 +66,15 @@ an extra local patch. Set `DSH_ANP_IDENTITY_ALLOW_CONSUMERS` and
 `DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS` to explicit JSON arrays to replace
 those defaults for a different deployment.
 
+For MCP or PAP protocol use, configure the exact consumer in
+`DSH_ANP_IDENTITY_ALLOW_CONSUMERS` and `DSH_ANP_IDENTITY_USER_CONSUMERS`, and
+provide explicit `ProtocolUsePolicy` entries through
+`DSH_ANP_IDENTITY_PROTOCOL_POLICIES` (a JSON array, default `[]`). These are
+Host configuration inputs; loading the bundle alone grants no protocol target,
+resource, scope, or signer permission. Keep the default empty policy until the
+deployment has approved its precise targets. See [PUBLICATION.md](PUBLICATION.md)
+for the publication capability boundary.
+
 ```yaml
 - insert:
     - id: anp-identity
