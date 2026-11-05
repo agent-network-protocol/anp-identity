@@ -168,7 +168,7 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
     const reference = structuredClone(approved.result.reference)
     stage = 'real-registration'
     const credentials = new EncryptedManagementCredentialBroker(join(root, 'management'), async () => Buffer.from(encryptionKey))
-    await managerService.registerLocalIdentity(managerContext, { reference, origin, credentials, fetch: transport, managementAudience: 'awiki-user-service',
+    await managerService.registerLocalIdentity(managerContext, { reference, origin, credentials, fetch: transport, managementAudience: 'awiki-user-service', handleDomain: 'identity.example',
       registration: { handle: 'dsh-cimd-' + run, email: 'dsh-cimd-' + run + '@example.invalid', ...(profile === 'web' ? { registration_operation_id: randomUUID() } : {}) } })
     const backend = await managerService.configureManagedPublicationBackend(managerContext, 'registered-machine', { reference, origin, credentials, fetch: transport })
     closeBackend = backend.dispose
