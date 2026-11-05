@@ -142,7 +142,7 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
       context = host
       const entries: Array<{ options: { name: string }; disabled: boolean; fiber: Context['fiber'] }> = []
       host.provide('loader', { *entries() { yield* entries } })
-      await host.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: [consumer, '@fixture/registered-creator'], userConsumers: ['@fixture/registered-creator'], protocolPolicies: policy ? [policy] : [] })
+      await host.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: [consumer, '@fixture/registered-creator'], userConsumers: policy ? [consumer] : ['@fixture/registered-creator'], protocolPolicies: policy ? [policy] : [] })
       const service = host.anpIdentity as AnpIdentityService
       ;(service as unknown as NativeProviderRegistry).registerProvider({ protocol: 'anp-identity-node-provider/1', provider })
       await service.health()
@@ -202,18 +202,25 @@ export async function createRegisteredProtocolFixture(options: RegisteredProtoco
     }
     await publicDocument()
     stage = 'explicit-policy-reopen'
+    stage = 'dispose-initial-backend'
     closeBackend(); closeBackend = undefined
+    stage = 'dispose-initial-host'
     await initial.host.fiber.dispose()
     const policyRef = 'registered-machine-policy'
     const policy: ProtocolUsePolicy = { id: policyRef, version: 1, consumer, owner: '@agent-network-protocol/dsh-anp-identity', identity: reference, profiles: ['mcp_machine'], issuers, resources, publicTargets: false, scopes, expiresAt: Date.now() + 3600000 }
+    stage = 'reopen-host-policy'
     const reopened = await startHost(policy)
+    stage = 'install-protocol-consumer'
     const consumerContext = await reopened.install(consumer)
+    stage = 'bind-protocol-client'
     const client = (consumerContext.anpIdentity as AnpIdentityService).bindProtocolConsumer(consumerContext)
     return { context: consumerContext, client, reference, policyRef,
       get publicMaterials() { return { metadata, jwks } }, publicDocument,
       provenance: { publisher: 'user-service', registration: 'production-command', publication: 'prepare-bind-activate-readback', machineOnly: true, metadataSha256: sha(metadata), jwksSha256: sha(jwks) }, dispose }
-  } catch {
+  } catch (error) {
+    const rawCode = (error as { code?: unknown } | null)?.code
+    const code = typeof rawCode === 'string' && /^[a-zA-Z0-9_:-]{1,64}$/u.test(rawCode) ? rawCode : 'unclassified'
     await dispose()
-    throw new Error('registered_protocol_fixture_failed:' + stage)
+    throw new Error('registered_protocol_fixture_failed:' + stage + ':' + code)
   }
 }
