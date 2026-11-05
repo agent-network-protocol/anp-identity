@@ -209,6 +209,7 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     assert_eq!(
         identity
             .prepare_update(DocumentUpdateSpec {
+                oauth_client: None,
                 request_signing_rotation: Some(RequestSigningRotation {
                     old_kid: "#root".to_string(),
                     new_fragment: "new-root".to_string(),
@@ -223,6 +224,7 @@ fn lifecycle_direct_published_commit_and_invalid_role_paths() {
     assert_eq!(
         identity
             .prepare_update(DocumentUpdateSpec {
+                oauth_client: None,
                 request_signing_rotation: Some(RequestSigningRotation {
                     old_kid: "#e2ee-signing".to_string(),
                     new_fragment: "wrong-role".to_string(),
@@ -257,6 +259,7 @@ fn v1b_lifecycle_adds_and_removes_an_external_device_as_one_published_revision()
 
     let added = identity
         .prepare_update(DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: None,
             request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Add {
@@ -311,6 +314,7 @@ fn v1b_lifecycle_adds_and_removes_an_external_device_as_one_published_revision()
     let before = identity.document().clone();
     let upgraded = identity
         .prepare_update(DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: None,
             request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::AddProfiles {
@@ -339,6 +343,7 @@ fn v1b_lifecycle_adds_and_removes_an_external_device_as_one_published_revision()
 
     let removed = identity
         .prepare_update(DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: None,
             request_signing_mutations: Vec::new(),
             device_mutations: vec![DeviceMutationSpec::Remove {
@@ -376,6 +381,7 @@ fn lifecycle_adds_and_removes_external_request_signing_authority() {
 
     let added = identity
         .prepare_update(DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: None,
             request_signing_mutations: vec![RequestSigningMutationSpec::Add {
                 key: RequestSigningPublicKeySpec {
@@ -409,6 +415,7 @@ fn lifecycle_adds_and_removes_external_request_signing_authority() {
 
     let removed = identity
         .prepare_update(DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: None,
             request_signing_mutations: vec![RequestSigningMutationSpec::Remove {
                 kid: daemon_kid.clone(),
@@ -542,6 +549,7 @@ fn valid_unknown_document(identity: &DidIdentity) -> Value {
 
 fn update(new_fragment: &str) -> DocumentUpdateSpec {
     DocumentUpdateSpec {
+        oauth_client: None,
         request_signing_rotation: Some(RequestSigningRotation {
             old_kid: "#request".to_string(),
             new_fragment: new_fragment.to_string(),

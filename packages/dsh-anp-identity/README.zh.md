@@ -14,7 +14,7 @@
 - HTTP 请求如何完成身份认证，同时不把可复用 Header patch 交给调用方；
 - 多 DID、通用 handle、consumer grant 和删除保护如何保持一致。
 
-ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。管理功能将 catalog 升级为 v2，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
+ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。当前发布扩展将 catalog 升级为 v3，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
 
 ## 主要能力
 
@@ -158,3 +158,14 @@ consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python
 后会删除临时 DSH profile、Store、证书和 tarball。
 
 许可证：Apache-2.0。
+
+
+## 公共客户端身份基础
+
+新增能力和安全边界见 [PUBLICATION.md](./PUBLICATION.md)。公共身份插件可以独立加载，
+通过可信 Host 注册的 User Service 管理通道和已有 DID 发布驱动，准备并发布 CIMD/JWKS。
+缺少真实回调或授权通道时保持待配置，不要求消息或邮件插件，不默认发起第三方登录。
+现有管理页展示发布状态、CIMD 和失败重试；普通插件的 OAuth 签名必须同时满足精确
+`oauthAllowedAudiences`、用户 grant、已发布记录和有效密钥。断言不通过 Browser/Remote 返回。
+
+协议身份通过显式 `usage: 'protocol'` 创建审批，使用本地 E1/Web 设备密钥、按能力投影的 ES256 发布，以及目标绑定的机器/PAP lease。真实 User Service 管理通道、加密凭据 broker、catalog v4 迁移与验证边界见 [发布与管理契约](./PUBLICATION.md)。

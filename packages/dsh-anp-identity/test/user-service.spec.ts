@@ -16,10 +16,10 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('ordinary plugin authorization with a real native Store', () => {
   it('excludes Host identities from ordinary requests and decisions while allowing approved cross-plugin use', async () => {
     await using fixture = await userFixture()
-    const host = fixture.service.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE'] })
+    const host = fixture.hostService.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE'] })
     const protectedIdentity = await host.create({ profile: 'e1', domain: 'example.com', pathSegments: ['host-only'],
       capabilities: { didWba: true }, managedKeys: [{ fragment: 'root', role: 'root_control' }, { fragment: 'request', role: 'request_signing' }] })
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const ordinary = await createApproved(fixture, 'shareable')
     const all = await manager.listIdentities()
     expect(all.find(item => item.reference.did === protectedIdentity.reference.did)?.integrations).toHaveLength(1)
@@ -41,7 +41,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
   it('invalidates an in-flight ordinary snapshot and existing leases when a Host association is added', async () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'host-association-race')
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const request = await fixture.first.requestAccess({ requestId: 'before-host', purpose: 'Read', identity: reference, operation: { action: 'read' } })
     const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent',
       reviewedSnapshot: (await manager.getRequest(request.id)).snapshot! }) as AccessAuthorizationRequest
@@ -132,16 +132,16 @@ describe('ordinary plugin authorization with a real native Store', () => {
     engine.options.fault = point => {
       if (point === 'before_rename' && ++writes === failedWrite) throw new Error('simulated-final-ledger-write-loss')
     }
-    await expect(fixture.service.acquireManagement().deleteIdentity({ reference, confirmationName: 'Identity delete-crash' }))
+    await expect(fixture.managerService.acquireManagement(fixture.managerContext).deleteIdentity({ reference, confirmationName: 'Identity delete-crash' }))
       .rejects.toThrow('simulated-final-ledger-write-loss')
     delete engine.options.fault
     await fixture.restart()
-    expect(await fixture.service.acquireManagement().listIdentities()).toEqual([])
+    expect(await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities()).toEqual([])
     expect(await fixture.first.getCreateRequest('create-delete-crash')).toMatchObject({ executionStatus: 'deleted' })
     const ledger = JSON.parse(await readFile(join(fixture.root, 'authorization-v1.json'), 'utf8'))
     expect(ledger.deletingIdentities).toEqual([])
     expect(ledger.deletedIdentities).toContainEqual(reference)
-    await expect(fixture.service.acquireManagement().deleteIdentity({ reference, confirmationName: 'Identity delete-crash' })).resolves.toBeUndefined()
+    await expect(fixture.managerService.acquireManagement(fixture.managerContext).deleteIdentity({ reference, confirmationName: 'Identity delete-crash' })).resolves.toBeUndefined()
     expect(await fixture.host().list()).toEqual([])
   })
 
@@ -149,10 +149,10 @@ describe('ordinary plugin authorization with a real native Store', () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'stale-review')
     const request = await fixture.first.requestAccess({ requestId: 'stale-scope', purpose: 'Review the original scope', identity: reference })
-    const reviewed = await fixture.service.acquireManagement().getRequest(request.id)
+    const reviewed = await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)
     expect(reviewed.snapshot?.httpOrigins).toEqual([ORIGIN])
     await fixture.restart([ORIGIN, 'https://unseen.example'])
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     await expect(manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference,
       mode: 'permanent', reviewedSnapshot: reviewed.snapshot! })).rejects.toMatchObject({ code: 'review_snapshot_changed' })
     expect(await manager.grants(reference)).toEqual([])
@@ -169,12 +169,12 @@ describe('ordinary plugin authorization with a real native Store', () => {
     const engine = (fixture.service as unknown as { users: { engine: { options: { fault?: (point: string) => void } } } }).users.engine
     let writes = 0
     engine.options.fault = point => { if (point === 'before_rename' && ++writes === 2) throw new Error('lost-create-result') }
-    const approved = await fixture.service.acquireManagement().decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
+    const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
     delete engine.options.fault
     expect(approved.executionStatus).toBe('unknown')
     expect(approved.result).toBeUndefined()
-    const identity = (await fixture.service.acquireManagement().listIdentities())[0]!
-    await fixture.service.acquireManagement().deleteIdentity({ reference: identity.reference, confirmationName: 'Identity unknown-delete' })
+    const identity = (await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities())[0]!
+    await fixture.managerService.acquireManagement(fixture.managerContext).deleteIdentity({ reference: identity.reference, confirmationName: 'Identity unknown-delete' })
     await fixture.restart()
     expect(await fixture.first.getCreateRequest(request.id)).toMatchObject({ executionStatus: 'deleted', result: { reference: identity.reference } })
     expect(await fixture.host().list()).toEqual([])
@@ -194,16 +194,17 @@ describe('ordinary plugin authorization with a real native Store', () => {
       consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE', 'IDENTITY_DELETE'],
     })).toThrowError(expect.objectContaining({ code: 'consumer_forbidden' }))
     expect(() => proxy.acquireManagement()).toThrowError(expect.objectContaining({ code: 'consumer_forbidden' }))
+    expect(() => fixture.service.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_SIGN'] })).toThrowError(expect.objectContaining({ code: 'consumer_forbidden' }))
     expect(await fixture.host().list()).toEqual([])
-    expect(await fixture.service.acquireManagement().listIdentities()).toEqual([])
+    expect(await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities()).toEqual([])
     const reference = await createApproved(fixture, 'root-manager')
-    expect((await fixture.service.acquireManagement().listIdentities())[0]?.reference).toEqual(reference)
+    expect((await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities())[0]?.reference).toEqual(reference)
   })
 
   it('binds installation provenance and blocks the old self-claimed consumer API', async () => {
     await using fixture = await userFixture()
     await expect(fixture.service.acquireClient({ consumer: 'user-one', capabilities: ['identity:read', 'identity:create'] }))
-      .rejects.toMatchObject({ code: 'capability_forbidden' })
+      .rejects.toMatchObject({ code: 'consumer_forbidden' })
     expect(() => fixture.service.bindUserConsumer(new Context())).toThrow()
     const request = await fixture.first.requestCreateIdentity(createInput('provenance'))
     expect(request.caller.consumer).toBe('user-one')
@@ -251,14 +252,14 @@ describe('ordinary plugin authorization with a real native Store', () => {
     await expect(fixture.host().list()).resolves.toEqual([])
     await fixture.restart()
     expect(await fixture.first.getCreateRequest(request.id)).toMatchObject({ kind: 'create', parameters: { handle: 'demo.handle' } })
-    const approved = await fixture.service.acquireManagement().decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
+    const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
     expect(approved.executionStatus).toBe('succeeded')
-    expect(await fixture.service.acquireManagement().listIdentities()).toMatchObject([{ handle: 'demo.handle', reference: approved.result!.reference }])
+    expect(await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities()).toMatchObject([{ handle: 'demo.handle', reference: approved.result!.reference }])
     expect((await fixture.authorizationState()).grants).toEqual([])
     await fixture.restart()
-    expect(await fixture.service.acquireManagement().listIdentities()).toMatchObject([{ handle: 'demo.handle' }])
+    expect(await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities()).toMatchObject([{ handle: 'demo.handle' }])
     const duplicate = await fixture.first.requestCreateIdentity({ ...createInput('duplicate-handle'), parameters: { ...createInput('duplicate-handle').parameters, handle: 'demo.handle' } })
-    await fixture.service.acquireManagement().decide({ requestId: duplicate.id, expectedVersion: duplicate.version, decision: 'approve' })
+    await fixture.managerService.acquireManagement(fixture.managerContext).decide({ requestId: duplicate.id, expectedVersion: duplicate.version, decision: 'approve' })
     expect(await fixture.host().list()).toHaveLength(1)
     expect(await fixture.first.getCreateRequest(duplicate.id)).not.toMatchObject({ executionStatus: 'succeeded' })
   })
@@ -276,7 +277,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
   it('creates exactly once and keeps creation and use as independent decisions across restart', async () => {
     await using fixture = await userFixture()
     const request = await fixture.first.requestCreateIdentity(createInput('approved'))
-    const approved = await fixture.service.acquireManagement().decide({
+    const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve',
     }) as CreateAuthorizationRequest
     expect(approved.executionStatus).toBe('succeeded')
@@ -290,7 +291,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
       requestId: 'declined-use', purpose: 'Read the created identity', identity: approved.result!.reference,
       operation: { action: 'read' },
     })
-    await fixture.service.acquireManagement().decide({ requestId: access.id, expectedVersion: access.version, decision: 'deny' })
+    await fixture.managerService.acquireManagement(fixture.managerContext).decide({ requestId: access.id, expectedVersion: access.version, decision: 'deny' })
     expect((await fixture.authorizationState()).grants).toEqual([])
     await fixture.restart()
     const retried = await fixture.first.requestCreateIdentity(createInput('approved')) as CreateAuthorizationRequest
@@ -307,9 +308,9 @@ describe('ordinary plugin authorization with a real native Store', () => {
       requestId: 'once-sign-access', purpose: 'Sign one immutable authentication payload', identity: reference,
       operation: { action: 'sign', request: signing },
     })
-    const approved = await fixture.service.acquireManagement().decide({
+    const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference, mode: 'once',
-      reviewedSnapshot: (await fixture.service.acquireManagement().getRequest(request.id)).snapshot!,
+      reviewedSnapshot: (await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)).snapshot!,
     }) as AccessAuthorizationRequest
     const identity = await fixture.first.openAuthorizedIdentity(approved.grantId!)
     for (const forbidden of ['create', 'delete', 'recover', 'setHandle', 'acquireProvider', 'prepareDocumentChange', 'exportPrivateKey']) {
@@ -345,9 +346,9 @@ describe('ordinary plugin authorization with a real native Store', () => {
       requestId: 'once-http-access', purpose: 'Send one authenticated profile operation', identity: reference,
       operation: { action: 'http', request: makeRequest() },
     })
-    const approved = await fixture.service.acquireManagement().decide({
+    const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference, mode: 'once',
-      reviewedSnapshot: (await fixture.service.acquireManagement().getRequest(request.id)).snapshot!,
+      reviewedSnapshot: (await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)).snapshot!,
     }) as AccessAuthorizationRequest
     const identity = await fixture.first.openAuthorizedIdentity(approved.grantId!)
     let calls = 0
@@ -385,10 +386,10 @@ describe('ordinary plugin authorization with a real native Store', () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'permanent')
     const request = await fixture.first.requestAccess({ requestId: 'permanent-access', purpose: 'Use this identity until revoked', identity: reference })
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const approved = await manager.decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference, mode: 'permanent',
-      reviewedSnapshot: (await fixture.service.acquireManagement().getRequest(request.id)).snapshot!,
+      reviewedSnapshot: (await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)).snapshot!,
     }) as AccessAuthorizationRequest
     const original = await fixture.first.openAuthorizedIdentity(approved.grantId!)
     await expect(original.publicIdentity()).resolves.toMatchObject({ reference })
@@ -405,7 +406,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
     const transported = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('A forbidden Origin reached transport'))
     await expect(reopened.authenticatedHttp.dispatch(new Request('https://new.example.com/profile'), 'new-origin')).rejects.toThrow()
     expect(transported).not.toHaveBeenCalled()
-    const currentManager = fixture.service.acquireManagement()
+    const currentManager = fixture.managerService.acquireManagement(fixture.managerContext)
     const current = (await currentManager.grants(reference))[0]!
     expect(current.snapshot.httpOrigins).toEqual([ORIGIN])
     await currentManager.revoke({ grantId: current.id, expectedVersion: current.version })
@@ -418,7 +419,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
   it('lists grant-free identities and saved handles without inventing a verified binding', async () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'handle')
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     let identities = await manager.listIdentities()
     expect(identities).toHaveLength(1)
     expect(identities[0]).toMatchObject({ reference })
@@ -436,17 +437,17 @@ describe('ordinary plugin authorization with a real native Store', () => {
     expect(JSON.stringify(document)).not.toContain('grantedConsumers')
     expect(JSON.stringify(document)).not.toContain('privateKey')
     await fixture.restart()
-    expect((await fixture.service.acquireManagement().listIdentities())[0]?.handle).toBe('saved.handle')
+    expect((await fixture.managerService.acquireManagement(fixture.managerContext).listIdentities())[0]?.handle).toBe('saved.handle')
   })
 
   it('blocks deletion while granted and preserves a creation tombstone after confirmed deletion', async () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'deletion')
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const request = await fixture.first.requestAccess({ requestId: 'delete-grant', purpose: 'Read until revoked', identity: reference })
     const approved = await manager.decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference, mode: 'permanent',
-      reviewedSnapshot: (await fixture.service.acquireManagement().getRequest(request.id)).snapshot!,
+      reviewedSnapshot: (await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)).snapshot!,
     }) as AccessAuthorizationRequest
     await expect(manager.deleteIdentity({ reference, confirmationName: 'Identity deletion' })).rejects.toThrow()
     expect(await fixture.host().list()).toHaveLength(1)
@@ -465,7 +466,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
   it('requires a concrete operation for default once approval and preserves pending requests when merely prompted', async () => {
     await using fixture = await userFixture()
     const reference = await createApproved(fixture, 'explicit-operation')
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const request = await fixture.first.requestAccess({ requestId: 'missing-operation', purpose: 'Request ordinary identity access', identity: reference })
     await manager.markPrompted({ requestId: request.id, expectedVersion: request.version })
     const pending = await manager.listRequests()
@@ -484,7 +485,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
     await using fixture = await userFixture()
     await createApproved(fixture, 'corrupt-metadata')
     await writeFile(join(fixture.root, 'catalog-v1.json'), '{invalid catalog', 'utf8')
-    await expect(fixture.service.acquireManagement().listIdentities()).rejects.toMatchObject({ code: 'catalog_corrupt' })
+    await expect(fixture.managerService.acquireManagement(fixture.managerContext).listIdentities()).rejects.toMatchObject({ code: 'catalog_corrupt' })
     expect(await fixture.host().list()).toHaveLength(1)
   })
 
@@ -495,7 +496,7 @@ describe('ordinary plugin authorization with a real native Store', () => {
     const access = await fixture.first.requestAccess({
       requestId: 'disabled-access', purpose: 'Pending use during plugin disable', identity: reference, operation: { action: 'read' },
     })
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     expect(await manager.listRequests()).toHaveLength(2)
     await fixture.disableFirst()
     await expect.poll(async () => (await manager.listRequests()).length, { timeout: 4000, interval: 25 }).toBe(0)
@@ -515,10 +516,10 @@ describe('ordinary plugin authorization with a real native Store', () => {
       requestId: 'missing-kid-access', purpose: 'Validate a native key before execution', identity: reference,
       operation: { action: 'sign', request: signing },
     })
-    const manager = fixture.service.acquireManagement()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
     const approved = await manager.decide({
       requestId: request.id, expectedVersion: request.version, decision: 'approve', identity: reference, mode: 'once',
-      reviewedSnapshot: (await fixture.service.acquireManagement().getRequest(request.id)).snapshot!,
+      reviewedSnapshot: (await fixture.managerService.acquireManagement(fixture.managerContext).getRequest(request.id)).snapshot!,
     }) as AccessAuthorizationRequest
     const identity = await fixture.first.openAuthorizedIdentity(approved.grantId!)
     await expect(identity.sign(signing, 'missing-kid-execution')).rejects.toThrow()
@@ -526,13 +527,13 @@ describe('ordinary plugin authorization with a real native Store', () => {
     expect(grants.find(grant => grant.id === approved.grantId)?.status).toBe('active')
     await expect(fixture.first.getExecution('missing-kid-execution')).rejects.toThrow()
     await fixture.restart()
-    expect((await fixture.service.acquireManagement().grants(reference)).find(grant => grant.id === approved.grantId)?.status).toBe('active')
+    expect((await fixture.managerService.acquireManagement(fixture.managerContext).grants(reference)).find(grant => grant.id === approved.grantId)?.status).toBe('active')
   })
 })
 
 async function createApproved(fixture: Awaited<ReturnType<typeof userFixture>>, name: string) {
   const request = await fixture.first.requestCreateIdentity(createInput(name))
-  const approved = await fixture.service.acquireManagement().decide({
+  const approved = await fixture.managerService.acquireManagement(fixture.managerContext).decide({
     requestId: request.id, expectedVersion: request.version, decision: 'approve',
   }) as CreateAuthorizationRequest
   expect(approved.executionStatus).toBe('succeeded')
@@ -557,6 +558,9 @@ async function userFixture() {
     root,
     get ctx() { return runtime.ctx },
     get service() { return runtime.service },
+    get managerContext() { return runtime.managerContext! },
+    get managerService() { return runtime.managerContext.anpIdentity as AnpIdentityService },
+    get hostService() { return runtime.hostContext.anpIdentity as AnpIdentityService },
     get first() { return runtime.first },
     get firstContext() { return runtime.firstContext },
     get second() { return runtime.second },
@@ -565,7 +569,7 @@ async function userFixture() {
       entry.disabled = true
       await runtime.firstContext.fiber.dispose()
     },
-    host() { return runtime.service.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_SIGN'] }) },
+    host() { return (runtime.hostContext.anpIdentity as AnpIdentityService).acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_SIGN'] }) },
     async authorizationState(): Promise<{ requests: AuthorizationRequest[]; grants: unknown[] }> {
       return JSON.parse(await readFile(join(root, 'authorization-v1.json'), 'utf8'))
     },
@@ -614,6 +618,12 @@ async function start(root: string, origins = [ORIGIN], hooks?: StartupHooks) {
   }
   const first = await install('user-one')
   const second = await install('user-two')
+  let hostContext: Context | undefined
+  await ctx.plugin(Object.assign((context: Context) => { hostContext = context }, { inject: ['anpIdentity'] }))
+  installations.push({ options: { name: 'host-fixture' }, fiber: hostContext!.fiber, disabled: false })
+  let managerContext: Context | undefined
+  await ctx.plugin(Object.assign((context: Context) => { managerContext = context }, { inject: ['anpIdentity'] }))
+  installations.push({ options: { name: '@agent-network-protocol/dsh-anp-identity/management-remote' }, fiber: managerContext!.fiber, disabled: false })
   try {
     hooks?.beforeProvider?.(service, first)
     const registration = await openNativeProvider({
@@ -631,5 +641,5 @@ async function start(root: string, origins = [ORIGIN], hooks?: StartupHooks) {
     await ctx.fiber.dispose()
     throw error
   }
-  return { ctx, service, first, second, firstContext: contexts.get('user-one')!, installations }
+  return { ctx, service, first, second, managerContext: managerContext!, hostContext: hostContext!, firstContext: contexts.get('user-one')!, installations }
 }

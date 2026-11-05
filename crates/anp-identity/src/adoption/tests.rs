@@ -254,6 +254,7 @@ fn adoption_rejects_a_local_pending_revision() {
         .unwrap();
     identity
         .prepare_update(crate::DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: Some(crate::RequestSigningRotation {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-next".to_string(),

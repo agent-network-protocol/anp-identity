@@ -155,6 +155,9 @@ function fixture(
       grants = grants.filter((g) => g.id !== grantId);
       return ok(null);
     }),
+    retryPublication: vi.fn(async (ref) => ok({ state: "awaiting_configuration" as const, did: ref.did })),
+    publicationStatus: vi.fn(async (ref) => ok({ state: "local" as const, did: ref.did })),
+    publishIdentity: vi.fn(async (input) => ok({ state: "awaiting_configuration" as const, did: input.reference.did })),
     publicDocument: vi.fn(async (ref) =>
       ok({ id: ref.did, verificationMethod: [] }),
     ),

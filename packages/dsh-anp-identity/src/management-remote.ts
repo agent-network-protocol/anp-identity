@@ -1,3 +1,4 @@
+import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
@@ -17,10 +18,10 @@ export class IdentityManagerRemote extends TypertRemoteService {
   private readonly manager: IdentityManagement;
   constructor(ctx: Context) {
     super(ctx, "anpIdentityManager");
-    const service = ctx.root.get("anpIdentity") as unknown as {
-      acquireManagement(): IdentityManagement;
+    const service = ctx.anpIdentity as unknown as {
+      acquireManagement(context: Context): IdentityManagement;
     };
-    this.manager = service.acquireManagement();
+    this.manager = service.acquireManagement(ctx);
     ctx.effect(() =>
       ctx.typert.register({
         package: contribution.package,
@@ -49,6 +50,11 @@ export class IdentityManagerRemote extends TypertRemoteService {
   @Remote async revoke(input: RevokeGrantInput) {
     await this.manager.revoke(input);
     return null;
+  }
+  @Remote retryPublication(input: IdentityReference) { return this.manager.retryPublication(input); }
+  @Remote publicationStatus(input: IdentityReference) { return this.manager.publicationStatus(input); }
+  @Remote publishIdentity(input: { reference: IdentityReference; config: PublicationConfig }) {
+    return this.manager.publishIdentity(input);
   }
   @Remote publicDocument(input: IdentityReference) {
     return this.manager.publicDocument(input);

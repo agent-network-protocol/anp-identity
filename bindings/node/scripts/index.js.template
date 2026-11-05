@@ -88,6 +88,22 @@ class ManagedIdentity {
     return publicIdentity(await call(this.#inner.publicIdentity()))
   }
 
+  async prepareOAuthKeyChange(request) {
+    return new DocumentChangeSession(await call(this.#inner.prepareOauthKeyChange(request)))
+  }
+
+  exportCandidateOAuthPublicJwk(kid) {
+    return call(this.#inner.exportCandidateOauthPublicJwk(kid))
+  }
+
+  oauthPublicJwk(kid) {
+    return call(this.#inner.oauthPublicJwk(kid))
+  }
+
+  signOAuthClientAssertion(request) {
+    return call(this.#inner.signOauthClientAssertion(request))
+  }
+
   sign(request) {
     return call(this.#inner.sign(request))
   }
@@ -222,6 +238,8 @@ function documentChangeRequest(value) {
   return {
     changes: value.changes.map((entry) => {
       switch (entry.change) {
+        case 'bind_oauth_client':
+          return { change: entry.change, client_id: entry.clientId, kid: entry.kid, metadata_sha256: entry.metadataSha256 }
         case 'rotate_signing_key':
           return { change: entry.change, old_kid: entry.oldKid, new_fragment: entry.newFragment }
         case 'add_authentication_key':
@@ -302,6 +320,7 @@ function publicIdentity(value) {
 function preparedChange(value) {
   return {
     operationId: value.operation_id,
+    baseEvidence: { documentVersion: value.base_evidence.document_version, registryVersion: value.base_evidence.registry_version, documentDigest: value.base_evidence.document_digest },
     candidateDocument: value.candidate_document,
     candidateDigest: value.candidate_digest,
   }

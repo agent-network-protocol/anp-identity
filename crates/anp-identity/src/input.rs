@@ -44,6 +44,8 @@ pub enum KeyRole {
     RootControl,
     DeviceSigning,
     RequestSigning,
+    #[serde(rename = "oauth_authentication")]
+    OAuthAuthentication,
     E2eeSigning,
     E2eeAgreement,
 }
@@ -207,11 +209,17 @@ impl DidCreateSpec {
 
 impl ExternalPublicKeySpec {
     pub(crate) fn parse_public_key(&self) -> DidResult<PublicKeyMaterial> {
+        if self.role == KeyRole::OAuthAuthentication {
+            return Err(DidError::UnsupportedOperation);
+        }
         if self.role == KeyRole::RootControl {
             return Err(DidError::ExternalRootControl);
         }
         let method_type = match self.role {
-            KeyRole::DeviceSigning | KeyRole::RequestSigning | KeyRole::E2eeSigning => "Multikey",
+            KeyRole::DeviceSigning
+            | KeyRole::RequestSigning
+            | KeyRole::OAuthAuthentication
+            | KeyRole::E2eeSigning => "Multikey",
             KeyRole::E2eeAgreement => "X25519KeyAgreementKey2019",
             KeyRole::RootControl => return Err(DidError::ExternalRootControl),
         };
@@ -234,7 +242,8 @@ impl ExternalPublicKeySpec {
                 KeyRole::DeviceSigning | KeyRole::RequestSigning | KeyRole::E2eeSigning,
                 PublicKeyMaterial::Ed25519(_),
             )
-            | (KeyRole::E2eeAgreement, PublicKeyMaterial::X25519(_)) => Ok(key),
+            | (KeyRole::E2eeAgreement, PublicKeyMaterial::X25519(_))
+            | (KeyRole::OAuthAuthentication, PublicKeyMaterial::Secp256r1(_)) => Ok(key),
             _ => Err(DidError::InvalidPublicKey),
         }
     }

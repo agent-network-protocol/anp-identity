@@ -88,3 +88,21 @@ DSH native-window, live ordinary-consumer product integration, and real-service 
 # Local presentation integration
 
 The optional `settings.nav.icon` contribution provides a contact-card glyph only for the settings menu. Identity list entries remain text-only. The shell owns that root-scoped list slot; ANP registers the glyph under `anp-identity`, matching its settings-section id. Older shells without the slot continue to render the page with their default navigation glyph. This presentation extension does not grant identity access or alter protocol behavior.
+
+
+## Publication extension: catalog v3 and explicit manager context
+
+The earlier v2 section above records the original management release. Current
+publication code uses `anp-identity-catalog/4` and atomically backs up a valid v1/v2
+input to `.before-v3` before upgrading. The authorization ledger is still separate;
+publication adds no private-key or third-party token storage. Stop old writers and
+use coordinated catalog/native/authorization restoration for rollback.
+
+`acquireManagement(context)` now requires the live installed manager plugin
+Context. A raw root service, root Context and ordinary consumer Context cannot
+obtain it. The manager Remote passes its own Context and exposes only safe
+publication configuration/status/retry; signing assertions is Host-only.
+
+See [PUBLICATION.md](./PUBLICATION.md) for the added module. The original v7
+verification statement above does not imply that current source has passed real
+remote publication, ordinary-consumer product E2E or SDK registry publication.

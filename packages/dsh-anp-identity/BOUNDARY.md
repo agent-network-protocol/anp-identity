@@ -17,11 +17,15 @@ approved dispatch uses Host-owned transport.
 
 Consumer identifiers are soft same-process identities. The allowlists prevent accidental cross-plugin use and provide an auditable policy, but JavaScript in the same process is not a sandbox.
 
-Known unresolved limitation: ordinary facades omit management methods, but the
-shared root service and Host gateway still allow same-process code to reach the
-manager without the approval UI (review F2). Host-side call authentication is not
-part of the current scoped fix. Excluding Host-associated identities from ordinary
-grants does not resolve this manager-entry vulnerability.
+The publication extension closes the documented public manager-entry bypass
+(review F2): acquisition requires both the actual live installed manager Context and its
+matching contextual service proxy,
+root/no-context/ordinary callers are rejected, and each management operation
+rechecks its installation. When ordinary consumers are configured, public legacy
+lease acquisition also requires the installed matching Host consumer/provider
+Context; a raw root service cannot launder another consumer name. This remains a
+same-process policy, not protection against code that steals another plugin's
+Context or accesses internal/private implementation objects.
 
 ## Secret rules
 
@@ -57,3 +61,24 @@ AWiki's Bearer Token cache, challenge processing, and retry policy remain in `ds
 ## Out of scope
 
 This package does not provide OS sandboxing, malicious-plugin isolation, DID resolution or publication, remote backup, Store rekey, or Root Key rotation. Its ordinary-plugin approval UI does not replace Root Transfer user-presence confirmation, which remains an AWiki workflow above the Host Provider lease.
+
+
+## Public client publication
+
+Catalog schema v3 records public client URLs, exact metadata/JWKS bytes, version,
+operation IDs and safe status; it never stores credentials or assertions. Old
+writers must stop for upgrade and matching catalog/native/authorization backups
+must be restored together on rollback. A fresh v1/v2 upgrade writes an exact
+`.before-v3` backup before switching the live schema; v1 also preserves its
+historical `.before-v2` backup behavior. Old v2 readers reject the v3 schema.
+
+A trusted Host explicitly supplies the existing authenticated management channel
+and DID document publication/reconcile driver. The publisher cannot substitute an
+unchecked DID update. Default configuration has no credentials or fabricated
+callback; component test drivers are not production authorization evidence.
+
+OAuth-enabled ordinary consumers receive purpose- and audience-restricted grants.
+Client URLs/keys come from the published record. Native key and current DID binding
+are checked before signing, and grant validity is checked again before returning
+an assertion. Public readback mismatch disables the known publication. Full
+remote grant revocation and adversarial process isolation remain later work.

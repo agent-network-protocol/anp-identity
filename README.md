@@ -598,3 +598,43 @@ scripts/              API and release verification gates
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
+
+
+### Local OAuth and PAP signer foundation
+
+Managed `request_signing` keys retain Ed25519 behavior. The distinct managed
+`oauth_authentication` role creates a P-256 authentication key, projected as a
+`JsonWebKey2020` method and an ES256 public JWK. Root control, device signing and
+E2EE retain their existing algorithms and purpose checks. A selector is required
+when multiple OAuth-capable keys exist. Client assertions fix `iss=sub=client_id`,
+exact audience, a 60-second lifetime and fresh 256-bit `jti`; signatures use JOSE's
+64-byte R||S representation.
+
+`prepareOAuthKeyChange` persists a candidate key in the existing document-change
+journal. Candidate public material is explicitly separate from active material;
+verified DID publication commits the key before a later ANPCIMD/JWKS publication
+can authorize its external use. E1 instances without local root control return
+`capability_unavailable`. Web candidates require the publisher's restricted key
+control path. Local availability never proves remote publication or ready-admin
+authority. `BindOAuthClient` uses the same stable client URL and existing
+publication/reconcile flow.
+
+The Host-only Provider additionally offers typed PAP Delegation, delegated Session
+and DPoP operations. Delegated and DPoP keys have separate opaque handles and
+purpose/scope-bound encrypted records. Handles alone are not authorization.
+Current Provider capabilities, consumer ownership and generation are checked;
+leases are rechecked before returning results. Delegation contains no Company or
+user identity. Session claims bind actual method/URI and optional token hash;
+DPoP uses a different key. No arbitrary temporary `sign(bytes)` or private-key
+export is added. `signManagementProof` emits only the allowlisted existing AWiki
+DeviceProof JCS transcripts, using an Ed25519 device key.
+
+New identity and ciphertext records use schema 2 with explicit algorithms. Legacy
+schema-1 records remain readable only for their original unambiguous roles; their
+original encryption AAD is preserved. Writes upgrade the identity record, and old
+binaries reject schema 2. Temporary creation/retirement uses the Store lock,
+generation checks and recovery journal; namespace deletion includes temporary
+secrets. See [Node contracts](bindings/node/README.md) and the
+[public interoperability vector](bindings/node/test/fixtures/local-signer-v2-vector.json).
+This source implements local custody/signing; remote publication, target discovery,
+caller permissions, OAuth grants and PAP product state remain Host/consumer duties.

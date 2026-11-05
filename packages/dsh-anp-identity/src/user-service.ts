@@ -1,3 +1,4 @@
+import type { PublicationCoordinator } from './publication.js'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider'
@@ -23,7 +24,7 @@ export interface UserServiceHost {
 export class UserIdentityService {
   readonly engine: AuthorizationEngine
   readonly ready: Promise<void>
-  constructor(stateRoot: string, readonly host: UserServiceHost) {
+  constructor(stateRoot: string, readonly host: UserServiceHost, readonly publications?: PublicationCoordinator) {
     this.engine = new AuthorizationEngine(stateRoot, host)
     this.ready = this.engine.initialize()
     void this.ready.catch(() => {})
@@ -126,6 +127,21 @@ export class UserIdentityService {
           if (operation.action !== 'sign') throw pluginError('invalid_request')
           return native.sign(lease.identity, operation.request)
         }),
+      oauthClientIdentity: (executionId?: string) => run({ action: 'read' }, executionId, async () => {
+        if (!this.publications) throw pluginError('provider_unavailable')
+        return this.publications.status(lease.identity)
+      }),
+      signOAuthClientAssertion: (audience: string, executionId?: string) => run({ action: 'oauth', audience }, executionId,
+        async (native, operation, assertActive) => {
+          if (operation.action !== 'oauth' || !this.publications) throw pluginError('provider_unavailable')
+          const record = await this.publications.requirePublished(lease.identity)
+          await assertActive()
+          const result = await native.signOAuthClientAssertion(lease.identity, {
+            client_id: record.clientId, audience: operation.audience, key: { kid: record.key.kid },
+          })
+          await assertActive()
+          return result
+        }),
       authenticatedHttp: Object.freeze({
         dispatch: async (request: Request, executionId?: string) => {
           return run({ action: 'http', request }, executionId, async (native, operation, assertActive) => {
@@ -144,7 +160,7 @@ export class UserIdentityService {
 
 export function requestSigningKid(identity: PublicIdentity): string {
   const keys = identity.activeKeys.filter(key => key.algorithm === 'ed25519'
-    && key.purposes.includes('authentication') && key.purposes.includes('application_assertion'))
+    && key.purposes.includes('authentication') && key.purposes.includes('application_assertion') && !key.purposes.includes('device_assertion'))
   if (keys.length !== 1) throw pluginError('provider_incompatible')
   return keys[0]!.kid
 }

@@ -1056,6 +1056,9 @@ mod tests {
                 kid: key.kid.clone(),
                 purpose: match key.role {
                     crate::KeyRole::RootControl => super::super::MigrationKeyPurpose::RootControl,
+                    crate::KeyRole::OAuthAuthentication => {
+                        panic!("OAuth keys are not migration inputs")
+                    }
                     crate::KeyRole::RequestSigning => {
                         super::super::MigrationKeyPurpose::Authentication
                     }

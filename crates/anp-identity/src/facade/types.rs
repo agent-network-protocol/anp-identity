@@ -27,6 +27,8 @@ pub enum ManagedKeyRole {
     RootControl,
     DeviceSigning,
     RequestSigning,
+    #[serde(rename = "oauth_authentication")]
+    OAuthAuthentication,
     E2eeSigning,
     E2eeAgreement,
 }
@@ -173,6 +175,7 @@ impl From<ManagedKeyRole> for KeyRole {
             ManagedKeyRole::RootControl => Self::RootControl,
             ManagedKeyRole::DeviceSigning => Self::DeviceSigning,
             ManagedKeyRole::RequestSigning => Self::RequestSigning,
+            ManagedKeyRole::OAuthAuthentication => Self::OAuthAuthentication,
             ManagedKeyRole::E2eeSigning => Self::E2eeSigning,
             ManagedKeyRole::E2eeAgreement => Self::E2eeAgreement,
         }
@@ -291,6 +294,7 @@ impl DidDocument {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum KeyAlgorithm {
+    P256,
     Ed25519,
     X25519,
 }
@@ -332,6 +336,7 @@ impl PublicKeyDescriptor {
                 KeyAlgorithm::Ed25519,
                 vec![KeyPurpose::ApplicationAssertion],
             ),
+            KeyRole::OAuthAuthentication => (KeyAlgorithm::P256, vec![KeyPurpose::Authentication]),
             KeyRole::E2eeAgreement => (KeyAlgorithm::X25519, vec![KeyPurpose::KeyAgreement]),
         };
         Some(Self {

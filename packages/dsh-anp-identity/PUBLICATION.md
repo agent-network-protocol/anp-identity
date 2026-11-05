@@ -1,0 +1,43 @@
+# Shared protocol identity and CIMD publication
+
+The Host keeps all identity, Delegation and DPoP private keys in the local encrypted ANP Identity Store. The shared plugin owns permissions and publication state; the MCP and PAP adapters own their separate connection and Token state. Remote signers are unsupported.
+
+## Explicit identity creation
+
+`requestCreateIdentity` accepts `parameters.usage: 'protocol'` and `profile: 'e1' | 'web'`. The creation approval displays that purpose and method. Protocol E1 creates local root, device-signing and agreement keys; protocol Web creates only device-signing and agreement keys. Their Manifest advertises the exact identity-only `anp.core.binding.v1` and `anp.identity.discovery.v1` bundle. Registration authority and ready-admin status come from the server, never from that local Manifest. Protocol creation grants no use permission and does not expose raw DeviceSigning operations.
+
+Omitting `usage` preserves ordinary E1 root/request-signing creation and its existing approval semantics. Existing identities and DIDs remain intact. An ordinary identity without a compatible registered Manifest cannot use the device-management driver. Adding a separate RequestSigning key to a protocol identity requires the existing authorized enrollment/document workflow; the protocol lease does not provide that capability.
+
+## Registration and management
+
+Trusted management Contexts call `registerLocalIdentity` and `configureManagedPublicationBackend`. Registration submits the locally produced public document through the real User Service `register` RPC. Web uses a distinct native `signWebRegistrationProof`, binding the complete normalized business projection, exact audience, operation id, Handle, account factors, bootstrap device and local document digest. The caller supplies a stable Web `registration_operation_id` and an explicit management audience. A returned Access Token is checked through the actual `device_registry_get`; the DID, local signing key, active admin role and management readiness must agree before the credential is retained.
+
+`EncryptedManagementCredentialBroker` encrypts Device Access credentials with a fresh 32-byte Host key from its key resolver. It partitions by exact origin and identity, uses a cross-process lock and atomic fsynced replacement, and preserves mutation bodies for operation replay. No Token, proof, key or login function belongs in Browser configuration, ordinary catalog data or model tools.
+
+The real publication driver resolves `document_id` through an independently authorized exact-device endpoint. It signs each management request through the native method allowlist and follows User Service's live Registry, auth-generation, nonce, body binding and CAS checks. Device Access is not treated as an ordinary account JWT. Public status remains readable without returning credentials.
+
+DID changes use the existing authorized `device_document_update` or authentication-only `device_oauth_keys_update` path. E1 retains its root proof; Web uses the ready-admin device proof and cannot use ordinary service updates to enroll keys. Each candidate carries immutable native `baseEvidence`; its CAS values never come from a newer Registry. A changed remote checkpoint produces a conflict instead of overwriting another device's document. An uncertain publication reconciles the document and checkpoint from one authenticated resolve response.
+
+## Capability-driven V2 publication
+
+`PublicationConfig.capabilities` contains explicit `mcpMachine`, `papSession` and `papAccount` values. `activeKid` selects an ES256 local key. HTTP maps these to the single snake_case schema: `schema_version`, `operation_id`, `expected_version`, `client_name`, `capabilities`, `signing_keys`, `active_kid` and `redirect_uris`. V1 legacy EdDSA records retain their original projection and do not gain V2 permissions.
+
+MCP-only publication has `client_credentials`, `private_key_jwt`, ES256/JWKS, empty `response_types`, and no callback dependency. PAP Session adds no OAuth grant. PAP account requires an actual callback and adds `authorization_code`, `refresh_token` and `code`. The five profile names are derived from capabilities; they are not caller-selected independent values.
+
+An absent OAuth key is first created locally and published through the authorized DID-key workflow. Only after that checkpoint does the coordinator prepare fixed metadata/JWKS bytes, publish the ANPCIMD digest/key binding, activate and read both public resources back byte-for-byte. Responses must match the selected profile, capabilities, key, algorithm and both independent public-material digests. A consumer receives a usable OAuth identity only after the complete checkpoint is confirmed.
+
+Catalog schema v4 atomically backs up v1/v2/v3 before migration, preserves legacy bytes and grants, and rejects unsupported downgrade writers. The native Store's document digest remains distinct from the hexadecimal CIMD/JWKS response-byte digests and the RFC 7638 thumbprint.
+
+## Preauthorized protocol leases
+
+The Host explicitly configures `protocolPolicies`. Each policy fixes its consumer, identity, profiles, expiry, scope ceiling and exact issuer/resource sets. `publicTargets: true` is an explicit bounded approval for unfamiliar publicly discovered targets; it does not grant remote business permission. The policy owner is the fixed local identity Host owner. Policy changes reload the service and invalidate prior leases.
+
+Only the configured installed Host discovery adapter may call `bindProtocolIdentityClient(ctx)` from `./protocol-client`. The bound Context is checked on registration, invocation and return. Its adapter validates public discovery over its protected network transport; C validates the evidence fields, expiry and policy scope, then creates opaque local target and signer objects. A consumer-supplied JSON flag is never accepted as discovery evidence. This same-process authority does not sandbox hostile code that already stole a trusted Context.
+
+Leases bind publication key/version, policy generation and native-provider generation. They recheck those values before and after signing. An assertion uses the exact validated issuer, fixed published client id and selected key. OAuth leases do not expose raw authentication signing. Temporary Session and DPoP keys have separate purposes, C-minted scope/key references and native handles; restoring a persisted handle requires a fresh lease and actual native scope/purpose verification. Company and request endpoints are frozen from discovery, owner comes from the Host policy, and user/account scope comes from the trusted PAP adapter's bound records.
+
+## Validation
+
+Owner unit/Loader/UI tests cover migration, approvals, revocation, publication recovery, independent grants and the protocol lease. `test/protocol-native.spec.ts` exercises real C authorization and real A ES256/PAP custody with independent signature verification; its local publication acceptance fixture is not User Service control-plane evidence.
+
+`test/management-live.spec.ts` is an opt-in fixed local component contract. Set `DSH_IDENTITY_USER_SERVICE_SOURCE` to the B candidate and `DSH_IDENTITY_PYTHON` to its environment, then run `npx vitest run test/management-live.spec.ts`. The bridge uses actual production registration, factor verification, MySQL transactions, Registry, Device Access, management proofs and publication. Only external synthetic email delivery is substituted. It creates E1 and Web identities consecutively in the same Store, with explicit protocol approval and no callback. This is not product E2E, System Test or deployment evidence.

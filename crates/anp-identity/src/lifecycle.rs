@@ -46,8 +46,17 @@ pub struct RequestSigningPublicKeySpec {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum RequestSigningMutationSpec {
-    Add { key: RequestSigningPublicKeySpec },
-    Remove { kid: String },
+    CreateOAuth {
+        fragment: String,
+        operation_id: String,
+        expected_revision: u64,
+    },
+    Add {
+        key: RequestSigningPublicKeySpec,
+    },
+    Remove {
+        kid: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -85,12 +94,22 @@ pub enum DeviceMutationSpec {
 #[serde(deny_unknown_fields)]
 pub struct DocumentUpdateSpec {
     #[serde(default)]
+    pub oauth_client: Option<OAuthBindingSpec>,
+    #[serde(default)]
     pub request_signing_rotation: Option<RequestSigningRotation>,
     #[serde(default)]
     pub request_signing_mutations: Vec<RequestSigningMutationSpec>,
     #[serde(default)]
     pub device_mutations: Vec<DeviceMutationSpec>,
     pub services: Option<Vec<ServiceSpec>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthBindingSpec {
+    pub client_id: String,
+    pub kid: String,
+    pub metadata_sha256: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -331,6 +350,7 @@ impl DidIdentity {
             && spec.request_signing_mutations.is_empty()
             && spec.device_mutations.is_empty()
             && spec.services.is_none()
+            && spec.oauth_client.is_none()
         {
             return Err(DidError::UnsupportedOperation);
         }
@@ -346,6 +366,39 @@ impl DidIdentity {
                 DidError::PendingRevisionExists
             });
         }
+        let oauth_requests = spec
+            .request_signing_mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                RequestSigningMutationSpec::CreateOAuth {
+                    fragment,
+                    operation_id,
+                    expected_revision,
+                } => Some((fragment, operation_id, expected_revision)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if oauth_requests.len() > 1 {
+            return Err(DidError::UnsupportedOperation);
+        }
+        let oauth_key =
+            if let Some((fragment, operation_id, expected_revision)) = oauth_requests.first() {
+                validate_fragment(fragment)?;
+                validate_fragment(operation_id)?;
+                if **expected_revision != record.revision {
+                    return Err(DidError::Conflict);
+                }
+                let kid = canonicalize_kid(&record.did, fragment)?;
+                if record.keys.iter().any(|key| key.kid == kid) {
+                    return Err(DidError::DuplicateKid);
+                }
+                Some(ManagedPrivateKey::generate(
+                    (*fragment).clone(),
+                    KeyRole::OAuthAuthentication,
+                ))
+            } else {
+                None
+            };
         let rotation = spec
             .request_signing_rotation
             .as_ref()
@@ -358,6 +411,8 @@ impl DidIdentity {
             &spec.request_signing_mutations,
             &spec.device_mutations,
             spec.services.as_deref(),
+            spec.oauth_client.as_ref(),
+            oauth_key.as_ref(),
         )?;
         let candidate = changes.document;
         let created_at = Utc::now().to_rfc3339();
@@ -385,7 +440,27 @@ impl DidIdentity {
             });
             new_metadata.push(metadata);
         }
-        let revision_id = random_revision_id();
+        if let Some(key) = &oauth_key {
+            let kid = canonicalize_kid(&record.did, &key.fragment)?;
+            let metadata = key_metadata(
+                &candidate,
+                &kid,
+                KeyRole::OAuthAuthentication,
+                KeyOrigin::Managed,
+                &created_at,
+            )?;
+            secret_refs.push(SecretRef {
+                identity_id: record.identity_id.clone(),
+                key_id: kid,
+                role: KeyRole::OAuthAuthentication,
+                version: metadata.version,
+            });
+            new_metadata.push(metadata);
+        }
+        let revision_id = oauth_requests
+            .first()
+            .map(|(_, operation_id, _)| (*operation_id).clone())
+            .unwrap_or_else(random_revision_id);
         let update_journal = UpdateJournal::new(
             revision_id.clone(),
             record.identity_id.clone(),
@@ -414,6 +489,21 @@ impl DidIdentity {
                 }
             }
         }
+        if let Some(key) = &oauth_key {
+            let secret_ref = secret_refs
+                .iter()
+                .find(|r| r.role == KeyRole::OAuthAuthentication)
+                .ok_or(DidError::InvalidIdentity)?;
+            if self.runtime().key_store().seal_if_absent(
+                &guard,
+                self.runtime().root_key(),
+                secret_ref.clone(),
+                key.secret_bytes(),
+            )? != SealIfAbsent::Sealed
+            {
+                return Err(DidError::Conflict);
+            }
+        }
         maybe_fail(failure, LifecycleFailurePoint::PendingSecretPersisted)?;
 
         let candidate_digest = canonical_digest(&candidate)?;
@@ -424,6 +514,9 @@ impl DidIdentity {
             .collect::<Vec<_>>();
         if let Some(rotation) = &rotation {
             candidate_kids.push(rotation.new_kid.clone());
+        }
+        if let Some(key) = &oauth_key {
+            candidate_kids.push(canonicalize_kid(&record.did, &key.fragment)?);
         }
         let mut retired_kids = changes.retired_kids;
         if let Some(rotation) = &rotation {
@@ -646,7 +739,13 @@ pub(crate) fn recover_update_journals(
                 let committed = record
                     .pending_revision
                     .as_ref()
-                    .is_some_and(|pending| pending.revision_id == journal.revision_id);
+                    .is_some_and(|pending| pending.revision_id == journal.revision_id)
+                    || journal.secret_refs.iter().all(|r| {
+                        record
+                            .temporary_keys
+                            .iter()
+                            .any(|key| key.active && key.secret_ref(&record.identity_id) == *r)
+                    });
                 if !committed {
                     for secret_ref in &journal.secret_refs {
                         runtime.key_store().delete(guard, secret_ref)?;
@@ -654,6 +753,27 @@ pub(crate) fn recover_update_journals(
                 }
             }
             UpdateJournalKind::Cleanup => {
+                let mut changed = false;
+                for key in &mut record.temporary_keys {
+                    if key.active
+                        && journal
+                            .secret_refs
+                            .iter()
+                            .any(|r| key.secret_ref(&record.identity_id) == *r)
+                    {
+                        key.active = false;
+                        key.public.generation = key
+                            .public
+                            .generation
+                            .checked_add(1)
+                            .ok_or(DidError::Conflict)?;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    persist_record(runtime, guard, &mut record)?;
+                }
+
                 if record
                     .pending_revision
                     .as_ref()
@@ -733,6 +853,8 @@ fn build_candidate_document(
     request_signing_mutations: &[RequestSigningMutationSpec],
     device_mutations: &[DeviceMutationSpec],
     services: Option<&[ServiceSpec]>,
+    oauth_client: Option<&OAuthBindingSpec>,
+    oauth_key: Option<&ManagedPrivateKey>,
 ) -> DidResult<CandidateChanges> {
     let mut document = record.document.clone();
     let object = document.as_object_mut().ok_or(DidError::InvalidIdentity)?;
@@ -760,6 +882,11 @@ fn build_candidate_document(
         authentication.retain(|entry| entry.as_str() != Some(&rotation.old_kid));
         authentication.push(Value::String(rotation.new_kid.clone()));
     }
+    if let Some(key) = oauth_key {
+        let kid = canonicalize_kid(&record.did, &key.fragment)?;
+        crate::document::append_oauth_method(&mut document, &kid, &key.public_key())?;
+    }
+    let object = document.as_object_mut().ok_or(DidError::InvalidIdentity)?;
     let request_signing_changes =
         apply_request_signing_mutations(object, record, request_signing_mutations)?;
     let device_changes = apply_device_mutations(object, record, device_mutations)?;
@@ -784,6 +911,9 @@ fn build_candidate_document(
             output.push(value);
         }
         object.insert("service".to_string(), Value::Array(output));
+    }
+    if let Some(binding) = oauth_client {
+        apply_oauth_binding(&mut document, binding)?;
     }
     let signed = if crate::DidProfile::for_did(&record.did)?.supports_root_control() {
         let root = record
@@ -823,6 +953,7 @@ fn apply_request_signing_mutations(
     let mut retired_kids = Vec::new();
     for mutation in mutations {
         match mutation {
+            RequestSigningMutationSpec::CreateOAuth { .. } => {}
             RequestSigningMutationSpec::Add { key } => {
                 let kid = canonicalize_kid(&record.did, &key.kid)?;
                 if record.keys.iter().any(|metadata| metadata.kid == kid)
@@ -1192,3 +1323,58 @@ fn maybe_fail(
 
 #[cfg(test)]
 mod tests;
+
+fn apply_oauth_binding(document: &mut Value, binding: &OAuthBindingSpec) -> DidResult<()> {
+    crate::facade::oauth::validate_https_identifier(&binding.client_id, true)
+        .map_err(|_| DidError::InvalidService)?;
+    if binding.metadata_sha256.len() != 64
+        || !binding
+            .metadata_sha256
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(DidError::InvalidService);
+    }
+    let did = document["id"]
+        .as_str()
+        .ok_or(DidError::InvalidIdentity)?
+        .to_owned();
+    let kid = canonicalize_kid(&did, &binding.kid)?;
+    if !anp::authentication::is_authentication_authorized(document, &kid) {
+        return Err(DidError::KeyRoleViolation);
+    }
+    let services = document
+        .as_object_mut()
+        .ok_or(DidError::InvalidIdentity)?
+        .entry("service")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or(DidError::InvalidService)?;
+    let existing: Vec<_> = services
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s["type"] == "ANPCIMD")
+        .map(|(i, _)| i)
+        .collect();
+    if existing.len() > 1 {
+        return Err(DidError::InvalidService);
+    }
+    let service_id = format!("{did}#oauth-client");
+    let value = json!({"id":service_id,"type":"ANPCIMD","serviceEndpoint":binding.client_id,
+        "anp_oauth_keys":[kid],"anp_metadata_sha256":binding.metadata_sha256});
+    if let Some(index) = existing.first() {
+        if services[*index]["serviceEndpoint"] != binding.client_id {
+            return Err(DidError::InvalidService);
+        }
+        services[*index] = value;
+    } else {
+        if services
+            .iter()
+            .any(|s| s["id"] == service_id || s["id"] == "#oauth-client")
+        {
+            return Err(DidError::InvalidService);
+        }
+        services.push(value);
+    }
+    Ok(())
+}

@@ -3,6 +3,14 @@ mod error;
 mod identity;
 mod identity_transition;
 mod manager;
+pub(crate) mod oauth;
+pub(crate) mod pap;
+pub use oauth::{OAuthClientAssertionRequest, OAuthKeyChangeRequest, OAuthPublicJwk};
+pub use pap::{
+    CreateTemporaryKeyRequest, DescribeTemporaryKeyRequest, DpopProofRequest, P256PublicJwk,
+    PapDelegationRequest, PapSessionRequest, RetireTemporaryKeyRequest, TemporaryKey,
+    TemporaryKeyPurpose, TemporaryKeyReference, TemporaryKeyScope,
+};
 pub(crate) mod signing;
 mod types;
 

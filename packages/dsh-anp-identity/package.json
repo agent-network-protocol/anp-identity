@@ -35,7 +35,11 @@
       "default": "./lib/management-remote.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./protocol-client": {
+      "types": "./lib/protocol-client.d.ts",
+      "default": "./lib/protocol-client.js"
+    }
   },
   "files": [
     "lib/**",
@@ -44,6 +48,7 @@
     "README.zh.md",
     "BOUNDARY.md",
     "V7-MANAGEMENT.md",
+    "PUBLICATION.md",
     "examples/**",
     "LICENSE"
   ],

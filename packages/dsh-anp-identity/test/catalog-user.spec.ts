@@ -64,7 +64,7 @@ describe('user creation catalog compatibility', () => {
       // A crash after the backup but before the migration rename remains recoverable.
       await writeFile(store.catalogPath, bytes)
       await store.initialize()
-      expect((await store.load()).schema).toBe('anp-identity-catalog/2')
+      expect((await store.load()).schema).toBe('anp-identity-catalog/4')
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 
@@ -84,4 +84,19 @@ describe('user creation catalog compatibility', () => {
       expect((await reopened.load()).entries).toEqual([entry])
     } finally { await rm(root, { recursive: true, force: true }) }
   })
+})
+
+
+it('upgrades a v2 catalog with a durable exact backup before allowing publication state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'catalog-v3-upgrade-'))
+  try {
+    const store = new CatalogStore(root)
+    await store.initialize()
+    const current = await store.load()
+    const bytes = JSON.stringify({...current,schema:'anp-identity-catalog/2'})
+    await writeFile(store.catalogPath, bytes)
+    await store.initialize()
+    expect((await store.load()).schema).toBe('anp-identity-catalog/4')
+    expect(await readFile(store.catalogPath+'.before-v3','utf8')).toBe(bytes)
+  } finally { await rm(root,{recursive:true,force:true}) }
 })

@@ -365,12 +365,19 @@ impl DidIdentity {
         message: &[u8],
     ) -> DidResult<Vec<u8>> {
         let secret = self.load_managed_secret(metadata)?;
+        if metadata.role == KeyRole::OAuthAuthentication {
+            let key = p256::ecdsa::SigningKey::from_slice(secret.expose())
+                .map_err(|_| DidError::InvalidIdentity)?;
+            return anp::PrivateKeyMaterial::Secp256r1(key)
+                .sign_message(message)
+                .map_err(|_| DidError::Crypto);
+        }
         let signing_key = ed25519_signing_key(&secret)?;
         use ed25519_dalek::Signer;
         Ok(signing_key.sign(message).to_bytes().to_vec())
     }
 
-    fn require_operational(&self) -> DidResult<()> {
+    pub(crate) fn require_operational(&self) -> DidResult<()> {
         let current = crate::registry::read_identity(self.runtime().root(), self.identity_id())?;
         if current.generation != self.record().generation {
             return Err(DidError::Conflict);

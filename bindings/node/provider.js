@@ -107,6 +107,32 @@ class ProviderLease {
     return call(this.#inner.verify(reference, request))
   }
 
+  providerCapabilities() { return call(this.#inner.providerCapabilities()) }
+
+  async prepareOAuthKeyChange(reference, request) {
+    return new ProviderDocumentChangeSession(await call(this.#inner.prepareOauthKeyChange(reference, request)))
+  }
+
+  exportCandidateOAuthPublicJwk(reference, kid) {
+    return call(this.#inner.exportCandidateOauthPublicJwk(reference, kid))
+  }
+
+  createDelegatedKey(reference, request) { return call(this.#inner.createDelegatedKey(reference, request)) }
+  createDpopKey(reference, request) { return call(this.#inner.createDpopKey(reference, request)) }
+  describeTemporaryKey(reference, request) { return call(this.#inner.describeTemporaryKey(reference, request)) }
+  issuePapDelegation(reference, request) { return call(this.#inner.issuePapDelegation(reference, request)) }
+  signPapSessionRequest(reference, request) { return call(this.#inner.signPapSessionRequest(reference, request)) }
+  signDpopProof(reference, request) { return call(this.#inner.signDpopProof(reference, request)) }
+  retireTemporaryKey(reference, request) { return call(this.#inner.retireTemporaryKey(reference, request)) }
+
+  oauthPublicJwk(reference, kid) {
+    return call(this.#inner.oauthPublicJwk(reference, kid))
+  }
+
+  signOAuthClientAssertion(reference, request) {
+    return call(this.#inner.signOauthClientAssertion(reference, request))
+  }
+
   sign(reference, request) {
     return call(this.#inner.sign(reference, request))
   }
@@ -114,6 +140,10 @@ class ProviderLease {
   signOriginProof(reference, request) {
     return call(this.#inner.signOriginProof(reference, request))
   }
+
+  signWebRegistrationProof(reference, request) { return call(this.#inner.signWebRegistrationProof(reference, request)) }
+
+  signManagementProof(reference, request) { return call(this.#inner.signManagementProof(reference, request)) }
 
   signObjectProof(reference, request) {
     return call(this.#inner.signObjectProof(reference, proofRequest(request)))
@@ -532,6 +562,8 @@ function documentChangeRequest(value) {
   return {
     changes: value.changes.map((entry) => {
       switch (entry.change) {
+        case 'bind_oauth_client':
+          return { change: entry.change, client_id: entry.clientId, kid: entry.kid, metadata_sha256: entry.metadataSha256 }
         case 'rotate_signing_key':
           return { change: entry.change, old_kid: entry.oldKid, new_fragment: entry.newFragment }
         case 'add_authentication_key':
@@ -577,6 +609,7 @@ function nativeService(value) {
 function preparedChange(value) {
   return {
     operationId: value.operation_id,
+    baseEvidence: { documentVersion: value.base_evidence.document_version, registryVersion: value.base_evidence.registry_version, documentDigest: value.base_evidence.document_digest },
     candidateDocument: value.candidate_document,
     candidateDigest: value.candidate_digest,
   }

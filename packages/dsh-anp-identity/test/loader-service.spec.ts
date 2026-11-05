@@ -1,3 +1,5 @@
+import ManagerRemote from '../lib/management-remote.js'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -15,8 +17,10 @@ it('authenticates a real Loader-installed ordinary consumer against its actual f
   const root = await mkdtemp(join(tmpdir(), 'anp-real-loader-'))
   const ctx = new Context()
   let consumerContext: Context | undefined
+  let managerContext: Context | undefined
   let deniedContext: Context | undefined
   try {
+    await ctx.plugin(TypertRegistry)
     await ctx.plugin(Loader)
     const loader = ctx.loader
     const modules: Record<string, unknown> = {
@@ -31,6 +35,7 @@ it('authenticates a real Loader-installed ordinary consumer against its actual f
           providerContext.effect(() => dispose, 'actual loader test: native Provider')
         },
       },
+      '@agent-network-protocol/dsh-anp-identity/management-remote': { inject: ['anpIdentity', 'typert'], apply(context: Context) { managerContext = context; new ManagerRemote(context) } },
       'user-one': { inject: ['anpIdentity'], apply(context: Context) { consumerContext = context } },
       'denied-one': { inject: ['anpIdentity'], apply(context: Context) { deniedContext = context } },
     }
@@ -46,6 +51,7 @@ it('authenticates a real Loader-installed ordinary consumer against its actual f
       httpAllowedOrigins: { 'user-one': ['https://api.example.com'] },
     } })
     await loader.create({ name: 'native-provider' })
+    await loader.create({ name: '@agent-network-protocol/dsh-anp-identity/management-remote' })
     await loader.create({ name: 'user-one' })
     await loader.create({ name: 'denied-one' })
     await loader.await()
@@ -73,16 +79,21 @@ it('authenticates a real Loader-installed ordinary consumer against its actual f
       parameters: { label: 'Actual Loader identity', domain: 'example.com', path: '/actual-loader' },
     })
     expect(request).toMatchObject({ caller: { consumer: 'user-one' }, status: 'pending' })
-    expect(await host.acquireManagement().listIdentities()).toEqual([])
+    expect(await (managerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext!).listIdentities()).toEqual([])
     expect(() => (consumerContext!.anpIdentity as AnpIdentityService).acquireManagement()).toThrow()
-    await host.acquireManagement().decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' })
-    const identities = await host.acquireManagement().listIdentities()
+    expect(() => host.acquireManagement()).toThrow()
+    expect(() => host.acquireManagement(managerContext)).toThrow()
+    expect(() => (consumerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext)).toThrow()
+    expect(() => host.acquireManagement(ctx)).toThrow()
+    expect(() => host.acquireManagement(consumerContext)).toThrow()
+    await (managerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext!).decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' })
+    const identities = await (managerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext!).listIdentities()
     expect(identities).toHaveLength(1)
     const access = await ordinary.requestAccess({ requestId: 'real-loader-access', purpose: 'Disable cancels a real installed consumer request',
       identity: identities[0]!.reference, operation: { action: 'read' } })
     await loader.update(installed.id, { disabled: true })
-    await expect.poll(async () => (await host.acquireManagement().getRequest(access.id)).request.status, { timeout: 2000 }).toBe('cancelled')
-    expect(await host.acquireManagement().grants(identities[0]!.reference)).toEqual([])
+    await expect.poll(async () => (await (managerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext!).getRequest(access.id)).request.status, { timeout: 2000 }).toBe('cancelled')
+    expect(await (managerContext!.anpIdentity as AnpIdentityService).acquireManagement(managerContext!).grants(identities[0]!.reference)).toEqual([])
   } finally {
     await ctx.fiber.dispose()
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })

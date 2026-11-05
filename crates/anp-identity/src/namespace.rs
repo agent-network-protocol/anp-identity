@@ -65,6 +65,13 @@ impl DidStore {
                 role: key.role,
                 version: key.version,
             })
+            .chain(
+                record
+                    .temporary_keys
+                    .iter()
+                    .filter(|key| key.active)
+                    .map(|key| key.secret_ref(&record.identity_id)),
+            )
             .collect::<Vec<_>>();
         let transaction_id = crate::identity::random_id();
         let journal = CreationJournal::new_namespace_delete(
@@ -200,6 +207,13 @@ impl DidStore {
                 role: key.role,
                 version: key.version,
             })
+            .chain(
+                record
+                    .temporary_keys
+                    .iter()
+                    .filter(|key| key.active)
+                    .map(|key| key.secret_ref(&record.identity_id)),
+            )
             .collect::<Vec<_>>();
         let transaction_id = crate::identity::random_id();
         let journal = CreationJournal::new_namespace_delete(

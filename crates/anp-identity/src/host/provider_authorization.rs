@@ -22,6 +22,8 @@ pub mod capability {
     pub const IDENTITY_READ: &str = "IDENTITY_READ";
     pub const IDENTITY_CREATE: &str = "IDENTITY_CREATE";
     pub const IDENTITY_IMPORT: &str = "IDENTITY_IMPORT";
+    pub const IDENTITY_PAP_SESSION: &str = "IDENTITY_PAP_SESSION";
+    pub const IDENTITY_PAP_DPOP: &str = "IDENTITY_PAP_DPOP";
     pub const IDENTITY_SIGN: &str = "IDENTITY_SIGN";
     pub const IDENTITY_ECDH_SEALED: &str = "IDENTITY_ECDH_SEALED";
     pub const IDENTITY_DOCUMENT_UPDATE: &str = "IDENTITY_DOCUMENT_UPDATE";
@@ -223,6 +225,31 @@ impl ProviderAuthorization {
             return Err(ProviderAuthorizationError::LeaseInvalid);
         }
         if !parent.capabilities.contains(capability) {
+            return Err(ProviderAuthorizationError::CapabilityDenied);
+        }
+        Ok(())
+    }
+
+    pub fn authorize_scope_owner(
+        &self,
+        lease: &ProviderCapabilityLease,
+        owner: &str,
+    ) -> Result<(), ProviderAuthorizationError> {
+        if lease.provider_instance_id != self.provider_instance_id {
+            return Err(ProviderAuthorizationError::LeaseInvalid);
+        }
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| ProviderAuthorizationError::Internal)?;
+        let parent = state
+            .leases
+            .get(&lease.lease_id)
+            .ok_or(ProviderAuthorizationError::LeaseInvalid)?;
+        if parent.expires_at <= unix_now() {
+            return Err(ProviderAuthorizationError::LeaseInvalid);
+        }
+        if parent.consumer != owner {
             return Err(ProviderAuthorizationError::CapabilityDenied);
         }
         Ok(())

@@ -1,3 +1,4 @@
+import { PublicationConfigSchema } from './publication-types.js';
 /** Explicit browser-safe Typert method contract for the optional manager. */
 import { z } from "zod";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
@@ -28,6 +29,7 @@ const decision = version
         ),
         signingPurposes: z.array(z.string()),
         httpOrigins: z.array(z.string()),
+        oauthAudiences: z.array(z.string()).optional(),
       })
       .strict()
       .optional(),
@@ -49,6 +51,9 @@ const methods = [
       .strict(),
   ],
   ["publicDocument", reference],
+  ["publicationStatus", reference],
+  ["retryPublication", reference],
+  ["publishIdentity", z.object({ reference, config: PublicationConfigSchema }).strict()],
   [
     "deleteIdentity",
     z.object({ reference, confirmationName: z.string().min(1) }).strict(),

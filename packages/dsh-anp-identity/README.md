@@ -14,7 +14,7 @@ A DSH installation may host several plugins and several independent DIDs. Those 
 - How can a request be authenticated without exposing a reusable signature header patch?
 - How can a Store contain several DIDs while handles and deletion grants remain consistent?
 
-This package supplies that coordination layer. ANP Identity remains the source of truth for identities and encrypted keys. A transactional catalog adds DSH-specific ownership metadata. Creation uses a recoverable intent; deletion writes a tombstone before touching the native Store; cross-process mutations use a file lock, generation checks, and atomic rename. Management upgrades the catalog to schema v2; see the coordinated upgrade and rollback instructions in [V7-MANAGEMENT.md](./V7-MANAGEMENT.md).
+This package supplies that coordination layer. ANP Identity remains the source of truth for identities and encrypted keys. A transactional catalog adds DSH-specific ownership metadata. Creation uses a recoverable intent; deletion writes a tombstone before touching the native Store; cross-process mutations use a file lock, generation checks, and atomic rename. The current publication extension upgrades the catalog to schema v4; see the coordinated upgrade and rollback instructions in [V7-MANAGEMENT.md](./V7-MANAGEMENT.md).
 
 ## What it provides
 
@@ -214,3 +214,29 @@ relying on a parent workspace's `node_modules`. They are test-environment
 dependencies; the browser build continues to use the host-provided UI primitives.
 
 Licensed under Apache-2.0.
+
+
+## Shared public client identity foundation
+
+The publication module prepares one stable CIMD/JWKS pair for an existing managed
+identity. The Host registers `createPublicationBackend(...)` with
+`service.registerPublicationBackend(managerContext, name, backend)`. Registration
+requires the live installed `@agent-network-protocol/dsh-anp-identity/management-remote`
+Context. The transport delegates management authentication to the Host's existing
+`authenticatedFetch` and DID publication to `publishDocument`; neither function
+nor its credentials belongs in Loader YAML, Browser requests or model tools.
+Read [PUBLICATION.md](./PUBLICATION.md) for the contract and remaining integration boundaries.
+
+The manager exposes publication status, publish and retry commands. The existing
+settings view displays safe status/CIMD and a retry action. It does not collect
+credentials or assume a working callback. Missing redirect configuration stays
+`awaiting_configuration`; no default callback or PAP grant is advertised.
+
+Ordinary Host consumers opt in through `oauthAllowedAudiences` and user approval.
+Their authorized facade provides `oauthClientIdentity()` and
+`signOAuthClientAssertion(exactAudience)`. The Host chooses the published client
+and key. Opted-in consumers cannot use the old raw authentication signer to
+bypass this typed policy; domain-separated application signing remains available.
+Tokens/assertions are never exposed by the manager Remote.
+
+Protocol identity creation uses an explicit `usage: 'protocol'` approval, local E1/Web device custody, capability-driven ES256 publication and target-bound machine/PAP leases. See [the publication and management contract](./PUBLICATION.md) for the real User Service driver, encrypted management broker, catalog v4 migration and validation boundaries.

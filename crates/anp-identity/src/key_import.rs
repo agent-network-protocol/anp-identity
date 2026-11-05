@@ -538,6 +538,7 @@ pub(crate) fn parse_private_key(
         PrivateKeyEncoding::Raw32 => {
             let raw: [u8; 32] = secret.try_into().map_err(|_| DidError::InvalidIdentity)?;
             match role {
+                KeyRole::OAuthAuthentication => return Err(DidError::KeyRoleViolation),
                 KeyRole::E2eeAgreement => {
                     PrivateKeyMaterial::X25519(x25519_dalek::StaticSecret::from(raw))
                 }

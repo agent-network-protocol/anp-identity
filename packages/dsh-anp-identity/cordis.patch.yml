@@ -11,6 +11,7 @@
         userConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_USER_CONSUMERS ?? '[]')
         allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '["@awiki/dsh-plugin"]')
         httpAllowedOrigins: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS ?? '{}')
+        oauthAllowedAudiences: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_OAUTH_ALLOWED_AUDIENCES ?? '{}')
         recoveryOnOpen: true
 
     - id: anp-identity-provider

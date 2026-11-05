@@ -18,7 +18,7 @@ use crate::store_lock::StoreWriteGuard;
 use crate::{Capabilities, DidError, DidResult, KeyRole};
 
 const REGISTRY_SCHEMA_VERSION: u32 = 1;
-const IDENTITY_SCHEMA_VERSION: u32 = 1;
+const IDENTITY_SCHEMA_VERSION: u32 = 2;
 const JOURNAL_SCHEMA_VERSION: u32 = 1;
 const UPDATE_JOURNAL_SCHEMA_VERSION: u32 = 1;
 const IDENTITY_TRANSITION_JOURNAL_SCHEMA_VERSION: u32 = 1;
@@ -74,6 +74,8 @@ pub struct DocumentCheckpoint {
 pub struct KeyMetadata {
     pub kid: String,
     pub role: KeyRole,
+    #[serde(default)]
+    pub algorithm: Option<crate::KeyAlgorithm>,
     pub origin: KeyOrigin,
     pub state: KeyState,
     #[serde(default)]
@@ -134,6 +136,8 @@ pub(crate) struct IdentityRecord {
     pub(crate) created_at: String,
     #[serde(default)]
     pub(crate) pending_revision: Option<PendingRevisionRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) temporary_keys: Vec<crate::facade::pap::TemporaryKeyRecord>,
 }
 
 impl IdentityRecord {
@@ -439,8 +443,23 @@ pub(crate) fn read_identity(root: &Path, identity_id: &str) -> DidResult<Identit
     })?;
     let mut record: IdentityRecord =
         serde_json::from_slice(&bytes).map_err(|_| DidError::InvalidIdentity)?;
-    if record.schema_version != IDENTITY_SCHEMA_VERSION || record.identity_id != identity_id {
+    if !matches!(record.schema_version, 1 | IDENTITY_SCHEMA_VERSION)
+        || record.identity_id != identity_id
+    {
         return Err(DidError::InvalidIdentity);
+    }
+    if record.schema_version == 1 && !record.temporary_keys.is_empty() {
+        return Err(DidError::InvalidIdentity);
+    }
+    for key in &mut record.keys {
+        let expected = algorithm_for_role(key.role);
+        if (record.schema_version == 1 && key.role == KeyRole::OAuthAuthentication)
+            || key.algorithm.is_some_and(|algorithm| algorithm != expected)
+            || (record.schema_version == 2 && key.algorithm.is_none())
+        {
+            return Err(DidError::InvalidIdentity);
+        }
+        key.algorithm = Some(expected);
     }
     let profile = crate::DidProfile::for_did(&record.did)?;
     if profile.supports_root_control()
@@ -482,7 +501,12 @@ pub(crate) fn write_identity(
 ) -> DidResult<()> {
     guard.require_store(root)?;
     ensure_private_dir(&root.join("identities"))?;
-    let bytes = serde_json::to_vec_pretty(record).map_err(|_| DidError::InvalidIdentity)?;
+    let mut record = record.clone();
+    record.schema_version = IDENTITY_SCHEMA_VERSION;
+    for key in &mut record.keys {
+        key.algorithm = Some(algorithm_for_role(key.role));
+    }
+    let bytes = serde_json::to_vec_pretty(&record).map_err(|_| DidError::InvalidIdentity)?;
     write_atomic_private(&identity_path(root, &record.identity_id), &bytes)
 }
 
@@ -660,6 +684,7 @@ pub(crate) struct NewIdentityRecord {
 
 pub(crate) fn new_identity_record(input: NewIdentityRecord) -> IdentityRecord {
     IdentityRecord {
+        temporary_keys: Vec::new(),
         schema_version: IDENTITY_SCHEMA_VERSION,
         identity_id: input.identity_id,
         did: input.did,
@@ -724,3 +749,11 @@ fn remove_if_exists(path: &Path) -> DidResult<()> {
 
 #[cfg(test)]
 mod registry_tests;
+
+pub(crate) fn algorithm_for_role(role: KeyRole) -> crate::KeyAlgorithm {
+    match role {
+        KeyRole::OAuthAuthentication => crate::KeyAlgorithm::P256,
+        KeyRole::E2eeAgreement => crate::KeyAlgorithm::X25519,
+        _ => crate::KeyAlgorithm::Ed25519,
+    }
+}

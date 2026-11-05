@@ -1,3 +1,4 @@
+import type { OAuthClientIdentity } from "../publication-types.js";
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 import type { IdentityReference } from "@agent-network-protocol/anp-identity";
 import type {
@@ -32,6 +33,7 @@ export interface ManagerView {
   readonly history: readonly AuthorizationRequest[];
   readonly selectedKey: string | null;
   readonly grants: readonly AuthorizationGrant[];
+  readonly publication: OAuthClientIdentity | null;
   readonly document: string | null;
   readonly documentOpen: boolean;
   readonly modal: ManagerModal | null;
@@ -53,6 +55,7 @@ export class IdentityController {
     requests: [],
     history: [],
     selectedKey: null,
+    publication: null,
     grants: [],
     document: null,
     documentOpen: false,
@@ -127,7 +130,7 @@ export class IdentityController {
           .filter((r) => r.status === "pending")
           .sort((a, b) => b.createdAt - a.createdAt),
         selectedKey,
-        ...(changed ? { grants: [], document: null, documentOpen: false } : {}),
+        ...(changed ? { publication: null, grants: [], document: null, documentOpen: false } : {}),
       });
       await this.loadGrants();
       if (!this.pauseQueue && this.view.modal === null) {
@@ -150,6 +153,7 @@ export class IdentityController {
     this.selectionVersion++;
     this.patch({
       selectedKey: key,
+      publication: null,
       grants: [],
       document: null,
       documentOpen: false,
@@ -170,9 +174,13 @@ export class IdentityController {
     const selected = this.selected();
     if (!selected) return;
     const key = this.view.selectedKey;
-    const grants = await this.call("grants", identityReference(selected));
+    const [grants, publication] = await Promise.all([
+      this.call("grants", identityReference(selected)),
+      selected.catalogState === "active" ? this.call("publicationStatus", identityReference(selected))
+        .catch(() => ({state: "failed" as const, did: selected.reference.did})) : Promise.resolve(null),
+    ]);
     if (this.view.selectedKey === key) {
-      this.patch({ grants: grants.filter((g) => g.status === "active") });
+      this.patch({ publication, grants: grants.filter((g) => g.status === "active") });
       const modal = this.view.modal;
       if (
         (modal?.kind === "permissions" || modal?.kind === "revoke") &&
@@ -322,6 +330,17 @@ export class IdentityController {
       this.closeModal();
       await this.refresh();
     });
+  }
+  async retryPublication(): Promise<void> {
+    const selected = this.selected();
+    if (!selected || this.view.pending) return;
+    this.patch({pending: true, error: null});
+    try {
+      await this.call("retryPublication", identityReference(selected));
+      await this.refresh();
+    } catch {
+      this.patch({error: "身份发布尚未完成，请检查身份托管配置后重试。"});
+    } finally { this.patch({pending: false}); }
   }
   async toggleDocument(): Promise<void> {
     if (this.view.documentOpen) {

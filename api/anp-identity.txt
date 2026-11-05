@@ -9,6 +9,8 @@ pub const anp_identity::host::capability::IDENTITY_ECDH_SEALED: &str
 pub const anp_identity::host::capability::IDENTITY_HTTP_SIGNATURE: &str
 pub const anp_identity::host::capability::IDENTITY_IMPORT: &str
 pub const anp_identity::host::capability::IDENTITY_KEY_LIFECYCLE: &str
+pub const anp_identity::host::capability::IDENTITY_PAP_DPOP: &str
+pub const anp_identity::host::capability::IDENTITY_PAP_SESSION: &str
 pub const anp_identity::host::capability::IDENTITY_READ: &str
 pub const anp_identity::host::capability::IDENTITY_SIGN: &str
 pub enum anp_identity::host::ConvergenceOutcome
@@ -133,6 +135,11 @@ pub anp_identity::host::IssuedOneTimeAuthorization::token: anp_identity::host::O
 pub struct anp_identity::host::KeyAgreementRequest
 pub anp_identity::host::KeyAgreementRequest::key: anp_identity::KeySelector
 pub anp_identity::host::KeyAgreementRequest::peer_public: [u8; 32]
+pub struct anp_identity::host::ManagementProofRequest
+pub anp_identity::host::ManagementProofRequest::audience: core::option::Option<alloc::string::String>
+pub anp_identity::host::ManagementProofRequest::key: anp_identity::KeySelector
+pub anp_identity::host::ManagementProofRequest::method: alloc::string::String
+pub anp_identity::host::ManagementProofRequest::params: serde_json::value::Value
 pub struct anp_identity::host::ObjectProofRequest
 pub anp_identity::host::ObjectProofRequest::created: core::option::Option<alloc::string::String>
 pub anp_identity::host::ObjectProofRequest::document: serde_json::value::Value
@@ -164,6 +171,7 @@ pub struct anp_identity::host::ProviderAuthorization
 impl anp_identity::host::ProviderAuthorization
 pub fn anp_identity::host::ProviderAuthorization::acquire_lease(&self, alloc::string::String, impl core::iter::traits::collect::IntoIterator<Item = alloc::string::String>, alloc::string::String, i64) -> core::result::Result<anp_identity::host::ProviderCapabilityLease, anp_identity::host::ProviderAuthorizationError>
 pub fn anp_identity::host::ProviderAuthorization::authorize(&self, &anp_identity::host::ProviderCapabilityLease, &str) -> core::result::Result<(), anp_identity::host::ProviderAuthorizationError>
+pub fn anp_identity::host::ProviderAuthorization::authorize_scope_owner(&self, &anp_identity::host::ProviderCapabilityLease, &str) -> core::result::Result<(), anp_identity::host::ProviderAuthorizationError>
 pub fn anp_identity::host::ProviderAuthorization::consume_one_time(&self, &anp_identity::host::OneTimeCapabilityToken, &anp_identity::host::OneTimeOperationBinding) -> core::result::Result<(), anp_identity::host::ProviderAuthorizationError>
 pub fn anp_identity::host::ProviderAuthorization::dispose_lease(&self, &anp_identity::host::ProviderCapabilityLease) -> core::result::Result<(), anp_identity::host::ProviderAuthorizationError>
 pub fn anp_identity::host::ProviderAuthorization::issue_one_time(&self, &anp_identity::host::ProviderCapabilityLease, &anp_identity::host::OneTimeOperationBinding, i64) -> core::result::Result<anp_identity::host::OneTimeCapabilityToken, anp_identity::host::ProviderAuthorizationError>
@@ -223,6 +231,9 @@ pub anp_identity::host::SealedSecretEnvelope::suite: alloc::string::String
 impl anp_identity::host::SealedSecretEnvelope
 pub fn anp_identity::host::SealedSecretEnvelope::from_handoff(&anp::sealed_handoff::SealedHandoff) -> Self
 pub fn anp_identity::host::SealedSecretEnvelope::to_handoff(&self) -> core::result::Result<anp::sealed_handoff::SealedHandoff, anp_identity::host::SealedProviderError>
+pub struct anp_identity::host::WebRegistrationProofRequest
+pub anp_identity::host::WebRegistrationProofRequest::business_projection: serde_json::value::Value
+pub anp_identity::host::WebRegistrationProofRequest::key: anp_identity::KeySelector
 pub struct anp_identity::host::WrappedRootEnvelope
 pub anp_identity::host::WrappedRootEnvelope::ciphertext_b64u: alloc::string::String
 pub anp_identity::host::WrappedRootEnvelope::context: anp_identity::host::RootTransferContext
@@ -314,6 +325,17 @@ pub anp_identity::DocumentChange::AddAuthenticationKey
 pub anp_identity::DocumentChange::AddAuthenticationKey::key: anp_identity::PublicKeyInput
 pub anp_identity::DocumentChange::AddDevice
 pub anp_identity::DocumentChange::AddDevice::device: anp_identity::DeviceInput
+pub anp_identity::DocumentChange::AddDeviceProfiles
+pub anp_identity::DocumentChange::AddDeviceProfiles::device_id: alloc::string::String
+pub anp_identity::DocumentChange::AddDeviceProfiles::profiles: alloc::vec::Vec<alloc::string::String>
+pub anp_identity::DocumentChange::BindOAuthClient
+pub anp_identity::DocumentChange::BindOAuthClient::client_id: alloc::string::String
+pub anp_identity::DocumentChange::BindOAuthClient::kid: alloc::string::String
+pub anp_identity::DocumentChange::BindOAuthClient::metadata_sha256: alloc::string::String
+pub anp_identity::DocumentChange::CreateOAuthKey
+pub anp_identity::DocumentChange::CreateOAuthKey::expected_revision: u64
+pub anp_identity::DocumentChange::CreateOAuthKey::fragment: alloc::string::String
+pub anp_identity::DocumentChange::CreateOAuthKey::operation_id: alloc::string::String
 pub anp_identity::DocumentChange::RemoveAuthenticationKey
 pub anp_identity::DocumentChange::RemoveAuthenticationKey::kid: alloc::string::String
 pub anp_identity::DocumentChange::RemoveDevice
@@ -376,6 +398,7 @@ pub anp_identity::IdentityTransitionRemoteObservation::RemoteOld
 pub anp_identity::IdentityTransitionRemoteObservation::RemoteOld::current_document: anp_identity::DidDocument
 pub enum anp_identity::KeyAlgorithm
 pub anp_identity::KeyAlgorithm::Ed25519
+pub anp_identity::KeyAlgorithm::P256
 pub anp_identity::KeyAlgorithm::X25519
 pub enum anp_identity::KeyPurpose
 pub anp_identity::KeyPurpose::ApplicationAssertion
@@ -390,6 +413,7 @@ pub enum anp_identity::ManagedKeyRole
 pub anp_identity::ManagedKeyRole::DeviceSigning
 pub anp_identity::ManagedKeyRole::E2eeAgreement
 pub anp_identity::ManagedKeyRole::E2eeSigning
+pub anp_identity::ManagedKeyRole::OAuthAuthentication
 pub anp_identity::ManagedKeyRole::RequestSigning
 pub anp_identity::ManagedKeyRole::RootControl
 pub enum anp_identity::PublicIdentityState
@@ -418,6 +442,9 @@ pub anp_identity::SigningPurpose::Authentication
 pub anp_identity::SigningPurpose::DeviceAssertion
 pub enum anp_identity::StoreHealth
 pub anp_identity::StoreHealth::Ready
+pub enum anp_identity::TemporaryKeyPurpose
+pub anp_identity::TemporaryKeyPurpose::PapDpop
+pub anp_identity::TemporaryKeyPurpose::PapSession
 pub enum anp_identity::VerificationOutcome
 pub anp_identity::VerificationOutcome::Invalid
 pub anp_identity::VerificationOutcome::Valid
@@ -434,8 +461,16 @@ pub anp_identity::CreateIdentityRequest::path_segments: alloc::vec::Vec<alloc::s
 pub anp_identity::CreateIdentityRequest::port: core::option::Option<u16>
 pub anp_identity::CreateIdentityRequest::profile: anp_identity::CreateIdentityProfile
 pub anp_identity::CreateIdentityRequest::services: alloc::vec::Vec<anp_identity::IdentityService>
+pub struct anp_identity::CreateTemporaryKeyRequest
+pub anp_identity::CreateTemporaryKeyRequest::operation_id: alloc::string::String
+pub anp_identity::CreateTemporaryKeyRequest::scope: anp_identity::TemporaryKeyScope
 pub struct anp_identity::DeleteIdentityRequest
 pub anp_identity::DeleteIdentityRequest::discard_pending_changes: bool
+pub struct anp_identity::DescribeTemporaryKeyRequest
+pub anp_identity::DescribeTemporaryKeyRequest::generation: u64
+pub anp_identity::DescribeTemporaryKeyRequest::handle: alloc::string::String
+pub anp_identity::DescribeTemporaryKeyRequest::purpose: anp_identity::TemporaryKeyPurpose
+pub anp_identity::DescribeTemporaryKeyRequest::scope: anp_identity::TemporaryKeyScope
 pub struct anp_identity::DeviceInput
 pub anp_identity::DeviceInput::agreement_key: anp_identity::PublicKeyInput
 pub anp_identity::DeviceInput::device_id: alloc::string::String
@@ -463,6 +498,14 @@ pub fn anp_identity::DocumentChangeSession::reconcile(&mut self, anp_identity::V
 pub fn anp_identity::DocumentChangeSession::reconcile_rejected(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::DocumentChangeOutcome>
 impl anp_identity::host::DocumentChangeRecoveryPort for anp_identity::DocumentChangeSession
 pub fn anp_identity::DocumentChangeSession::host_phase(&self) -> anp_identity::IdentityResult<anp_identity::host::HostDocumentChangePhase>
+pub struct anp_identity::DpopProofRequest
+pub anp_identity::DpopProofRequest::access_token: core::option::Option<alloc::string::String>
+pub anp_identity::DpopProofRequest::generation: u64
+pub anp_identity::DpopProofRequest::handle: alloc::string::String
+pub anp_identity::DpopProofRequest::http_method: alloc::string::String
+pub anp_identity::DpopProofRequest::http_uri: alloc::string::String
+pub anp_identity::DpopProofRequest::nonce: core::option::Option<alloc::string::String>
+pub anp_identity::DpopProofRequest::scope: anp_identity::TemporaryKeyScope
 pub struct anp_identity::ExternalPublicKeyInput
 pub anp_identity::ExternalPublicKeyInput::kid: alloc::string::String
 pub anp_identity::ExternalPublicKeyInput::material: anp_identity::ExternalPublicKeyInputMaterial
@@ -525,6 +568,19 @@ impl anp_identity::InjectedStoreKey
 pub fn anp_identity::InjectedStoreKey::new(impl core::convert::Into<alloc::string::String>, [u8; 32]) -> Self
 pub struct anp_identity::ManagedIdentity
 impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::create_delegated_key(&self, anp_identity::CreateTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
+pub fn anp_identity::ManagedIdentity::create_dpop_key(&self, anp_identity::CreateTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
+pub fn anp_identity::ManagedIdentity::describe_temporary_key(&self, anp_identity::DescribeTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
+pub fn anp_identity::ManagedIdentity::issue_pap_delegation(&self, anp_identity::PapDelegationRequest) -> anp_identity::IdentityResult<alloc::string::String>
+pub fn anp_identity::ManagedIdentity::retire_temporary_key(&self, anp_identity::RetireTemporaryKeyRequest) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::ManagedIdentity::sign_dpop_proof(&self, anp_identity::DpopProofRequest) -> anp_identity::IdentityResult<alloc::string::String>
+pub fn anp_identity::ManagedIdentity::sign_pap_session_request(&self, anp_identity::PapSessionRequest) -> anp_identity::IdentityResult<alloc::string::String>
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::export_candidate_oauth_public_jwk(&self, alloc::string::String) -> anp_identity::IdentityResult<anp_identity::OAuthPublicJwk>
+pub fn anp_identity::ManagedIdentity::oauth_public_jwk(&self, anp_identity::KeySelector) -> anp_identity::IdentityResult<anp_identity::OAuthPublicJwk>
+pub fn anp_identity::ManagedIdentity::prepare_oauth_key_change(&mut self, anp_identity::OAuthKeyChangeRequest) -> anp_identity::IdentityResult<anp_identity::DocumentChangeSession>
+pub fn anp_identity::ManagedIdentity::sign_oauth_client_assertion(&self, anp_identity::OAuthClientAssertionRequest) -> anp_identity::IdentityResult<alloc::string::String>
+impl anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::prepare_document_change(&mut self, anp_identity::DocumentChangeRequest) -> anp_identity::IdentityResult<anp_identity::DocumentChangeSession>
 pub fn anp_identity::ManagedIdentity::resume_document_change(&mut self) -> anp_identity::IdentityResult<core::option::Option<anp_identity::DocumentChangeSession>>
 impl anp_identity::ManagedIdentity
@@ -534,6 +590,10 @@ impl anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::sign(&self, anp_identity::SignRequest) -> anp_identity::IdentityResult<anp_identity::Signature>
 pub fn anp_identity::ManagedIdentity::sign_origin_proof(&self, anp_identity::OriginProofRequest) -> anp_identity::IdentityResult<anp_identity::SignedOriginProof>
 pub fn anp_identity::ManagedIdentity::verify(&self, anp_identity::VerifyRequest) -> anp_identity::IdentityResult<anp_identity::VerificationOutcome>
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::sign_management_proof(&self, anp_identity::host::ManagementProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
+impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::sign_web_registration_proof(&self, anp_identity::host::WebRegistrationProofRequest) -> anp_identity::IdentityResult<serde_json::value::Value>
 impl anp_identity::host::ConvergenceWorkflow for anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::adopt_verified_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
 pub fn anp_identity::ManagedIdentity::adopt_verified_sibling_document(&mut self, anp_identity::VerifiedRemoteDocument) -> anp_identity::IdentityResult<anp_identity::host::ConvergenceOutcome>
@@ -559,6 +619,22 @@ pub fn anp_identity::ManagedIdentity::import_wrapped_root_envelope(&mut self, &a
 pub struct anp_identity::ManagedKeyInput
 pub anp_identity::ManagedKeyInput::fragment: alloc::string::String
 pub anp_identity::ManagedKeyInput::role: anp_identity::ManagedKeyRole
+pub struct anp_identity::OAuthClientAssertionRequest
+pub anp_identity::OAuthClientAssertionRequest::audience: alloc::string::String
+pub anp_identity::OAuthClientAssertionRequest::client_id: alloc::string::String
+pub anp_identity::OAuthClientAssertionRequest::key: anp_identity::KeySelector
+pub struct anp_identity::OAuthKeyChangeRequest
+pub anp_identity::OAuthKeyChangeRequest::expected_revision: u64
+pub anp_identity::OAuthKeyChangeRequest::fragment: alloc::string::String
+pub anp_identity::OAuthKeyChangeRequest::operation_id: alloc::string::String
+pub struct anp_identity::OAuthPublicJwk
+pub anp_identity::OAuthPublicJwk::alg: alloc::string::String
+pub anp_identity::OAuthPublicJwk::crv: alloc::string::String
+pub anp_identity::OAuthPublicJwk::key_use: alloc::string::String
+pub anp_identity::OAuthPublicJwk::kid: alloc::string::String
+pub anp_identity::OAuthPublicJwk::kty: alloc::string::String
+pub anp_identity::OAuthPublicJwk::x: alloc::string::String
+pub anp_identity::OAuthPublicJwk::y: core::option::Option<alloc::string::String>
 pub struct anp_identity::OkpPublicJwk
 pub anp_identity::OkpPublicJwk::crv: alloc::string::String
 pub anp_identity::OkpPublicJwk::kty: alloc::string::String
@@ -573,7 +649,33 @@ pub anp_identity::OriginProofRequest::key: anp_identity::KeySelector
 pub anp_identity::OriginProofRequest::meta: serde_json::value::Value
 pub anp_identity::OriginProofRequest::method: alloc::string::String
 pub anp_identity::OriginProofRequest::options: anp_identity::OriginProofOptions
+pub struct anp_identity::P256PublicJwk
+pub anp_identity::P256PublicJwk::crv: alloc::string::String
+pub anp_identity::P256PublicJwk::kty: alloc::string::String
+pub anp_identity::P256PublicJwk::x: alloc::string::String
+pub anp_identity::P256PublicJwk::y: alloc::string::String
+impl anp_identity::P256PublicJwk
+pub fn anp_identity::P256PublicJwk::thumbprint(&self) -> anp_identity::IdentityResult<alloc::string::String>
+pub struct anp_identity::PapDelegationRequest
+pub anp_identity::PapDelegationRequest::client_id: alloc::string::String
+pub anp_identity::PapDelegationRequest::delegated_key: anp_identity::TemporaryKeyReference
+pub anp_identity::PapDelegationRequest::key: anp_identity::KeySelector
+pub anp_identity::PapDelegationRequest::scope: anp_identity::TemporaryKeyScope
+pub anp_identity::PapDelegationRequest::ttl_seconds: u32
+pub struct anp_identity::PapSessionRequest
+pub anp_identity::PapSessionRequest::access_token: core::option::Option<alloc::string::String>
+pub anp_identity::PapSessionRequest::agent_id: core::option::Option<alloc::string::String>
+pub anp_identity::PapSessionRequest::client_id: alloc::string::String
+pub anp_identity::PapSessionRequest::delegation: alloc::string::String
+pub anp_identity::PapSessionRequest::generation: u64
+pub anp_identity::PapSessionRequest::handle: alloc::string::String
+pub anp_identity::PapSessionRequest::http_method: alloc::string::String
+pub anp_identity::PapSessionRequest::http_uri: alloc::string::String
+pub anp_identity::PapSessionRequest::scope: anp_identity::TemporaryKeyScope
+pub anp_identity::PapSessionRequest::sid: alloc::string::String
+pub anp_identity::PapSessionRequest::sub: alloc::string::String
 pub struct anp_identity::PreparedDocumentChange
+pub anp_identity::PreparedDocumentChange::base_evidence: anp_identity::VerifiedPublicationEvidence
 pub anp_identity::PreparedDocumentChange::candidate_digest: alloc::string::String
 pub anp_identity::PreparedDocumentChange::candidate_document: anp_identity::DidDocument
 pub anp_identity::PreparedDocumentChange::operation_id: alloc::string::String
@@ -608,6 +710,10 @@ pub fn anp_identity::PublicationAttempt::candidate_digest(&self) -> &str
 pub fn anp_identity::PublicationAttempt::operation_id(&self) -> &str
 pub struct anp_identity::RecoveryReport
 pub anp_identity::RecoveryReport::identity_count: usize
+pub struct anp_identity::RetireTemporaryKeyRequest
+pub anp_identity::RetireTemporaryKeyRequest::generation: u64
+pub anp_identity::RetireTemporaryKeyRequest::handle: alloc::string::String
+pub anp_identity::RetireTemporaryKeyRequest::scope: anp_identity::TemporaryKeyScope
 pub struct anp_identity::SignRequest
 pub anp_identity::SignRequest::key: anp_identity::KeySelector
 pub anp_identity::SignRequest::payload: alloc::vec::Vec<u8>
@@ -625,6 +731,20 @@ pub anp_identity::StoreInfo::health: anp_identity::StoreHealth
 pub anp_identity::StoreInfo::identity_count: usize
 pub anp_identity::StoreInfo::schema_compatible: bool
 pub anp_identity::StoreInfo::store_id: alloc::string::String
+pub struct anp_identity::TemporaryKey
+pub anp_identity::TemporaryKey::generation: u64
+pub anp_identity::TemporaryKey::handle: alloc::string::String
+pub anp_identity::TemporaryKey::public_jwk: anp_identity::P256PublicJwk
+pub anp_identity::TemporaryKey::purpose: anp_identity::TemporaryKeyPurpose
+pub anp_identity::TemporaryKey::thumbprint: alloc::string::String
+pub struct anp_identity::TemporaryKeyReference
+pub anp_identity::TemporaryKeyReference::generation: u64
+pub anp_identity::TemporaryKeyReference::handle: alloc::string::String
+pub struct anp_identity::TemporaryKeyScope
+pub anp_identity::TemporaryKeyScope::account_slot: core::option::Option<alloc::string::String>
+pub anp_identity::TemporaryKeyScope::company_id: alloc::string::String
+pub anp_identity::TemporaryKeyScope::owner: alloc::string::String
+pub anp_identity::TemporaryKeyScope::user_id: alloc::string::String
 pub struct anp_identity::VerifiedPublicationEvidence
 pub anp_identity::VerifiedPublicationEvidence::document_digest: alloc::string::String
 pub anp_identity::VerifiedPublicationEvidence::document_version: u64

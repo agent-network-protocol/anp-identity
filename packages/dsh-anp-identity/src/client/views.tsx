@@ -77,6 +77,7 @@ function Scope({
             ))}
           </ul>
           <p>签名用途：{snapshot.signingPurposes.join("、") || "无"}</p>
+          {!!snapshot.oauthAudiences?.length && <p>OAuth 目标：{snapshot.oauthAudiences.join("、")}</p>}
           <p className="anpi-break">
             网站：{snapshot.httpOrigins.join("、") || "无"}
           </p>
@@ -217,6 +218,17 @@ export function IdentitySettings({
                 controller={controller}
               />
               </div>
+              {view.publication && <div className="anpi-section">
+                <h3>对外身份</h3>
+                <p>{({local: "尚未发布", awaiting_configuration: "等待身份托管配置", publishing: "发布中", published: "已发布", failed: "发布未完成"})[view.publication.state]}</p>
+                {view.publication.capabilities && <p>{[
+                  view.publication.capabilities.mcpMachine ? 'MCP 机器访问（无需回调地址）' : '',
+                  view.publication.capabilities.papSession ? 'PAP 会话' : '',
+                  view.publication.capabilities.papAccount ? 'PAP 账户授权' : '',
+                ].filter(Boolean).join(' · ')}</p>}
+                {view.publication.clientId && <CopyRow label="CIMD" value={view.publication.clientId} controller={controller} />}
+                {view.publication.state === "failed" && <Button disabled={view.pending} onClick={() => { void controller.retryPublication(); }}>重试发布</Button>}
+              </div>}
               <div className="anpi-section">
                 <h3>你授权的插件</h3>
                 {view.grants.length === 0 && (
@@ -617,6 +629,8 @@ function IdentityModal({
               <dd>{request.parameters.domain}</dd>
               <dt>身份路径</dt>
               <dd>{request.parameters.path}</dd>
+              <dt>用途</dt><dd>{request.parameters.usage === 'protocol' ? 'MCP / PAP 协议身份（独立设备权限）' : '普通插件身份'}</dd>
+              <dt>身份方法</dt><dd>{request.parameters.profile ?? 'e1'}</dd>
             </dl>
             <p>参数由插件提供，请确认后继续。</p>
             <p className="anpi-small">Handle 由申请插件提供，保存不代表已在服务端注册或验证。</p>
