@@ -240,3 +240,5 @@ bypass this typed policy; domain-separated application signing remains available
 Tokens/assertions are never exposed by the manager Remote.
 
 Protocol identity creation uses an explicit `usage: 'protocol'` approval, local E1/Web device custody, capability-driven ES256 publication and target-bound machine/PAP leases. See [the publication and management contract](./PUBLICATION.md) for the real User Service driver, encrypted management broker, catalog v4 migration and validation boundaries.
+
+The trusted Host publication driver also supplies typed, device-bound PAP callback registration and one-shot pickup. V2 PAP account supports a separate strict RFC 8252 loopback redirect declaration; V1 and protected public fetch URLs keep their HTTPS-only rules. These callbacks are not exposed by Remote or model tools.

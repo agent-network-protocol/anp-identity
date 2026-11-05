@@ -16,7 +16,7 @@ import type { ProtocolIdentityClient, ProtocolUsePolicy } from '../../src/protoc
  * @returns Real C client and local encrypted native storage, plus async teardown.
  */
 export async function createNativeProtocolFixture(options: {
-  publicationOrigin?: string; publicationCapabilities?: PublicationCapabilities; consumer?: string; profiles?: ProtocolUsePolicy['profiles']; scopes?: string[]; issuers?: string[]; resources?: string[]
+  redirectUris?: string[]; publicationOrigin?: string; publicationCapabilities?: PublicationCapabilities; consumer?: string; profiles?: ProtocolUsePolicy['profiles']; scopes?: string[]; issuers?: string[]; resources?: string[]
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'c-native-protocol-'))
   const provider = await IdentityProvider.initialize({ stateRoot: root, rootKeyKind: 'injected', keyId: 'protocol-test', rootKey: Buffer.alloc(32, 117) })
@@ -71,7 +71,7 @@ export async function createNativeProtocolFixture(options: {
   const managerService = managerContext.anpIdentity as AnpIdentityService
   managerService.registerPublicationBackend(managerContext, 'fixture', backend)
   await managerService.acquireManagement(managerContext).publishIdentity({ reference: identity.reference, config: { backend: 'fixture', documentId: 'one', clientName: 'Protocol fixture',
-    redirectUris: capabilities.papAccount ? [publicationOrigin + '/callback'] : [], activeKid: identity.reference.did + '#oauth', capabilities } }).catch(error => { throw new Error('fixture_publication', { cause: error }) })
+    redirectUris: options.redirectUris ?? (capabilities.papAccount ? [publicationOrigin + '/callback'] : []), activeKid: identity.reference.did + '#oauth', capabilities } }).catch(error => { throw new Error('fixture_publication', { cause: error }) })
   const client: ProtocolIdentityClient = (consumerContext.anpIdentity as AnpIdentityService).bindProtocolConsumer(consumerContext)
   return { get publicMaterials() { return { metadata: row!.metadata!, jwks: row!.jwks! } },
     async publicDocument() { const read = provider.acquireLease({ consumer: 'fixture-public-read', capabilities: ['IDENTITY_READ'], ttlSeconds: 60 }); try { return (await read.publicIdentity(identity.reference)).document } finally { read.dispose() } },

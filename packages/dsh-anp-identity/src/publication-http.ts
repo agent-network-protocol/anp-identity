@@ -1,5 +1,5 @@
 /** User Service transport. The Host supplies its existing authenticated management channel. */
-import type { PublicationBackend, PreparedClientMaterials } from './publication-types.js'
+import type { PublicationBackend, PreparedClientMaterials, PublicationCapabilities } from './publication-types.js'
 import { pluginError } from './errors.js'
 
 export function exactHttps(value: string, requirePath = false): string {
@@ -11,6 +11,21 @@ export function exactHttps(value: string, requirePath = false): string {
   const path = value.slice(8).split('/').slice(1)
   if (!authority || authority.includes('@') || !url.hostname || (requirePath && !value.slice(8).includes('/'))
     || path.some(segment => ['.', '..'].includes(segment.replace(/%2e/giu, '.')))) throw pluginError('invalid_request')
+  return value
+}
+
+/** Validate a declared callback without changing its bytes. HTTP is restricted to V2 PAP account loopback.
+ * @param value - Exact configured callback URI.
+ * @param capabilities - V2 capabilities; omission preserves the HTTPS-only V1 rule.
+ * @returns The unchanged configured URI.
+ */
+export function publicationRedirectUri(value: string, capabilities?: PublicationCapabilities): string {
+  if (capabilities && !capabilities.papAccount) throw pluginError('invalid_request')
+  if (!value.startsWith('http://')) return exactHttps(value, true)
+  if (!capabilities?.papAccount) throw pluginError('invalid_request')
+  exactHttps('https://' + value.slice(7), true)
+  const authority = /^http:\/\/(?:127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})\//u.exec(value)
+  if (!authority?.[1] || Number(authority[1]) > 65535) throw pluginError('invalid_request')
   return value
 }
 

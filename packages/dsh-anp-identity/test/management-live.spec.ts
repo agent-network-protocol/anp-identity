@@ -9,6 +9,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { expect, it } from 'vitest'
 import AnpIdentityService from '../src/index.js'
 import { openNativeProvider } from '../src/provider.js'
+import { createManagedCallbackFixture } from './helpers/managed-callback-fixture.js'
+import { createHash } from 'node:crypto'
 import { createManagedPublicationDriver } from '../src/management-driver.js'
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider'
 import { EncryptedManagementCredentialBroker } from '../src/management-credentials.js'
@@ -164,4 +166,40 @@ it.skipIf(!source || !python)('registers approved E1/Web local Manifests, authen
     if (child.exitCode === null) { child.stdin.end(); child.kill('SIGTERM') }
     await exited.catch(() => {}); extraNative.forEach(native => native.dispose()); await ctx.fiber.dispose(); key.fill(0); await rm(root, { recursive: true, force: true })
   }
+}, 180000)
+
+
+it.skipIf(!source || !python)('publishes a real PAP account and relays a callback for one original-device claim without replaying private data', async () => {
+  const fixture = await createManagedCallbackFixture({ source: source!, python: python!, profile: 'web' })
+  const state = randomBytes(32).toString('base64url')
+  const claimSecret = randomBytes(32).toString('base64url')
+  const transactionId = 'callback-' + randomUUID().replaceAll('-', '')
+  const issuer = 'https://company.example'
+  const code = randomBytes(32).toString('base64url')
+  const callback = { transaction_id: transactionId, client_id: fixture.clientId, issuer,
+    redirect_uri: fixture.origin + '/user-service/v1/pap-callback',
+    state_sha256: createHash('sha256').update(state).digest('hex'), claim_sha256: createHash('sha256').update(claimSecret).digest('hex'),
+    expires_at: new Date(Date.now() + 300000).toISOString().replace(/\.\d{3}Z$/u, 'Z') }
+  try {
+    const registered = await fixture.callbackManagement.execute({ action: 'pap-callback-register', operationId: 'register_' + transactionId, callback })
+    expect(registered.callback_uri).toBe(callback.redirect_uri)
+    const claim = () => fixture.callbackManagement.execute({ action: 'pap-callback-claim', operationId: 'claim_' + transactionId,
+      callback: { transaction_id: transactionId, claim_secret: claimSecret } })
+    await expect(claim()).rejects.toMatchObject({ code: 'callback_not_ready' })
+    const wrong = await fixture.fetch(new Request(callback.redirect_uri + '?' + new URLSearchParams({ code, state, iss: 'https://other.example' })))
+    expect(wrong.status).toBe(400)
+    const response = await fixture.fetch(new Request(callback.redirect_uri + '?' + new URLSearchParams({ code, state, iss: issuer })))
+    expect(response.status).toBe(200)
+    const visible = await response.text()
+    expect(visible.includes(code) || visible.includes(state)).toBe(false)
+    const claimed = await claim()
+    // Compare booleans so failed assertions do not print callback codes, state or pickup secrets.
+    expect('code' in claimed && claimed.code === code && claimed.state === state && claimed.iss === issuer).toBe(true)
+    await expect(claim()).rejects.toMatchObject({ code: 'callback_claimed' })
+    const replay = await fixture.fetch(new Request(callback.redirect_uri + '?' + new URLSearchParams({ code, state, iss: issuer })))
+    expect(replay.status).toBe(409)
+    const capability = fixture.callbackManagement
+    await fixture.dispose()
+    await expect(capability.execute({ action: 'pap-callback-claim', operationId: 'claim_disposed', callback: { transaction_id: transactionId, claim_secret: claimSecret } })).rejects.toMatchObject({ code: 'provider_disposed' })
+  } finally { await fixture.dispose() }
 }, 180000)

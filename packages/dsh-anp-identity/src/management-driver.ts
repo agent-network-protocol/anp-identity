@@ -4,7 +4,11 @@ import type { IdentityReference, JsonValue, VerifiedRemoteDocument } from '@agen
 import type { ProviderLease, ProviderDocumentChangeSession } from '@agent-network-protocol/anp-identity/provider'
 import type { PublicationBackend, PreparedClientMaterials, PublicationIntentV2 } from './publication-types.js'
 import { exactHttps, parsePublicJson } from './publication-http.js'
-import { pluginError } from './errors.js'
+import { AnpIdentityPluginError, pluginError } from './errors.js'
+import { PapCallbackOperationSchema, PapCallbackRegistrationResultSchema, PapCallbackClaimResultSchema,
+  PapCallbackManagementError, papCallbackManagementError } from './pap-callback.js'
+import type { PapCallbackManagementOperations, PapCallbackRegisterOperation, PapCallbackClaimOperation,
+  PapCallbackOperation, PapCallbackRegistrationResult, PapCallbackClaimResult } from './pap-callback.js'
 
 export interface DeviceManagementCredential {
   accessToken: string
@@ -21,7 +25,7 @@ export interface ManagementCredentialBroker {
 }
 interface Checkpoint { document_version: number; document_hash: string; registry_version: number }
 interface Registry { did: string; checkpoint: Checkpoint; devices: Array<{ device_id: string; signing_key_id: string; status: string; role: string; management_ready: boolean }> }
-export interface ManagedPublicationDriver {
+export interface ManagedPublicationDriver extends PapCallbackManagementOperations {
   readonly documentId: string
   readonly backend: PublicationBackend
   readonly reference: IdentityReference
@@ -38,18 +42,21 @@ export async function createManagedPublicationDriver(input: {
   credentials: ManagementCredentialBroker
   withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
   fetch?: typeof fetch
+  /** Supplied by the Host installer to revoke this driver with its management Context and provider generation. */
+  assertActive?: () => Promise<void>
 }): Promise<ManagedPublicationDriver> {
   const origin = exactHttps(input.origin)
   if (new URL(origin).origin !== origin) throw pluginError('invalid_request')
   const send = input.fetch ?? fetch
+  const reference = Object.freeze(structuredClone(input.reference))
   const credential = async () => {
-    const value = await input.credentials.get(input.reference, origin)
+    const value = await input.credentials.get(reference, origin)
     if (!value || !value.accessToken || !value.deviceId || !value.signingKeyId) throw pluginError('provider_unavailable')
     return value
   }
-  const read = async (request: Request): Promise<Record<string, unknown>> => {
+  const read = async (request: Request, callbackErrors = false): Promise<Record<string, unknown>> => {
     const response = await send(request)
-    if (response.status !== 200 || response.redirected || !(response.headers.get('content-type') ?? '').startsWith('application/json')) {
+    if ((!callbackErrors && response.status !== 200) || response.redirected || !(response.headers.get('content-type') ?? '').startsWith('application/json')) {
       await response.body?.cancel(); throw pluginError('provider_unavailable')
     }
     const reader = response.body?.getReader(); const parts: Uint8Array[] = []; let size = 0
@@ -57,7 +64,9 @@ export async function createManagedPublicationDriver(input: {
       while (reader) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 131072) throw pluginError('provider_incompatible'); parts.push(part.value) }
       const result = parsePublicJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts)))
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw pluginError('provider_incompatible')
-      return result as Record<string, unknown>
+      const object = result as Record<string, unknown>
+      if (response.status !== 200) throw papCallbackManagementError(object) ?? pluginError('provider_unavailable')
+      return object
     } finally { await reader?.cancel(); reader?.releaseLock() }
   }
   const rpc = async (method: string, params: unknown): Promise<Record<string, unknown>> => {
@@ -71,7 +80,7 @@ export async function createManagedPublicationDriver(input: {
     const current = await rpc('device_registry_get', {}) as unknown as Registry
     const auth = await credential()
     const device = current.devices?.find(device => device.device_id === auth.deviceId)
-    if (current.did !== input.reference.did || !device || device.signing_key_id !== auth.signingKeyId
+    if (current.did !== reference.did || !device || device.signing_key_id !== auth.signingKeyId
       || device.status !== 'active' || device.role !== 'admin' || !device.management_ready
       || !Number.isSafeInteger(current.checkpoint?.document_version) || !Number.isSafeInteger(current.checkpoint.registry_version)
       || !/^sha256:[A-Za-z0-9_-]{43}$/u.test(current.checkpoint.document_hash)) throw pluginError('provider_incompatible')
@@ -82,22 +91,35 @@ export async function createManagedPublicationDriver(input: {
     return input.withNative(async native => {
       const signer = (native as unknown as { signManagementProof?: (ref: IdentityReference, request: unknown) => Promise<unknown> }).signManagementProof
       if (typeof signer !== 'function') throw pluginError('provider_incompatible')
-      return signer.call(native, input.reference, { key: { kid: auth.signingKeyId }, method, params,
+      return signer.call(native, reference, { key: { kid: auth.signingKeyId }, method, params,
         ...(auth.audience === undefined ? {} : { audience: auth.audience }) })
     })
   }
-  const deviceCommand = async (action: string, operationId: string, extra: Record<string, unknown> = {}) => {
+  type PublicationAction = 'prepare' | 'activate' | 'status' | 'resolve'
+  type DeviceAction = PublicationAction | 'pap-callback-register' | 'pap-callback-claim'
+  const methods: Record<DeviceAction, string> = { prepare: 'agent_client_prepare', activate: 'agent_client_activate',
+    status: 'agent_client_status', resolve: 'agent_client_resolve',
+    'pap-callback-register': 'agent_client_pap_callback_register', 'pap-callback-claim': 'agent_client_pap_callback_claim' }
+  const deviceResponse = async (action: DeviceAction, operationId: string, extra: Record<string, unknown> = {}) => {
+    await input.assertActive?.()
     const [current, auth] = await Promise.all([registry(), credential()])
     const httpPath = '/user-service/v1/agent-clients/device/' + action
     const proposed = { operation_id: operationId, expected_document_version: current.checkpoint.document_version,
       expected_document_hash: current.checkpoint.document_hash, expected_registry_version: current.checkpoint.registry_version,
       authorizing_device_id: auth.deviceId, ...extra }
-    const body = action === 'prepare' || action === 'activate'
-      ? await input.credentials.reserveOperation(input.reference, origin, 'agent_client_' + action + ':' + operationId, proposed) : proposed
-    const signed = await proof('agent_client_' + action, { ...body, http_path: httpPath, target_did: input.reference.did })
+    const body: Record<string, unknown> = action === 'prepare' || action === 'activate' || action === 'pap-callback-register'
+      ? await input.credentials.reserveOperation(reference, origin, methods[action] + ':' + operationId, proposed) : proposed
+    if (action === 'pap-callback-register' && JSON.stringify(body.callback) !== JSON.stringify(extra.callback)) throw pluginError('catalog_conflict')
+    const signed = await proof(methods[action], { ...body, http_path: httpPath, target_did: reference.did })
+    await input.assertActive?.()
     const result = await read(new Request(origin + httpPath, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-      headers: { authorization: 'Bearer ' + auth.accessToken, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, authorizing_device_proof: signed }) }))
-    if (result.did !== input.reference.did || typeof result.document_id !== 'string') throw pluginError('provider_incompatible')
+      headers: { authorization: 'Bearer ' + auth.accessToken, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, authorizing_device_proof: signed }) }), action === 'pap-callback-register' || action === 'pap-callback-claim')
+    await input.assertActive?.()
+    return result
+  }
+  const deviceCommand = async (action: PublicationAction, operationId: string, extra: Record<string, unknown> = {}) => {
+    const result = await deviceResponse(action, operationId, extra)
+    if (result.did !== reference.did || typeof result.document_id !== 'string') throw pluginError('provider_incompatible')
     return result
   }
   const resolved = await deviceCommand('resolve', randomUUID())
@@ -133,7 +155,7 @@ export async function createManagedPublicationDriver(input: {
       return text
     },
     publishDocument: async (reference, session: ProviderDocumentChangeSession, assertActive) => {
-      if (JSON.stringify(reference) !== JSON.stringify(input.reference)) throw pluginError('invalid_request')
+      if (JSON.stringify(reference) !== JSON.stringify(reference)) throw pluginError('invalid_request')
       await assertActive()
       if (await session.hostPhase() === 'publication_uncertain') {
         await session.reconcile(await checkpointObservation()); return
@@ -170,7 +192,38 @@ export async function createManagedPublicationDriver(input: {
       await session.reconcile(observation)
     },
   }
-  return { reference: structuredClone(input.reference), documentId, backend, readVerifiedDocument: checkpointObservation }
+  async function execute(command: PapCallbackRegisterOperation): Promise<PapCallbackRegistrationResult>
+  async function execute(command: PapCallbackClaimOperation): Promise<PapCallbackClaimResult>
+  async function execute(command: PapCallbackOperation): Promise<PapCallbackRegistrationResult | PapCallbackClaimResult> {
+    try {
+      await input.assertActive?.()
+      const parsed = PapCallbackOperationSchema.safeParse(command)
+      if (!parsed.success) throw pluginError('invalid_request')
+      const value = parsed.data
+      if (value.action === 'pap-callback-register') {
+        exactHttps(value.callback.issuer)
+        const expiry = Date.parse(value.callback.expires_at)
+        if (expiry <= Date.now() || expiry > Date.now() + 600000) throw pluginError('invalid_request')
+        if (value.callback.client_id !== clientId || value.callback.redirect_uri !== origin + '/user-service/v1/pap-callback') throw pluginError('invalid_request')
+        const result = await deviceResponse(value.action, value.operationId, { callback: value.callback })
+        const registered = PapCallbackRegistrationResultSchema.safeParse(result)
+        if (!registered.success || result.did !== reference.did || result.document_id !== documentId
+          || registered.data.transaction_id !== value.callback.transaction_id || registered.data.callback_uri !== value.callback.redirect_uri
+          || registered.data.expires_at !== value.callback.expires_at) throw pluginError('provider_incompatible')
+        return { transaction_id: registered.data.transaction_id, callback_uri: registered.data.callback_uri, expires_at: registered.data.expires_at }
+      }
+      // Claim results contain private business data and never use the publisher response or replay ledger.
+      const result = await deviceResponse(value.action, value.operationId, { callback: value.callback })
+      const claimed = PapCallbackClaimResultSchema.safeParse(result)
+      if (!claimed.success) throw pluginError('provider_incompatible')
+      exactHttps(claimed.data.iss)
+      return claimed.data
+    } catch (error) {
+      if (error instanceof PapCallbackManagementError || error instanceof AnpIdentityPluginError) throw error
+      throw pluginError('provider_unavailable')
+    }
+  }
+  return { reference: structuredClone(reference), documentId, backend, readVerifiedDocument: checkpointObservation, execute }
 }
 
 /** Registration fields supplied through the trusted Host management flow, never persisted in the catalog. */

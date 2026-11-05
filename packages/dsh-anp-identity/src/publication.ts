@@ -7,7 +7,7 @@ import type { IdentityReference, PublicIdentity } from '@agent-network-protocol/
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider'
 import { CatalogStore, findEntry, type CatalogEntry } from './catalog.js'
 import { pluginError } from './errors.js'
-import { exactHttps, parsePublicJson } from './publication-http.js'
+import { exactHttps, parsePublicJson, publicationRedirectUri } from './publication-http.js'
 import { PublicationConfigSchema, PublicJwkSchema, publicationProfile,
   type PublicationBackend, type PublicationConfig, type PublicationRecord, type OAuthClientIdentity,
   type PreparedClientMaterials, type PublicationJwk } from './publication-types.js'
@@ -60,7 +60,7 @@ export class PublicationCoordinator {
     if (!parsed.success) throw pluginError('invalid_request')
     const config = parsed.data
     exactHttps(backend.origin)
-    config.redirectUris.forEach(uri => exactHttps(uri, true))
+    config.redirectUris.forEach(uri => publicationRedirectUri(uri, config.capabilities))
     if (new Set(config.redirectUris).size !== config.redirectUris.length) throw pluginError('invalid_request')
     const clientId = exactHttps(backend.clientId(config.documentId), true)
     if (clientId !== `${backend.origin}/user-service/v1/agent-clients/${config.documentId}/client.json`) throw pluginError('invalid_request')
@@ -117,7 +117,6 @@ export class PublicationCoordinator {
       record = { ...record, state: (config.capabilities ? !config.capabilities.papAccount || config.redirectUris.length > 0 : config.redirectUris.length > 0) ? 'publishing' : 'awaiting_configuration' }
       await this.save(reference, record)
       if (record.state === 'awaiting_configuration') return this.status(reference)
-      if (config.capabilities && !config.capabilities.papAccount && config.redirectUris.length) throw pluginError('invalid_request')
       try {
         await assertActive()
         const prepared = await backend.prepare(config.documentId, {

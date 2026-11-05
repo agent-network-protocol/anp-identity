@@ -1,3 +1,4 @@
+import type { PapCallbackManagementOperations } from './pap-callback.js'
 import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
 import { ProtocolIdentityAuthority } from './target-policy.js'
 import type { ProtocolUsePolicy, ProtocolIdentityClient } from './protocol-client.js'
@@ -864,12 +865,20 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   /** Install a real device-authorized backend; the document id comes from authenticated resolve. */
   async configureManagedPublicationBackend(context: Context, name: string, input: {
     reference: IdentityReference; origin: string; credentials: ManagementCredentialBroker; fetch?: typeof fetch
-  }): Promise<{ backend: string; documentId: string; dispose: () => void }> {
+  }): Promise<{ backend: string; documentId: string; callbackManagement: PapCallbackManagementOperations; dispose: () => void }> {
     this.assertManagementContext(context)
-    const driver = await createManagedPublicationDriver({ ...input, withNative: operation => this.withPublicationNative(operation) })
+    const slot = this.requireSlot()
+    let disposed = false
+    const driver = await createManagedPublicationDriver({ ...input, withNative: operation => this.withPublicationNative(operation),
+      assertActive: async () => {
+        if (disposed) throw pluginError('provider_disposed')
+        this.assertManagementContext(context)
+        this.assertSlot(slot)
+      } })
     this.assertManagementContext(context)
     const dispose = this.registerPublicationBackend(context, name, driver.backend)
-    return { backend: name, documentId: driver.documentId, dispose }
+    return { backend: name, documentId: driver.documentId, callbackManagement: Object.freeze({ execute: driver.execute }),
+      dispose: () => { disposed = true; dispose() } }
   }
 
   /** Register the public local Manifest through User Service and persist its verified management credential. */
@@ -1923,3 +1932,7 @@ export type { PublicationConfig, PublicationBackend, OAuthClientIdentity } from 
 export { EncryptedManagementCredentialBroker } from './management-credentials.js'
 export { createManagedPublicationDriver, registerLocalIdentity } from './management-driver.js'
 export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegistrationInput } from './management-driver.js'
+
+export { PapCallbackManagementError } from './pap-callback.js'
+export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult,
+  PapCallbackRegisterOperation, PapCallbackClaimOperation, PapCallbackManagementOperations, PapCallbackManagementErrorCode } from './pap-callback.js'

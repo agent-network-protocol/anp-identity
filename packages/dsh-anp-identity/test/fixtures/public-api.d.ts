@@ -1,4 +1,5 @@
 // ===== index.d.ts =====
+import type { PapCallbackManagementOperations } from './pap-callback.js';
 import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
 import type { ProtocolUsePolicy, ProtocolIdentityClient } from './protocol-client.js';
 import type { PublicationBackend } from './publication-types.js';
@@ -90,6 +91,7 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     }): Promise<{
         backend: string;
         documentId: string;
+        callbackManagement: PapCallbackManagementOperations;
         dispose: () => void;
     }>;
     /** Register the public local Manifest through User Service and persist its verified management credential. */
@@ -134,6 +136,8 @@ export type { PublicationConfig, PublicationBackend, OAuthClientIdentity } from 
 export { EncryptedManagementCredentialBroker } from './management-credentials.js';
 export { createManagedPublicationDriver, registerLocalIdentity } from './management-driver.js';
 export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegistrationInput } from './management-driver.js';
+export { PapCallbackManagementError } from './pap-callback.js';
+export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult, PapCallbackRegisterOperation, PapCallbackClaimOperation, PapCallbackManagementOperations, PapCallbackManagementErrorCode } from './pap-callback.js';
 
 // ===== provider.d.ts =====
 /** Native ANP Identity Provider registration for the Host-only DSH service. */
@@ -503,6 +507,7 @@ export declare class ProtocolIdentityAuthority {
 import type { IdentityReference, JsonValue, VerifiedRemoteDocument } from '@agent-network-protocol/anp-identity';
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider';
 import type { PublicationBackend } from './publication-types.js';
+import type { PapCallbackManagementOperations } from './pap-callback.js';
 export interface DeviceManagementCredential {
     accessToken: string;
     deviceId: string;
@@ -516,7 +521,7 @@ export interface ManagementCredentialBroker {
     set(reference: IdentityReference, origin: string, credential: DeviceManagementCredential): Promise<void>;
     reserveOperation(reference: IdentityReference, origin: string, operationId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
-export interface ManagedPublicationDriver {
+export interface ManagedPublicationDriver extends PapCallbackManagementOperations {
     readonly documentId: string;
     readonly backend: PublicationBackend;
     readonly reference: IdentityReference;
@@ -532,6 +537,8 @@ export declare function createManagedPublicationDriver(input: {
     credentials: ManagementCredentialBroker;
     withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
     fetch?: typeof fetch;
+    /** Supplied by the Host installer to revoke this driver with its management Context and provider generation. */
+    assertActive?: () => Promise<void>;
 }): Promise<ManagedPublicationDriver>;
 /** Registration fields supplied through the trusted Host management flow, never persisted in the catalog. */
 export interface LocalRegistrationInput {
@@ -576,6 +583,117 @@ export declare function webRegistrationProjection(input: {
     audience: string;
     handleDomain: string;
 }): JsonValue;
+
+// ===== pap-callback.d.ts =====
+/** Host-only, exact-device PAP callback commands. Claim results must never enter Remote or model output. */
+import { z } from 'zod';
+export interface PapCallbackRegistration {
+    transaction_id: string;
+    client_id: string;
+    issuer: string;
+    redirect_uri: string;
+    state_sha256: string;
+    claim_sha256: string;
+    expires_at: string;
+}
+export interface PapCallbackClaim {
+    transaction_id: string;
+    claim_secret: string;
+}
+export interface PapCallbackRegistrationResult {
+    transaction_id: string;
+    callback_uri: string;
+    expires_at: string;
+}
+export type PapCallbackOAuthError = 'invalid_request' | 'unauthorized_client' | 'access_denied' | 'unsupported_response_type' | 'invalid_scope' | 'server_error' | 'temporarily_unavailable';
+/** A one-shot private business result. It is deliberately not a publisher response. */
+export type PapCallbackClaimResult = {
+    state: string;
+    iss: string;
+    code: string;
+} | {
+    state: string;
+    iss: string;
+    error: PapCallbackOAuthError;
+};
+export interface PapCallbackRegisterOperation {
+    action: 'pap-callback-register';
+    operationId: string;
+    callback: PapCallbackRegistration;
+}
+export interface PapCallbackClaimOperation {
+    action: 'pap-callback-claim';
+    operationId: string;
+    callback: PapCallbackClaim;
+}
+export type PapCallbackOperation = PapCallbackRegisterOperation | PapCallbackClaimOperation;
+/** Trusted Host capability limited to registering and claiming the fixed PAP callback relay. */
+export interface PapCallbackManagementOperations {
+    /** Register public hashes and the already-published fixed callback address.
+     * @param input - Closed registration command, without PKCE verifier or business Tokens.
+     * @returns Public relay acknowledgement.
+     */
+    execute(input: PapCallbackRegisterOperation): Promise<PapCallbackRegistrationResult>;
+    /** Claim exactly once through the original device. No automatic retry or local result cache is allowed.
+     * @param input - Claim command containing the independent pickup secret.
+     * @returns The private code/error, state and issuer accepted by the relay.
+     */
+    execute(input: PapCallbackClaimOperation): Promise<PapCallbackClaimResult>;
+}
+export type PapCallbackManagementErrorCode = 'callback_not_ready' | 'callback_claimed' | 'callback_expired' | 'callback_conflict' | 'callback_unavailable' | 'callback_limit' | 'callback_redirect_mismatch' | 'callback_claim_not_independent' | 'callback_issuer_mismatch' | 'permission_denied' | 'management_auth_required' | 'not_published' | 'client_id_conflict' | 'idempotency_conflict';
+/** Stable management failure. It contains neither callback business data nor arbitrary server text. */
+export declare class PapCallbackManagementError extends Error {
+    readonly code: PapCallbackManagementErrorCode;
+    readonly name = "PapCallbackManagementError";
+    constructor(code: PapCallbackManagementErrorCode);
+}
+export declare const PapCallbackOperationSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    action: z.ZodLiteral<"pap-callback-register">;
+    operationId: z.ZodString;
+    callback: z.ZodObject<{
+        transaction_id: z.ZodString;
+        client_id: z.ZodString;
+        issuer: z.ZodString;
+        redirect_uri: z.ZodString;
+        state_sha256: z.ZodString;
+        claim_sha256: z.ZodString;
+        expires_at: z.ZodString;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    action: z.ZodLiteral<"pap-callback-claim">;
+    operationId: z.ZodString;
+    callback: z.ZodObject<{
+        transaction_id: z.ZodString;
+        claim_secret: z.ZodString;
+    }, z.core.$strict>;
+}, z.core.$strict>], "action">;
+export declare const PapCallbackRegistrationResultSchema: z.ZodObject<{
+    transaction_id: z.ZodString;
+    callback_uri: z.ZodString;
+    expires_at: z.ZodString;
+}, z.core.$loose>;
+export declare const PapCallbackClaimResultSchema: z.ZodUnion<readonly [z.ZodObject<{
+    state: z.ZodString;
+    iss: z.ZodString;
+    code: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    state: z.ZodString;
+    iss: z.ZodString;
+    error: z.ZodEnum<{
+        invalid_request: "invalid_request";
+        unauthorized_client: "unauthorized_client";
+        access_denied: "access_denied";
+        unsupported_response_type: "unsupported_response_type";
+        invalid_scope: "invalid_scope";
+        server_error: "server_error";
+        temporarily_unavailable: "temporarily_unavailable";
+    }>;
+}, z.core.$strict>]>;
+/** Decode only documented management failures; arbitrary input is never placed in an Error.
+ * @param value - Parsed response object from the fixed management endpoint.
+ * @returns A stable callback error, or undefined for an incompatible response.
+ */
+export declare function papCallbackManagementError(value: Record<string, unknown>): PapCallbackManagementError | undefined;
 
 // ===== management-credentials.d.ts =====
 import type { IdentityReference } from '@agent-network-protocol/anp-identity';
@@ -970,8 +1088,14 @@ export interface PublicationBackend {
 
 // ===== publication-http.d.ts =====
 /** User Service transport. The Host supplies its existing authenticated management channel. */
-import type { PublicationBackend } from './publication-types.js';
+import type { PublicationBackend, PublicationCapabilities } from './publication-types.js';
 export declare function exactHttps(value: string, requirePath?: boolean): string;
+/** Validate a declared callback without changing its bytes. HTTP is restricted to V2 PAP account loopback.
+ * @param value - Exact configured callback URI.
+ * @param capabilities - V2 capabilities; omission preserves the HTTPS-only V1 rule.
+ * @returns The unchanged configured URI.
+ */
+export declare function publicationRedirectUri(value: string, capabilities?: PublicationCapabilities): string;
 export declare function createPublicationBackend(input: {
     origin: string;
     /** Credentials stay inside this Host function; outgoing redirects must not be followed. */
