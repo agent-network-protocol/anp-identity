@@ -170,12 +170,45 @@ impl RootKeyProvider for KeyringRootKeyProvider {
     }
 
     fn load_existing(&self) -> DidResult<RootKey> {
-        let value = Zeroizing::new(
-            self.entry()?
-                .get_password()
-                .map_err(|_| DidError::ProviderUnavailable)?,
-        );
-        Ok(RootKey::from_bytes(decode_root_key(value.as_bytes())?))
+        #[cfg(target_os = "linux")]
+        {
+            // keyring's generic lookup may unlock matching items. Availability checks must never do that.
+            use secret_service::{blocking::SecretService, EncryptionType};
+            use std::collections::HashMap;
+
+            let service = SecretService::connect(EncryptionType::Dh)
+                .map_err(|_| DidError::ProviderUnavailable)?;
+            let matches = service
+                .search_items(HashMap::from([
+                    ("service", self.service.as_str()),
+                    ("username", self.account.as_str()),
+                ]))
+                .map_err(|_| DidError::ProviderUnavailable)?;
+            if !matches.locked.is_empty() || matches.unlocked.len() != 1 {
+                return Err(DidError::ProviderUnavailable);
+            }
+            let item = &matches.unlocked[0];
+            if item
+                .is_locked()
+                .map_err(|_| DidError::ProviderUnavailable)?
+            {
+                return Err(DidError::ProviderUnavailable);
+            }
+            let value = Zeroizing::new(
+                item.get_secret()
+                    .map_err(|_| DidError::ProviderUnavailable)?,
+            );
+            return Ok(RootKey::from_bytes(decode_root_key(&value)?));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let value = Zeroizing::new(
+                self.entry()?
+                    .get_password()
+                    .map_err(|_| DidError::ProviderUnavailable)?,
+            );
+            Ok(RootKey::from_bytes(decode_root_key(value.as_bytes())?))
+        }
     }
 
     fn create_if_missing(&self, _guard: &StoreWriteGuard) -> DidResult<RootKey> {

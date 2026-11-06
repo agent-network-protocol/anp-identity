@@ -66,6 +66,7 @@ class ProviderLease {
       schemaCompatible: value.schema_compatible,
       identityCount: value.identity_count,
       health: value.health,
+      backendAvailable: value.backend_available,
     }
   }
 

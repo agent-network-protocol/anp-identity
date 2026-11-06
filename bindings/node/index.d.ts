@@ -40,6 +40,8 @@ export interface StoreInfo {
   schemaCompatible: boolean
   identityCount: number
   health: 'ready'
+  /** Current read-only availability of the Store's pinned key backend. */
+  backendAvailable: boolean
 }
 
 export interface RecoveryReport {

@@ -42,6 +42,7 @@ test('Host-only provider enforces leases and returns secrets only as ciphertext'
   })
   const created = await lease.create(identitySpec('provider'))
   assert.equal((await lease.info()).identityCount, 1)
+  assert.equal((await lease.info()).backendAvailable, true)
   assert.equal((await lease.recover()).identityCount, 1)
   assert.equal((await lease.list()).length, 1)
   assert.equal((await lease.publicIdentity(created.reference)).revision, 1)

@@ -929,6 +929,7 @@ fn build_candidate_document(
     };
     validate_method_document(&signed)?;
     validate_device_manifest(&signed).map_err(|_| DidError::InvalidExtension)?;
+    identity.runtime().assert_backend_available()?;
     Ok(CandidateChanges {
         document: signed,
         added_keys: request_signing_changes

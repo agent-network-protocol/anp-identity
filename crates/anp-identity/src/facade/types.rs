@@ -385,6 +385,8 @@ pub struct StoreInfo {
     pub schema_compatible: bool,
     pub identity_count: usize,
     pub health: StoreHealth,
+    /// Current read-only access to the bound key backend; structural health remains separate.
+    pub backend_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

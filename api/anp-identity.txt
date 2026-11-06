@@ -515,6 +515,7 @@ pub anp_identity::IdentityDescriptor::reference: anp_identity::IdentityRef
 pub anp_identity::IdentityDescriptor::state: anp_identity::PublicIdentityState
 pub struct anp_identity::IdentityManager
 impl anp_identity::IdentityManager
+pub fn anp_identity::IdentityManager::assert_backend_available(&self) -> anp_identity::IdentityResult<()>
 pub fn anp_identity::IdentityManager::create(&mut self, anp_identity::CreateIdentityRequest) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
 pub fn anp_identity::IdentityManager::delete(&mut self, &anp_identity::IdentityRef, anp_identity::DeleteIdentityRequest) -> anp_identity::IdentityResult<()>
 pub fn anp_identity::IdentityManager::get(&self, &anp_identity::IdentityRef) -> anp_identity::IdentityResult<anp_identity::ManagedIdentity>
@@ -568,6 +569,10 @@ impl anp_identity::InjectedStoreKey
 pub fn anp_identity::InjectedStoreKey::new(impl core::convert::Into<alloc::string::String>, [u8; 32]) -> Self
 pub struct anp_identity::ManagedIdentity
 impl anp_identity::ManagedIdentity
+pub fn anp_identity::ManagedIdentity::assert_backend_available(&self) -> anp_identity::IdentityResult<()>
+pub fn anp_identity::ManagedIdentity::public_identity(&self) -> anp_identity::IdentityResult<anp_identity::PublicIdentity>
+pub fn anp_identity::ManagedIdentity::reference(&self) -> anp_identity::IdentityRef
+impl anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::create_delegated_key(&self, anp_identity::CreateTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
 pub fn anp_identity::ManagedIdentity::create_dpop_key(&self, anp_identity::CreateTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
 pub fn anp_identity::ManagedIdentity::describe_temporary_key(&self, anp_identity::DescribeTemporaryKeyRequest) -> anp_identity::IdentityResult<anp_identity::TemporaryKey>
@@ -583,9 +588,6 @@ pub fn anp_identity::ManagedIdentity::sign_oauth_client_assertion(&self, anp_ide
 impl anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::prepare_document_change(&mut self, anp_identity::DocumentChangeRequest) -> anp_identity::IdentityResult<anp_identity::DocumentChangeSession>
 pub fn anp_identity::ManagedIdentity::resume_document_change(&mut self) -> anp_identity::IdentityResult<core::option::Option<anp_identity::DocumentChangeSession>>
-impl anp_identity::ManagedIdentity
-pub fn anp_identity::ManagedIdentity::public_identity(&self) -> anp_identity::IdentityResult<anp_identity::PublicIdentity>
-pub fn anp_identity::ManagedIdentity::reference(&self) -> anp_identity::IdentityRef
 impl anp_identity::ManagedIdentity
 pub fn anp_identity::ManagedIdentity::sign(&self, anp_identity::SignRequest) -> anp_identity::IdentityResult<anp_identity::Signature>
 pub fn anp_identity::ManagedIdentity::sign_origin_proof(&self, anp_identity::OriginProofRequest) -> anp_identity::IdentityResult<anp_identity::SignedOriginProof>
@@ -727,6 +729,7 @@ pub anp_identity::SignedOriginProof::content_digest: alloc::string::String
 pub anp_identity::SignedOriginProof::signature: alloc::string::String
 pub anp_identity::SignedOriginProof::signature_input: alloc::string::String
 pub struct anp_identity::StoreInfo
+pub anp_identity::StoreInfo::backend_available: bool
 pub anp_identity::StoreInfo::health: anp_identity::StoreHealth
 pub anp_identity::StoreInfo::identity_count: usize
 pub anp_identity::StoreInfo::schema_compatible: bool

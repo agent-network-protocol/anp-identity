@@ -137,6 +137,16 @@ and an injected 32-byte key. An injected key `Buffer` is consumed and
 overwritten, including validation-error paths. Pass a disposable buffer
 containing uniformly random bytes, not a password, and do not reuse it.
 
+`local_private_file` remains an explicit supported mode: Unix creates `root-key.b64u`
+with `0600` permissions and stores private-key records as authenticated ciphertext.
+No keyring service is required for that mode. `info().backendAvailable` is a required
+boolean distinct from structural `health: 'ready'`. For an OS-keyring Store, locked,
+missing or unreadable backend material blocks existing managers and Provider leases
+with `provider_unavailable`; `info()` remains available and reports `false`. Linux
+checks are read-only and never unlock, create a replacement key or fall back.
+Unlocking the same backend restores the existing Provider. Other configured key
+sources retain their prior opened-Store semantics.
+
 Environment-backed keys are unpadded base64url values read from the explicitly
 configured variable. Local private files protect against accidental disclosure,
 but copying both that file and the encrypted Store permits offline decryption.

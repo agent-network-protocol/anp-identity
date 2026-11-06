@@ -490,6 +490,15 @@ The Store records the chosen provider binding and a root-key fingerprint.
 Opening it with another provider or key fails closed. An injected or environment
 key must be uniformly random; do not pass a password.
 
+Local private files remain a fully supported explicit choice. On Unix, `root-key.b64u`
+is owner-only (`0600`); private-key records are separate ChaCha20-Poly1305 ciphertexts
+with HKDF-SHA256 record keys. OS keyring support is optional. For an opened keyring
+Store, private operations now recheck the bound backend before use and before
+returning a result; Linux checks never unlock the collection. `StoreInfo.backend_available`
+reports current access separately from structural `health: ready`. Unlocking the
+same backend restores use without rekeying. File, injected and environment-backed
+Stores keep their existing opened-Store behavior.
+
 Copying both a local root-key file and the encrypted Store permits offline
 decryption. Use a platform vault or keyring when the threat model requires the
 root key to be protected separately from application data.

@@ -176,7 +176,7 @@ impl JsIdentityManager {
 
     #[napi]
     pub async fn info(&self) -> Result<Value> {
-        self.with_manager(|manager| to_value(manager.info().map_err(map_error)?))
+        self.with_manager_unchecked(|manager| to_value(manager.info().map_err(map_error)?))
             .await
     }
 
@@ -266,6 +266,20 @@ impl JsIdentityManager {
     }
 
     async fn with_manager<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
+    {
+        self.with_manager_unchecked(move |manager| {
+            manager.assert_backend_available().map_err(map_error)?;
+            let result = operation(manager)?;
+            manager.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
+    }
+
+    async fn with_manager_unchecked<T, F>(&self, operation: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
@@ -448,7 +462,14 @@ impl JsManagedIdentity {
         F: FnOnce(&mut CoreManagedIdentity) -> Result<T> + Send + 'static,
     {
         let inner = Arc::clone(&self.inner);
-        run_blocking(move || operation(&mut inner.blocking_lock())).await
+        run_blocking(move || {
+            let mut identity = inner.blocking_lock();
+            identity.assert_backend_available().map_err(map_error)?;
+            let result = operation(&mut identity)?;
+            identity.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
     }
 }
 
@@ -666,10 +687,20 @@ impl JsProviderLease {
 
     #[napi]
     pub async fn info(&self) -> Result<Value> {
-        self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |manager| {
-            to_value(manager.info().map_err(map_error)?)
-        })
-        .await
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, anp_identity::host::capability::IDENTITY_READ)
+                .map_err(map_authorization_error)
+        })?;
+        let result = self
+            .with_manager_unchecked(|manager| to_value(manager.info().map_err(map_error)?))
+            .await?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, anp_identity::host::capability::IDENTITY_READ)
+                .map_err(map_authorization_error)
+        })?;
+        Ok(result)
     }
 
     #[napi]
@@ -2203,6 +2234,20 @@ impl JsProviderLease {
     }
 
     async fn with_manager<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
+    {
+        self.with_manager_unchecked(move |manager| {
+            manager.assert_backend_available().map_err(map_error)?;
+            let result = operation(manager)?;
+            manager.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
+    }
+
+    async fn with_manager_unchecked<T, F>(&self, operation: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
