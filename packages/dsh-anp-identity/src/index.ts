@@ -280,7 +280,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   async health(): Promise<AnpIdentityHealth> {
     const slot = this.providerSlot
-    if (slot === undefined || slot.disposed) {
+    if (slot === undefined || slot.disposed || this.hostContext.fiber.state > 2) {
       return {
         status: 'unavailable',
         protocol: ANP_IDENTITY_SERVICE_PROTOCOL,
@@ -288,7 +288,20 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       }
     }
     try {
-      await slot.ready
+      const assertCurrent = () => {
+        this.assertSlot(slot)
+        if (this.hostContext.fiber.state > 2) throw pluginError('provider_disposed')
+      }
+      const provider = await slot.ready
+      assertCurrent()
+      const native = provider.acquireLease({ consumer: '@agent-network-protocol/dsh-anp-identity',
+        capabilities: ['IDENTITY_READ'], ttlSeconds: 15 })
+      try {
+        const info = await native.info()
+        assertCurrent()
+        // Legacy general health remains compatible; protocol leases require the availability handshake.
+        if (info.backendAvailable === false || !info.schemaCompatible || info.health !== 'ready') throw pluginError('provider_unavailable')
+      } finally { native.dispose() }
     } catch {
       return {
         status: 'unavailable',

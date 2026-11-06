@@ -29,7 +29,8 @@ function fixture(account = true) {
     key: { kty: 'EC', crv: 'P-256', x: 'A'.repeat(43), y: 'B'.repeat(43), kid: reference.did + '#oauth', alg: 'ES256', use: 'sig' },
     metadata: '{}', jwks: '{}', metadataSha256: 'a'.repeat(64) }
   const publications = { requirePublished: vi.fn(async () => record) } as unknown as PublicationCoordinator
-  const native = { publicIdentity: vi.fn(async () => ({ reference, document: { id: reference.did } })) } as unknown as ProviderLease
+  const native = { info: vi.fn(async () => ({ storeId: reference.storeId, schemaCompatible: true, identityCount: 1,
+    health: 'ready', backendAvailable: true })), publicIdentity: vi.fn(async () => ({ reference, document: { id: reference.did } })) } as unknown as ProviderLease
   const host = { resolveCaller: (caller: Context) => {
     if (caller !== context && caller !== other) throw new Error('consumer_forbidden')
     return { consumer, displayName: consumer }

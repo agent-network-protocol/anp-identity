@@ -16,15 +16,19 @@ function fixture(profile: ValidatedTargetEvidence['profile'] = 'mcp_machine', pu
     profiles: [profile], issuers: [evidence.issuer], resources: [evidence.resource], publicTargets, scopes: ['agent.self.read'], expiresAt: Date.now() + 60000 }
   let active = true
   let generation = Symbol('provider')
+  let backendAvailable = true
   const sign = vi.fn(async () => 'signed-assertion')
-  const native = { signOAuthClientAssertion: sign } as unknown as ProviderLease
+  const info = vi.fn(async () => ({ storeId: identity.storeId, schemaCompatible: true, identityCount: 1,
+    health: 'ready' as const, backendAvailable }))
+  const native = { info, signOAuthClientAssertion: sign } as unknown as ProviderLease
   const host = { resolveCaller: (ctx: Context) => { if (ctx !== context || !active) throw new Error('consumer_forbidden'); return { consumer, displayName: consumer } },
     assertCaller: () => { if (!active) throw new Error('consumer_forbidden') }, providerGeneration: () => generation,
     withNative: async <T>(operation: (native: ProviderLease) => Promise<T>) => operation(native) }
   const publications = { requirePublished: async () => ({ clientId: 'https://identity.example/client.json', version: 4, key: publicJwk, config: { capabilities: { mcpMachine: true, papSession: true, papAccount: true }, redirectUris: [] } }) } as unknown as PublicationCoordinator
   const authority = new ProtocolIdentityAuthority([policy], host, publications)
   const client = authority.bind(context)
-  return { client, context, authority, policy, sign, native, deactivate: () => { active = false }, reload: () => { generation = Symbol('reload') } }
+  return { client, context, authority, policy, sign, info, native, setAvailable: (value: boolean) => { backendAvailable = value },
+    deactivate: () => { active = false }, reload: () => { generation = Symbol('reload') } }
 }
 
 describe('protocol target policies', () => {
@@ -47,6 +51,46 @@ describe('protocol target policies', () => {
     const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
     f.sign.mockImplementation(async () => { f.deactivate(); return 'must-not-escape' })
     await expect(lease.signOAuthClientAssertion(lease.targetRef)).rejects.toThrow()
+  })
+  it('checks current native backend availability for an old lease and permits recovery without changing its grant', async () => {
+    const f = fixture()
+    const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
+    await lease.getOAuthClientIdentity()
+    f.setAvailable(false)
+    await expect(lease.assertActive()).rejects.toMatchObject({ code: 'provider_unavailable' })
+    await expect(lease.signOAuthClientAssertion(lease.targetRef)).rejects.toMatchObject({ code: 'provider_unavailable' })
+    expect(f.sign).not.toHaveBeenCalled()
+    f.setAvailable(true)
+    await lease.assertActive()
+    await expect(lease.signOAuthClientAssertion(lease.targetRef)).resolves.toBe('signed-assertion')
+  })
+  it('withholds an assertion when the backend becomes unavailable during signing', async () => {
+    const f = fixture()
+    const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
+    f.sign.mockImplementation(async () => { f.setAvailable(false); return 'must-not-escape' })
+    await expect(lease.signOAuthClientAssertion(lease.targetRef)).rejects.toMatchObject({ code: 'provider_unavailable' })
+  })
+  it.each(['caller', 'provider', 'expiry'] as const)('rechecks %s authorization after the native info await', async changed => {
+    const f = fixture()
+    const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
+    f.info.mockImplementationOnce(async () => {
+      if (changed === 'caller') f.deactivate()
+      else if (changed === 'provider') f.reload()
+      else vi.spyOn(Date, 'now').mockReturnValue(f.policy.expiresAt + 1)
+      return { storeId: identity.storeId, schemaCompatible: true, identityCount: 1, health: 'ready', backendAvailable: true }
+    })
+    try { await expect(lease.assertActive()).rejects.toThrow() }
+    finally { vi.restoreAllMocks() }
+    expect(f.sign).not.toHaveBeenCalled()
+  })
+  it('rejects a provider without the native backend availability handshake', async () => {
+    const f = fixture()
+    const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
+    const unsupported = await f.info()
+    Reflect.deleteProperty(unsupported, 'backendAvailable')
+    f.info.mockResolvedValueOnce(unsupported)
+    await expect(lease.assertActive()).rejects.toMatchObject({ code: 'provider_incompatible' })
+    expect(f.sign).not.toHaveBeenCalled()
   })
   it('accepts bounded unfamiliar public targets only through explicit preauthorization', async () => {
     const f = fixture('mcp_machine', true)

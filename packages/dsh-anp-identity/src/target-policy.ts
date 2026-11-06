@@ -77,16 +77,29 @@ export class ProtocolIdentityAuthority {
       const targetRef = Object.freeze({})
       const scopes = new WeakMap<object, Scope>()
       const keys = new WeakMap<object, { scopeRef: object; native: NativeKey }>()
-      const check = async () => {
+      const checkCurrent = () => {
         checkCaller()
         if (disposed || Date.now() >= policy.expiresAt || Date.now() >= evidence.expiresAt) throw pluginError('capability_forbidden')
+      }
+      const check = async () => {
+        checkCurrent()
         const record = await this.publications.requirePublished(input.identityRef)
-        checkCaller()
+        checkCurrent()
         if (publicationVersion !== undefined && (record.version !== publicationVersion || record.key.kid !== publicationKid)) throw pluginError('capability_forbidden')
         if (record.key.alg !== 'ES256' || !record.config.capabilities
           || evidence.profile === 'mcp_machine' && !record.config.capabilities.mcpMachine
           || evidence.profile === 'pap_session' && !record.config.capabilities.papSession
           || evidence.profile === 'pap_account' && !record.config.capabilities.papAccount) throw pluginError('provider_incompatible')
+        // Keep the live custody observation after metadata awaits; cached OAuth tokens still require it.
+        await this.host.withNative(async native => {
+          checkCurrent()
+          const info = await native.info()
+          checkCurrent()
+          if (typeof info.backendAvailable !== 'boolean') throw pluginError('provider_incompatible')
+          if (!info.backendAvailable || info.storeId !== input.identityRef.storeId || !info.schemaCompatible
+            || info.health !== 'ready') throw pluginError('provider_unavailable')
+        })
+        checkCurrent()
         return record
       }
       const scope = (ref: object): Scope => {
