@@ -72,6 +72,8 @@ pnpm add @agent-network-protocol/dsh-anp-identity
 
 keyring 的 `rootKeyProviderId` 格式为 `service/account`；env 模式填写环境变量名；injected 模式填写 key id，并且只能通过可信 Host 代码以 Buffer 注入，不能写入 Loader YAML。`local-file` 必须显式启用；如果 Store 与 Root Key 文件被一起复制，攻击者可以离线解密 Store。
 
+`local-file` 与 OS keyring 都是已实现的本地方式。采用文件保管的 Host 可选择 `rootKeyProvider: local-file`（bundle 对应 `DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER=local-file`），不要求使用 OS keyring。管理 broker master 直接复用 DSH 既有原子 credential record，broker 与协议状态保持加密本地文件。
+
 ## 其他 DSH 插件如何使用
 
 普通插件由 Host 加入 `userConsumers`，通过 `bindIdentityClient(ctx)` 提交请求，等待创建确认，再单独申请使用授权。创建不会发布 DID 文档、注册 Handle 或自动授予使用权。支持单次授权和持续到撤销的永久授权；当前默认授予全部普通使用权限，暂不支持逐项选择。

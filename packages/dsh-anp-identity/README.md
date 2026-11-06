@@ -98,6 +98,8 @@ for the publication capability boundary.
 
 `rootKeyProviderId` is `service/account` for keyring, the environment variable name for `env`, and the key id for programmatic `injected` setup. `local-file` must be selected explicitly; copying both the Store and its local Root Key file permits offline decryption.
 
+Both `local-file` and OS keyring are existing local implementations. A file-based Host can select `rootKeyProvider: local-file` (or `DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER=local-file` for the bundle); OS keyring is optional. Management-broker keys reuse DSH's existing atomic credential records, with encrypted local files for broker and protocol state.
+
 ## Use it from another DSH plugin
 
 Ordinary plugins must be configured in `userConsumers` by the Host. They use the loader-bound client below, not a self-declared consumer name or a legacy lease:
