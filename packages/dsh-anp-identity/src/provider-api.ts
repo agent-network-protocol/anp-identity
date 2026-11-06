@@ -101,7 +101,8 @@ export interface HostProviderLease {
   readonly consumer: string
   readonly capabilities: readonly ProviderCapability[]
   dispose(): void
-  info(): Promise<StoreInfo>
+  /** Version-1 wire fields; backend availability is checked before this projection. */
+  info(): Promise<Pick<StoreInfo, 'storeId' | 'schemaCompatible' | 'identityCount' | 'health'>>
   recover(): Promise<RecoveryReport>
   list(): Promise<IdentityDescriptor[]>
   publicIdentity(reference: IdentityReference): Promise<PublicIdentity>

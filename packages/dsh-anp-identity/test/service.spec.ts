@@ -26,6 +26,31 @@ const ALL_CLIENT_CAPABILITIES = [
 ] as const
 
 describe('DSH ANP Identity service', () => {
+  it('keeps legacy Provider info on its exact four-field version-1 wire format', async () => {
+    await using fixture = await healthFixture(['legacy-wire'])
+    const lease = fixture.ctx.anpIdentity.acquireProvider({ consumer: 'legacy-wire', capabilities: ['IDENTITY_READ'] })
+    try {
+      for (const available of [true, undefined]) {
+        fixture.setAvailable(available)
+        const info = await lease.info()
+        expect(Object.keys(info).sort()).toEqual(['health', 'identityCount', 'schemaCompatible', 'storeId'])
+        expect(info.health).toBe('ready')
+        expect(Object.hasOwn(info, 'backendAvailable')).toBe(false)
+      }
+    } finally { lease.dispose() }
+  })
+
+  it('rejects unavailable native backend before returning legacy Provider info and resumes after recovery', async () => {
+    await using fixture = await healthFixture(['legacy-wire'])
+    const lease = fixture.ctx.anpIdentity.acquireProvider({ consumer: 'legacy-wire', capabilities: ['IDENTITY_READ'] })
+    try {
+      fixture.setAvailable(false)
+      await expect(lease.info()).rejects.toMatchObject({ code: 'provider_unavailable' })
+      fixture.setAvailable(true)
+      await expect(lease.info()).resolves.toMatchObject({ health: 'ready' })
+    } finally { lease.dispose() }
+  })
+
   it('reports live native backend unavailability while preserving catalog health and legacy info compatibility', async () => {
     await using fixture = await healthFixture()
     await expect(fixture.ctx.anpIdentity.health()).resolves.toMatchObject({ status: 'ready', catalog: 'ready' })
@@ -528,9 +553,9 @@ describe('DSH ANP Identity service', () => {
 })
 
 /** Real native Store and Context; only the readonly availability response/await is controlled. */
-async function healthFixture() {
+async function healthFixture(consumers: string[] = []) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-health-'))
-  const ctx = await createContext(root, [])
+  const ctx = await createContext(root, consumers)
   const registration = await openNativeProvider({ stateRoot: root, rootKeyProvider: 'injected',
     rootKeyProviderId: 'dsh-health-test', injectedRootKey: Buffer.alloc(32, 78) })
   let available: boolean | undefined = true

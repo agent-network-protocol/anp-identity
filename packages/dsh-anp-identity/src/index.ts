@@ -1564,7 +1564,12 @@ class HostLease implements HostProviderLease, DisposableLease {
     this.service.removeLease(this.slot, this)
   }
 
-  info = () => this.call('IDENTITY_READ', () => this.native.info())
+  info = () => this.call('IDENTITY_READ', async () => {
+    const info = await this.native.info()
+    if (info.backendAvailable === false) throw pluginError('provider_unavailable')
+    return { storeId: info.storeId, schemaCompatible: info.schemaCompatible,
+      identityCount: info.identityCount, health: info.health }
+  })
   recover = () => this.call('IDENTITY_READ', () => this.native.recover())
   list = () => this.call('IDENTITY_READ', () => this.native.list())
   publicIdentity = (reference: IdentityReference) =>
