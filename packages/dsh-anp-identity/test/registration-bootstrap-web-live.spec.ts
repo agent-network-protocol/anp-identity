@@ -19,7 +19,7 @@ async function sources(): Promise<Record<string, string>> {
 it.skipIf(process.platform !== 'linux' || !source || !python)('Web fresh approval, real UUID proof, factor, publication and same-store restoration remain rootless', async () => {
   const before = await sources()
   const nativeSha256 = digest(await readFile(new URL('../../../bindings/node/anp-identity.linux-x64-gnu.node', import.meta.url)))
-  expect(nativeSha256).toBe('e2c4b86a0b3622aaefa70b44d3dc31cdab579b1237a4418d349bd294c52663ef')
+  expect(nativeSha256).toBe('ffb6c3a6ee7bcd5592184db57c865d0a90748a6379636ca203a5ad42012718b9')
   const fixture = await createProductHostFixture({ source: source!, python: python!, profile: 'web', manual: true })
   let operationId: string | undefined
   let publicSha256: { metadata: string; jwks: string } | undefined
