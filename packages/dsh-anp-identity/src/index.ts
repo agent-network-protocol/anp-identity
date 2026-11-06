@@ -963,7 +963,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       assertActive()
       const value = await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(async native => {
         assertActive(); const output = await operation(native); assertActive(); return output
-      })
+      }, true)
       assertActive(); return value
     } })
     assertActive()
@@ -1226,11 +1226,11 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     } finally { native.dispose() }
   }
 
-  private async withPublicationNative<T>(operation: (native: NativeProvider.ProviderLease) => Promise<T>): Promise<T> {
+  private async withPublicationNative<T>(operation: (native: NativeProvider.ProviderLease) => Promise<T>, registrationSigning = false): Promise<T> {
     const slot = this.requireSlot()
     const provider = await this.awaitProvider(slot)
     const native = provider.acquireLease({ consumer: '@agent-network-protocol/dsh-anp-identity',
-      capabilities: ['IDENTITY_READ', 'IDENTITY_DOCUMENT_UPDATE'], ttlSeconds: 300 })
+      capabilities: ['IDENTITY_READ', 'IDENTITY_DOCUMENT_UPDATE', ...(registrationSigning ? ['IDENTITY_SIGN' as const] : [])], ttlSeconds: 300 })
     try {
       this.assertSlot(slot)
       if (typeof native.oauthPublicJwk !== 'function') throw pluginError('provider_incompatible')

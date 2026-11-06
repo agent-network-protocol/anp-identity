@@ -5,6 +5,7 @@ import type { ProviderLease, ProviderDocumentChangeSession } from '@agent-networ
 import type { PublicationBackend, PreparedClientMaterials, PublicationIntentV2 } from './publication-types.js'
 import { exactHttps, parsePublicJson } from './publication-http.js'
 import { AnpIdentityPluginError, pluginError } from './errors.js'
+import { prepareInitialRegistrationProof } from './initial-registration-proof.js'
 import { PapCallbackOperationSchema, PapCallbackRegistrationResultSchema, PapCallbackClaimResultSchema,
   PapCallbackManagementError, papCallbackManagementError } from './pap-callback.js'
 import type { PapCallbackManagementOperations, PapCallbackRegisterOperation, PapCallbackClaimOperation,
@@ -263,6 +264,7 @@ export async function registerLocalIdentity(input: {
   if (new URL(origin).origin !== origin || !input.reference.did.startsWith('did:wba:') && !input.reference.did.startsWith('did:web:')) throw pluginError('provider_incompatible')
   const identity = await input.withNative(native => native.publicIdentity(input.reference))
   input.assertActive?.()
+  let registrationDocument = identity.document
   const document = identity.document as Record<string, unknown>
   // The live Registry below is authoritative; this list only identifies the locally held candidate key.
   const candidates = identity.activeKeys.filter(key => key.purposes.includes('device_assertion'))
@@ -270,6 +272,7 @@ export async function registerLocalIdentity(input: {
   if (candidates.length !== 1 || !web && !document.proof) throw pluginError('provider_incompatible')
   const registration = structuredClone(input.registration)
   let bootstrap: unknown
+  let initialProof: Awaited<ReturnType<typeof prepareInitialRegistrationProof>> | undefined
   if (web) {
     if (!registration.registration_operation_id || !input.managementAudience) throw pluginError('invalid_request')
     const projection = webRegistrationProjection({ document: identity.document, registration, audience: input.managementAudience, handleDomain: input.handleDomain ?? new URL(origin).hostname })
@@ -278,7 +281,14 @@ export async function registerLocalIdentity(input: {
       if (typeof signer !== 'function') throw pluginError('provider_incompatible')
       return signer.call(native, input.reference, { key: { kid: candidates[0]!.kid }, business_projection: projection })
     })
-  } else if (registration.registration_operation_id) throw pluginError('invalid_request')
+  } else {
+    if (registration.registration_operation_id) throw pluginError('invalid_request')
+    if (await input.credentials.get(input.reference, origin)) throw pluginError('catalog_conflict')
+    input.assertActive?.()
+    initialProof = await input.withNative(native => prepareInitialRegistrationProof(native, identity, origin))
+    registrationDocument = initialProof.document
+    input.assertActive?.()
+  }
   const transport = input.fetch ?? fetch
   const send: typeof fetch = async (request, init) => {
     input.assertActive?.()
@@ -286,9 +296,12 @@ export async function registerLocalIdentity(input: {
     try { input.assertActive?.(); return response }
     catch (error) { await response.body?.cancel(); throw error }
   }
-  const response = await send(new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+  const request = new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'register',
-      params: { ...registration, did_document: identity.document, is_agent: true, ...(bootstrap ? { bootstrap_proof: bootstrap } : {}) } }) }))
+      params: { ...registration, did_document: registrationDocument, is_agent: true, ...(bootstrap ? { bootstrap_proof: bootstrap } : {}) } }) })
+  if (initialProof) await input.withNative(native => initialProof!.assertCurrent(native))
+  input.assertActive?.()
+  const response = await send(request)
   if (response.status !== 200 || response.redirected) { await response.body?.cancel(); throw pluginError('provider_unavailable') }
   const bytes = await response.text()
   input.assertActive?.()
@@ -310,7 +323,7 @@ export async function registerLocalIdentity(input: {
     || device.role !== 'admin' || !device.management_ready) throw pluginError('provider_unavailable')
   await input.credentials.set(input.reference, origin, { accessToken: token, deviceId: device.device_id, signingKeyId: device.signing_key_id, ...(web ? { audience: input.managementAudience! } : {}) })
   input.assertActive?.()
-  await input.withNative(native => native.adoptVerifiedDocument(input.reference, { document: identity.document,
+  await input.withNative(native => native.adoptVerifiedDocument(input.reference, { document: registrationDocument,
     evidence: { documentVersion: registry.checkpoint.document_version, registryVersion: registry.checkpoint.registry_version, documentDigest: registry.checkpoint.document_hash } }))
   input.assertActive?.()
   return { did: input.reference.did, deviceId: device.device_id, state: 'registered' }

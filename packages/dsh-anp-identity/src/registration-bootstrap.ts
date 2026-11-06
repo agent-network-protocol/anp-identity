@@ -298,9 +298,14 @@ export function startRegistrationBootstrap(options: {
         }
         if (reference.did.startsWith('did:web:')) state.webOperationId ??= randomUUID()
         state.registerStarted = true; await save(state); update('registering')
+        let registrationActive = true
+        const assertInitialRegistration = () => {
+          assertActive()
+          if (!registrationActive || !state.registerStarted || state.registered || view.phase !== 'registering') throw new Error('bootstrap_registration_unavailable')
+        }
         try {
           await options.service.registerLocalIdentity(options.context, { reference, origin: config.origin, credentials: broker!, fetch: send,
-            assertActive,
+            assertActive: assertInitialRegistration,
             handleDomain: domain, managementAudience: config.managementAudience,
             registration: { handle, email: config.email, ...(state.webOperationId ? { registration_operation_id: state.webOperationId } : {}) } })
           state.registered = true; await save(state)
@@ -309,7 +314,7 @@ export function startRegistrationBootstrap(options: {
             state.registerStarted = false; await save(state); update('blocked', 'client_upgrade_required'); return
           }
           update('registration_uncertain', error instanceof BootstrapUpgradeRequired ? 'client_upgrade_required' : undefined); return
-        }
+        } finally { registrationActive = false }
       }
       assertActive(); update('publishing')
       if (!backend) {

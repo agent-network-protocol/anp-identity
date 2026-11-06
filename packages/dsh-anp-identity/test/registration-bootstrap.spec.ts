@@ -115,6 +115,14 @@ it('retains an uncertain registration outcome without retrying it after restart'
   expect(f.register).toHaveBeenCalledOnce()
 })
 
+it('closes the initial journal permission when its single registration attempt finishes', async () => {
+  const f = await fixture(); f.approve(); f.verify()
+  const controller = f.start()
+  await vi.waitFor(() => expect(controller.status().phase).toBe('published'))
+  const permission = f.register.mock.calls[0]![1].assertActive!
+  expect(() => permission()).toThrow('bootstrap_registration_unavailable')
+})
+
 it('does not treat product admission as verification and exposes only the stable upgrade reason', async () => {
   const f = await fixture({ upgrade: true }); f.approve()
   const controller = f.start()
