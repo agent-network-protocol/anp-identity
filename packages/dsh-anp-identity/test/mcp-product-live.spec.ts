@@ -110,7 +110,7 @@ it.skipIf(process.platform !== 'linux' || !bSource || !python || !harnessSource 
         if (request.url === new URL(metadata.client_id).pathname) { counts.publicMaterialReads++; response.end(material.metadata) }
         else if (request.url === new URL(metadata.jwks_uri).pathname) { counts.publicMaterialReads++; response.end(material.jwks) }
         else response.writeHead(404).end()
-      }, 'localhost')
+      }, 'identity.example')
       const as = await tls.start((request, response) => {
         if (request.method === 'POST' && request.url === '/oauth/token') counts.tokenPosts++
         if (request.method === 'POST' && request.url === '/oauth/revoke') counts.revokePosts++

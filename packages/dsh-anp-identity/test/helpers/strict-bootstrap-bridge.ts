@@ -9,7 +9,7 @@ interface Reply { status: number; headers: Record<string, string>; body: string 
 
 export async function strictBootstrapBridge(source: string, python: string, options: { publicationOrigin?: string } = {}) {
   const origin = options.publicationOrigin ?? 'https://identity.example'
-  const localhost = /^https:\/\/localhost:([1-9][0-9]{0,4})$/u.exec(origin)
+  const localhost = /^https:\/\/(?:localhost|identity\.example):([1-9][0-9]{0,4})$/u.exec(origin)
   if (origin !== 'https://identity.example' && origin !== 'https://agent.test:29443'
     && (!localhost || Number(localhost[1]) > 65535)) throw new Error('strict_bootstrap_publication_origin_not_allowed')
   const child = spawn(python, [join(source, 'tests/app/cimd/management_bridge.py')], {
@@ -20,7 +20,7 @@ export async function strictBootstrapBridge(source: string, python: string, opti
   const facts: Array<{ method: string; path: string; rpc?: string; clientVersion: string | null;
     registrationOperationId?: string; webBootstrapProofPresent?: boolean }> = []
   const internalCredentials = new Set<string>()
-  const observations = { deviceCredentialReceivedInternally: false, deviceAuthorizationRequests: 0 }
+  const observations = { deviceCredentialReceivedInternally: false, deviceAuthorizationRequests: 0, signedDeviceRequests: 0 }
   const resources: Array<{ kind: 'mysql' | 'redis'; pid: number; root: string }> = []
   const cleanup = { complete: false, childExited: false, exitCode: null as number | null, resources }
   let stopped = false
@@ -113,6 +113,8 @@ export async function strictBootstrapBridge(source: string, python: string, opti
       const reply = await call({ action: 'request', method: request.method, url: request.url, headers: Object.fromEntries(request.headers), body }) as Reply
       const authorization = request.headers.get('authorization')
       if (authorization?.startsWith('Bearer ') && internalCredentials.has(authorization.slice(7))) observations.deviceAuthorizationRequests++
+      if (!authorization && request.headers.has('signature-input') && request.headers.has('signature')
+        && (rpc && rpc !== 'register' || new URL(request.url).pathname.includes('/agent-clients/device/'))) observations.signedDeviceRequests++
       if (rpc === 'register') {
         const envelope = JSON.parse(reply.body) as { result?: { access_token?: unknown } }
         if (typeof envelope.result?.access_token === 'string') {
