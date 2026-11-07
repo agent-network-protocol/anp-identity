@@ -33,6 +33,13 @@ purpose-scoped signing, document changes and Host enrollment. Web Host status ha
 `rootKeyFingerprint: null`; Root Import/Transfer remain WBA-only. The public
 types are imported from the native package, without a second method model here.
 
+User-approved protocol creation (`parameters.usage: 'protocol'`) defaults to the
+full Direct/Group messaging Manifest, including E2EE, for both E1 and Web.
+The existing device-signing and agreement keys support later messaging plugin
+integration. Creating an identity does not connect a messaging plugin or grant it
+access; existing identity documents are unchanged. See [PUBLICATION.md](./PUBLICATION.md)
+for the exact profiles and registration server requirements.
+
 ## What it does not provide
 
 - It is not a DID registry, resolver, publication server, backup system, or wallet UI.

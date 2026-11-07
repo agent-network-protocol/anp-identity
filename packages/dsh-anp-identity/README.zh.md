@@ -37,6 +37,8 @@ ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 
 
 本轮源码候选还提供显式启用的 fresh 协议身份注册：`./protocol-bootstrap` 发起真实创建审批，现有 manager 的非秘密 `registrationBootstrap` 配置继续 User Service 邮箱/Turnstile 确认、Registry 验证及加密 Host 凭据保管。它要求独立 `dsh-identity/1106` 产品准入和匹配的 native API v2 候选；registry 版本号相同不代表已含这些方法。[发布与 fresh 设置](PUBLICATION.md#fresh-host-registration-bootstrap)说明分两阶段配置真实 Host；“已发布”不自动表示 MCP/PAP 已获使用许可。
 
+协议身份创建（`parameters.usage: 'protocol'`）默认声明完整的私聊、群聊及端到端加密协议，E1 和 Web 都保留供后续消息插件使用的设备签名与加密协商密钥。创建身份不会自动连接消息插件或向它授权，也不会修改既有身份的文档。注册服务需要接受完整协议清单；显式开启 identity-only 模式的服务会拒绝该清单。具体协议列表见 [PUBLICATION.md](./PUBLICATION.md)。
+
 ## 安装与配置
 
 ```bash

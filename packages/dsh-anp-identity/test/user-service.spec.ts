@@ -14,6 +14,38 @@ const ORIGIN = 'https://api.example.com'
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('ordinary plugin authorization with a real native Store', () => {
+  it.each(['e1', 'web'] as const)('creates a %s protocol identity with messaging profiles and no automatic consumer access', async profile => {
+    await using fixture = await userFixture()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
+    const input = createInput('messaging-' + profile)
+    const request = await fixture.first.requestCreateIdentity({ ...input,
+      parameters: { ...input.parameters, profile, usage: 'protocol' } })
+    const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version,
+      decision: 'approve' }) as CreateAuthorizationRequest
+    expect(approved.executionStatus).toBe('succeeded')
+    const reference = approved.result!.reference
+    const document = await manager.publicDocument(reference)
+    expect(document).toMatchObject({ deviceManifest: { devices: [{
+      signing_key_id: reference.did + '#device', e2ee_key_id: reference.did + '#agreement', profiles: [
+        'anp.core.binding.v1', 'anp.identity.discovery.v1', 'anp.direct.base.v1',
+        'anp.direct.e2ee.v2', 'anp.group.base.v2', 'anp.group.e2ee.v2',
+      ],
+    }] } })
+    const native = fixture.host()
+    try {
+      const identity = await native.publicIdentity(reference)
+      expect(identity.activeKeys.find(key => key.kid === reference.did + '#device')?.purposes).toContain('device_assertion')
+      expect(identity.activeKeys.find(key => key.kid === reference.did + '#agreement')?.algorithm).toBe('x25519')
+      expect((await native.hostStatus(reference)).rootCapability).toBe(profile === 'e1' ? 'active' : 'absent')
+    } finally { native.dispose() }
+    expect(await manager.grants(reference)).toEqual([])
+    expect((await fixture.authorizationState()).grants).toEqual([])
+    await fixture.restart()
+    const reopened = fixture.managerService.acquireManagement(fixture.managerContext)
+    expect(await reopened.publicDocument(reference)).toEqual(document)
+    expect(await reopened.grants(reference)).toEqual([])
+  })
+
   it('excludes Host identities from ordinary requests and decisions while allowing approved cross-plugin use', async () => {
     await using fixture = await userFixture()
     const host = fixture.hostService.acquireProvider({ consumer: 'host-fixture', capabilities: ['IDENTITY_READ', 'IDENTITY_CREATE'] })

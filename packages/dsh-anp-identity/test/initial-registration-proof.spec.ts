@@ -28,7 +28,8 @@ async function fixture() {
   const identity = await native.create({ profile: 'e1', domain: 'identity.example', pathSegments: ['user', randomUUID()],
     managedKeys: [{ fragment: 'root', role: 'root_control' }, { fragment: 'device', role: 'device_signing' }, { fragment: 'agreement', role: 'e2ee_agreement' }],
     extensions: [{ type: 'device_manifest', value: { devices: [{ deviceId: 'dsh-proof-device', signingKeyId: '#device', e2eeKeyId: '#agreement',
-      profiles: ['anp.core.binding.v1', 'anp.identity.discovery.v1'] }] } }] })
+      profiles: ['anp.core.binding.v1', 'anp.identity.discovery.v1', 'anp.direct.base.v1',
+        'anp.direct.e2ee.v2', 'anp.group.base.v2', 'anp.group.e2ee.v2'] }] } }] })
   const reference = identity.reference
   const credentials: ManagementCredentialBroker = { async get() { return undefined }, async set() {}, async reserveOperation(_ref, _origin, _id, body) { return body } }
   let sent: JsonValue | undefined, sends = 0
