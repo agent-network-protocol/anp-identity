@@ -21,11 +21,12 @@ interface FixtureConsumer {
 
 /** Publish one real native ES256 identity for independently installed C protocol consumers.
  * @param options - Primary consumer and optional additional consumers, each with its own bounded policy.
- * @returns The unchanged primary client/context fields, getConsumer for installed peers, and shared Host teardown.
+ * @returns Primary client/context, installed peers, test-only manager review, and shared Host teardown.
  */
 export async function createNativeProtocolFixture(options: {
   redirectUris?: string[]; publicationOrigin?: string; publicationCapabilities?: PublicationCapabilities; consumer?: string; profiles?: ProtocolUsePolicy['profiles']; scopes?: string[]; issuers?: string[]; resources?: string[]
   additionalConsumers?: FixtureConsumer[]
+  httpAllowedOrigins?: Record<string, string[]>
 } = {}) {
   const consumer = options.consumer ?? '@fixture/pap-consumer'
   const consumers = [{ ...options, consumer, policyRef: 'fixture-policy' }, ...(options.additionalConsumers ?? []).map((additional, index) => ({
@@ -49,7 +50,7 @@ export async function createNativeProtocolFixture(options: {
     failureContext = ctx
     const entries: Array<{ options: { name: string }; disabled: boolean; fiber: Context['fiber'] }> = []
     ctx.provide('loader', { *entries() { yield* entries } })
-    await ctx.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer),
+    await ctx.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer), httpAllowedOrigins: options.httpAllowedOrigins,
       protocolPolicies: consumers.map(item => ({ id: item.policyRef, version: 1, consumer: item.consumer, owner: '@agent-network-protocol/dsh-anp-identity', identity: identity.reference,
         profiles: item.profiles ?? ['pap_session', 'pap_account', 'mcp_machine'], issuers: item.issuers ?? ['https://company.example'],
         resources: item.resources ?? ['https://company.example/api'], publicTargets: false, scopes: item.scopes ?? ['agent.self.read', 'pap.read'], expiresAt: Date.now() + 3600000 })) })
@@ -102,6 +103,7 @@ export async function createNativeProtocolFixture(options: {
       getConsumer(name: string) { const installed = installedConsumers.get(name); if (!installed) throw new Error('fixture_unknown_consumer'); return installed },
       async publicDocument() { const read = provider.acquireLease({ consumer: 'fixture-public-read', capabilities: ['IDENTITY_READ'], ttlSeconds: 60 }); try { return (await read.publicIdentity(identity.reference)).document } finally { read.dispose() } },
       root, client, reference: identity.reference, policyRef: 'fixture-policy', provider, context: consumerContext,
+      management: managerService.acquireManagement(managerContext),
       async dispose() { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) } }
   } catch (error) {
     const errors: unknown[] = [error]
