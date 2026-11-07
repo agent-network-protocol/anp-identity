@@ -515,3 +515,22 @@ describe("Identity management UI against Host-shaped Remote", () => {
     },
   );
 });
+
+it('submits an explicit SMS code only to the manager and clears the password input', async () => {
+  const f = fixture();
+  const submit = vi.fn(async () => ({ ok: true as const, value: null }));
+  Object.assign(f.remote, { submitRegistrationOtp: submit });
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ ok: true, value: [{
+    id: 'phone', requestId: 'create-phone', phase: 'awaiting_phone_verification',
+  }] });
+  f.render(); await act(() => f.controller.refresh());
+  const input = screen.getByLabelText('短信验证码') as HTMLInputElement;
+  expect(input.type).toBe('password');
+  expect((screen.getByRole('button', { name: '验证并注册' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(input, { target: { value: '314159' } });
+  fireEvent.click(screen.getByRole('button', { name: '验证并注册' }));
+  await waitFor(() => expect(submit).toHaveBeenCalledWith({ code: '314159' }));
+  expect(input.value).toBe('');
+  expect(JSON.stringify(f.controller.getSnapshot())).not.toContain('314159');
+  f.controller.dispose();
+});

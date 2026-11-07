@@ -527,6 +527,7 @@ export declare const inject: string[];
 export interface Config {
     requestId: string;
     profile: 'e1' | 'web';
+    identityOnly: boolean;
     label: string;
     domain: string;
     path: string;
@@ -553,7 +554,8 @@ export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
     requestId: z.ZodString;
     stateRoot: z.ZodString;
     origin: z.ZodString;
-    email: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+    email: z.ZodOptional<z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>>;
+    phone: z.ZodOptional<z.ZodString>;
     clientName: z.ZodString;
     capabilities: z.ZodDefault<z.ZodObject<{
         mcpMachine: z.ZodBoolean;
@@ -567,8 +569,8 @@ export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type RegistrationBootstrapConfig = z.infer<typeof RegistrationBootstrapConfigSchema>;
 export type RegistrationBootstrapInput = z.input<typeof RegistrationBootstrapConfigSchema>;
-export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'registering' | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed';
-export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required';
+export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'awaiting_phone_verification' | 'registering' | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed';
+export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required';
 /** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
 export interface RegistrationBootstrapStatus {
     id: string;
@@ -579,6 +581,7 @@ export interface RegistrationBootstrapStatus {
     clientId?: string;
 }
 export interface RegistrationBootstrapController {
+    submitOtp(code: string): void;
     status(): RegistrationBootstrapStatus;
     dispose(): Promise<void>;
 }
@@ -870,6 +873,7 @@ export interface ControlledOperation {
 export interface CreateParameters {
     readonly profile?: 'e1' | 'web';
     readonly usage?: 'ordinary' | 'protocol';
+    readonly identityOnly?: boolean;
     readonly label: string;
     readonly domain: string;
     readonly path: string;
@@ -1257,6 +1261,10 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     private readonly bootstrap;
     constructor(ctx: Context, config?: Config);
     registrationBootstrapStatus(): import("./registration-bootstrap.js").RegistrationBootstrapStatus[];
+    /** Accept a user-entered SMS code without persisting or returning it. */
+    submitRegistrationOtp(input: {
+        code: string;
+    }): null;
     listIdentities(): Promise<import("./management-types.js").ManagedIdentitySummary[]>;
     listRequests(input?: boolean): Promise<import("./authorization-types.js").AuthorizationRequest[]>;
     getRequest(input: string): Promise<import("./management-types.js").RequestReview>;

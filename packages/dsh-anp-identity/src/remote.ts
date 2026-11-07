@@ -37,6 +37,7 @@ const decision = version
   .strict();
 const methods = [
   ["registrationBootstrapStatus", undefined],
+  ["submitRegistrationOtp", z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict()],
   ["listIdentities", undefined],
   ["listRequests", z.boolean().optional()],
   ["getRequest", z.string().min(1)],
@@ -83,14 +84,14 @@ const contribution: TypertRemoteContribution = {
               codec: {
                 mode: "strict",
                 typeSymbol: `anp-identity/manager#${method}Input`,
-                schema,
+                create: () => schema,
               },
             },
           ],
     result: {
       mode: "strict",
       typeSymbol: `anp-identity/manager#${method}Result`,
-      schema: z.json().nullable(),
+      create: () => z.json().nullable(),
     },
   })),
 };

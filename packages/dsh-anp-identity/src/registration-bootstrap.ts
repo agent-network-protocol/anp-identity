@@ -22,7 +22,8 @@ export const RegistrationBootstrapConfigSchema = z.object({
   requestId: z.string().min(1).max(128),
   stateRoot: z.string().refine(isAbsolute),
   origin: z.string().refine(value => { try { return new URL(exactHttps(value)).origin === value } catch { return false } }),
-  email: z.string().email().max(254).transform(value => value.trim().toLowerCase()),
+  email: z.string().email().max(254).transform(value => value.trim().toLowerCase()).optional(),
+  phone: z.string().regex(/^\+[1-9][0-9]{6,14}$/u).optional(),
   clientName: z.string().trim().min(1).max(128),
   capabilities: PublicationCapabilitiesSchema.default({ mcpMachine: true, papSession: false, papAccount: false }),
   redirectUris: z.array(z.string().max(2048)).max(8).default([]),
@@ -30,6 +31,9 @@ export const RegistrationBootstrapConfigSchema = z.object({
   pollIntervalMs: z.number().int().min(100).max(60000).default(5000),
   providerReadyTimeoutMs: z.number().int().min(1000).max(60000).default(10000),
 }).strict().superRefine((value, context) => {
+  if (Boolean(value.email) === Boolean(value.phone)) {
+    context.addIssue({ code: 'custom', message: 'Select exactly one registration contact method' })
+  }
   if (value.capabilities.papAccount && value.redirectUris.length === 0
     || new Set(value.redirectUris).size !== value.redirectUris.length) {
     context.addIssue({ code: 'custom', message: 'Invalid protocol callback configuration', path: ['redirectUris'] })
@@ -41,10 +45,10 @@ export const RegistrationBootstrapConfigSchema = z.object({
 })
 export type RegistrationBootstrapConfig = z.infer<typeof RegistrationBootstrapConfigSchema>
 export type RegistrationBootstrapInput = z.input<typeof RegistrationBootstrapConfigSchema>
-export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'registering'
+export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'awaiting_phone_verification' | 'registering'
   | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed'
 export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration'
-  | 'credential_unavailable' | 'email_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required'
+  | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required'
 /** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
 export interface RegistrationBootstrapStatus {
   id: string
@@ -55,12 +59,14 @@ export interface RegistrationBootstrapStatus {
   clientId?: string
 }
 export interface RegistrationBootstrapController {
+  submitOtp(code: string): void
   status(): RegistrationBootstrapStatus
   dispose(): Promise<void>
 }
 const JournalSchema = z.object({
   schema: z.literal(1), fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-  emailAttempted: z.boolean(), registerStarted: z.boolean(), registered: z.boolean(),
+  emailAttempted: z.boolean(), phoneAttempted: z.boolean().default(false), phoneDelivered: z.boolean().default(false),
+  registerStarted: z.boolean(), registered: z.boolean(),
   webOperationId: z.string().uuid().optional(),
 }).strict()
 type Journal = z.infer<typeof JournalSchema>
@@ -118,6 +124,7 @@ export function startRegistrationBootstrap(options: {
   let pinnedReference: IdentityReference | undefined
   let manager = options.manager
   let backend: Awaited<ReturnType<AnpIdentityService['configureManagedPublicationBackend']>> | undefined
+  let otpCode: string | undefined
   const assertManagerActive = () => {
     controller.signal.throwIfAborted()
     // This assertion retains the real manager Loader identity; it never accepts a caller string.
@@ -155,7 +162,7 @@ export function startRegistrationBootstrap(options: {
   const json = async (request: Request): Promise<Record<string, unknown>> => {
     const response = await send(request)
     if (response.status !== 200 || response.redirected || !(response.headers.get('content-type') ?? '').startsWith('application/json')) {
-      await response.body?.cancel(); throw new Error('bootstrap_email_unavailable')
+      await response.body?.cancel(); throw new Error(config.phone ? 'bootstrap_phone_unavailable' : 'bootstrap_email_unavailable')
     }
     const value = await responseObject(response, 32768)
     assertActive(); return value
@@ -226,7 +233,7 @@ export function startRegistrationBootstrap(options: {
       return value
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      return { schema: 1, fingerprint, emailAttempted: false, registerStarted: false, registered: false }
+      return { schema: 1, fingerprint, emailAttempted: false, phoneAttempted: false, phoneDelivered: false, registerStarted: false, registered: false }
     }
   }
   const save = async (value: Journal) => {
@@ -279,22 +286,42 @@ export function startRegistrationBootstrap(options: {
     try {
       assertActive()
       const state = await journal()
-      await establishKey(state.emailAttempted || state.registerStarted || state.registered)
+      await establishKey(state.emailAttempted || state.phoneAttempted || state.registerStarted || state.registered)
       if (!state.registered) {
         if (state.registerStarted) { update('registration_uncertain'); return }
-        const statusUrl = new URL(config.origin + '/user-service/v1/auth/email-status')
-        statusUrl.searchParams.set('email', config.email); statusUrl.searchParams.set('handle', fullHandle)
-        const verified = await json(new Request(statusUrl, { signal: AbortSignal.timeout(15000), cache: 'no-store' }))
-        if (typeof verified.verified !== 'boolean') throw new Error('bootstrap_email_unavailable')
-        if (!verified.verified) {
-          update('awaiting_email_verification')
-          if (!state.emailAttempted) {
-            state.emailAttempted = true; await save(state)
-            await json(new Request(config.origin + '/user-service/v1/auth/email-send', { method: 'POST',
+        if (config.phone) {
+          if (!state.phoneAttempted) {
+            state.phoneAttempted = true; await save(state)
+            const id = randomUUID()
+            const receipt = await json(new Request(config.origin + '/user-service/v1/handle/rpc', { method: 'POST',
               signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ email: config.email, handle: fullHandle }) }))
+              body: JSON.stringify({ jsonrpc: '2.0', id, method: 'send_otp', params: {
+                phone: config.phone, purpose: 'awiki.identity.register.v1', handle, domain, full_handle: fullHandle,
+              } }) }))
+            const result = receipt.result as { ok?: unknown } | undefined
+            if (receipt.jsonrpc !== '2.0' || receipt.id !== id || receipt.error || result?.ok !== true) {
+              throw new Error('bootstrap_phone_unavailable')
+            }
+            state.phoneDelivered = true; await save(state)
           }
-          return
+          if (!state.phoneDelivered) throw new Error('bootstrap_phone_unavailable')
+          update('awaiting_phone_verification')
+          if (!otpCode) return
+        } else {
+          const statusUrl = new URL(config.origin + '/user-service/v1/auth/email-status')
+          statusUrl.searchParams.set('email', config.email!); statusUrl.searchParams.set('handle', fullHandle)
+          const verified = await json(new Request(statusUrl, { signal: AbortSignal.timeout(15000), cache: 'no-store' }))
+          if (typeof verified.verified !== 'boolean') throw new Error('bootstrap_email_unavailable')
+          if (!verified.verified) {
+            update('awaiting_email_verification')
+            if (!state.emailAttempted) {
+              state.emailAttempted = true; await save(state)
+              await json(new Request(config.origin + '/user-service/v1/auth/email-send', { method: 'POST',
+                signal: AbortSignal.timeout(15000), headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ email: config.email, handle: fullHandle }) }))
+            }
+            return
+          }
         }
         if (reference.did.startsWith('did:web:')) state.webOperationId ??= randomUUID()
         state.registerStarted = true; await save(state); update('registering')
@@ -307,14 +334,15 @@ export function startRegistrationBootstrap(options: {
           await options.service.registerLocalIdentity(options.context, { reference, origin: config.origin, credentials: broker!, fetch: send,
             assertActive: assertInitialRegistration,
             handleDomain: domain, managementAudience: config.managementAudience,
-            registration: { handle, email: config.email, ...(state.webOperationId ? { registration_operation_id: state.webOperationId } : {}) } })
+            registration: { handle, ...(config.phone ? { phone: config.phone, otp_code: otpCode! } : { email: config.email! }),
+              ...(state.webOperationId ? { registration_operation_id: state.webOperationId } : {}) } })
           state.registered = true; await save(state)
         } catch (error) {
           if (error instanceof BootstrapUpgradeRequired && error.registrationRejected) {
             state.registerStarted = false; await save(state); update('blocked', 'client_upgrade_required'); return
           }
           update('registration_uncertain', error instanceof BootstrapUpgradeRequired ? 'client_upgrade_required' : undefined); return
-        } finally { registrationActive = false }
+        } finally { registrationActive = false; otpCode = undefined }
       }
       assertActive(); update('publishing')
       if (!backend) {
@@ -349,13 +377,21 @@ export function startRegistrationBootstrap(options: {
       update('blocked', code === 'client_upgrade_required' ? 'client_upgrade_required'
         : code === 'credential_unavailable' ? 'credential_unavailable'
         : (error as Error).message === 'bootstrap_email_unavailable' ? 'email_unavailable'
+          : (error as Error).message === 'bootstrap_phone_unavailable' ? 'phone_unavailable'
           : view.phase === 'publishing' ? 'publication_failed' : 'provider_unavailable')
     }
   })()
   return {
+    submitOtp(code) {
+      assertActive()
+      if (!config.phone || view.phase !== 'awaiting_phone_verification' || otpCode !== undefined || !/^[0-9]{6}$/u.test(code)) {
+        throw new Error('bootstrap_otp_unavailable')
+      }
+      otpCode = code
+    },
     status: () => structuredClone(view),
     async dispose() {
-      controller.abort(); secret?.dispose(); backend?.dispose(); await pending
+      controller.abort(); otpCode = undefined; secret?.dispose(); backend?.dispose(); await pending
       update('disposed')
     },
   }

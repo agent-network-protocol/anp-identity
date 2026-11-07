@@ -30,12 +30,12 @@ it('rejects callback/profile misconfiguration before installing any registration
   expect(RegistrationBootstrapConfigSchema.safeParse({ ...base, accessToken: 'must-not-be-configured' }).success).toBe(false)
 })
 
-async function fixture(options: { missingCredentials?: boolean; uncertainRegistration?: boolean; upgrade?: boolean; registerViaTransport?: boolean } = {}) {
+async function fixture(options: { missingCredentials?: boolean; uncertainRegistration?: boolean; upgrade?: boolean; registerViaTransport?: boolean; phone?: boolean; phoneRejected?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'c-bootstrap-unit-')); roots.push(root)
   const context = new Context(); cleanups.push(() => context.fiber.dispose())
   if (!options.missingCredentials) await context.plugin(CredentialsLocal, { path: join(root, '.credentials.yaml'), watch: false })
   const config = RegistrationBootstrapConfigSchema.parse({ id: 'stable', requestId: 'request', stateRoot: root,
-    origin: 'https://identity.example', email: 'agent@example.com', clientName: 'Unit protocol identity', pollIntervalMs: 100 })
+    origin: 'https://identity.example', ...(options.phone ? { phone: '+15555550190' } : { email: 'agent@example.com' }), clientName: 'Unit protocol identity', pollIntervalMs: 100 })
   const reference = { storeId: 'store', identityId: 'identity', did: 'did:wba:identity.example:awiki:user:agent' }
   let request: CreateAuthorizationRequest = { id: 'request', kind: 'create', status: 'pending', version: 1,
     caller: { consumer: PROTOCOL_BOOTSTRAP_CONSUMER, displayName: 'Bootstrap' }, purpose: 'Create a protocol identity',
@@ -49,6 +49,10 @@ async function fixture(options: { missingCredentials?: boolean; uncertainRegistr
     const request = new Request(input, init); requests.push(request)
     if (request.url.includes('email-status') && heldStatus) return heldStatus
     if (options.upgrade) return response({ error: { message: 'private server detail', data: { awiki_code: 'client.upgrade_required' } } })
+    if (request.url.endsWith('/handle/rpc')) {
+      const body = await request.clone().json() as { id: string }
+      return response({ jsonrpc: '2.0', id: body.id, ...(options.phoneRejected ? { error: { code: -32000, message: 'private provider detail' } } : { result: { ok: true } }) })
+    }
     return request.url.includes('email-status') ? response({ verified }) : response({ message: 'Activation email sent.' })
   }
   const published = { state: 'published' as const, did: reference.did, clientId: config.origin + '/user-service/v1/agent-clients/document/client.json',
@@ -229,4 +233,60 @@ it('rechecks the pinned provider after the register body clone await and before 
     await vi.waitFor(() => expect(controller.status().phase).toBe('registration_uncertain'))
     expect(f.requests.filter(request => request.url.endsWith('/did-auth/rpc'))).toHaveLength(0)
   } finally { release(); await controller.dispose(); vi.restoreAllMocks() }
+})
+
+it('requires exactly one contact method and never accepts a configured OTP', () => {
+  const base = { id: 'phone', requestId: 'request', stateRoot: '/private/state', origin: 'https://identity.example', clientName: 'Agent' }
+  expect(RegistrationBootstrapConfigSchema.safeParse(base).success).toBe(false)
+  expect(RegistrationBootstrapConfigSchema.safeParse({ ...base, phone: '+15555550190' }).success).toBe(true)
+  expect(RegistrationBootstrapConfigSchema.safeParse({ ...base, phone: '15555550190' }).success).toBe(false)
+  expect(RegistrationBootstrapConfigSchema.safeParse({ ...base, phone: '+15555550190', email: 'agent@example.com' }).success).toBe(false)
+  expect(RegistrationBootstrapConfigSchema.safeParse({ ...base, phone: '+15555550190', otp_code: '314159' }).success).toBe(false)
+})
+
+it('sends one exact Handle-bound phone challenge after approval and keeps the user code out of state', async () => {
+  const f = await fixture({ phone: true }); const controller = f.start()
+  expect(() => controller.submitOtp('314159')).toThrow('bootstrap_otp_unavailable')
+  await vi.waitFor(() => expect(f.manager.getRequest).toHaveBeenCalled())
+  expect(f.requests).toHaveLength(0)
+  f.approve()
+  await vi.waitFor(() => expect(controller.status().phase).toBe('awaiting_phone_verification'))
+  expect(f.requests).toHaveLength(1)
+  const challenge = f.requests[0]!
+  expect(challenge.url).toBe('https://identity.example/user-service/v1/handle/rpc')
+  expect((await challenge.clone().json()).params).toEqual({ phone: '+15555550190', purpose: 'awiki.identity.register.v1', handle: 'agent', domain: 'identity.example', full_handle: 'agent.identity.example' })
+  expect(() => controller.submitOtp('invalid')).toThrow('bootstrap_otp_unavailable')
+  controller.submitOtp('314159')
+  expect(() => controller.submitOtp('271828')).toThrow('bootstrap_otp_unavailable')
+  await vi.waitFor(() => expect(controller.status().phase).toBe('published'))
+  expect(f.register).toHaveBeenCalledOnce()
+  expect(f.register.mock.calls[0]![1].registration).toEqual({ handle: 'agent', phone: '+15555550190', otp_code: '314159' })
+  const journal = await readFile(join(await realpath(f.root), 'registration-bootstrap', sha(f.config.id), 'state.json'), 'utf8')
+  expect(journal + JSON.stringify(controller.status())).not.toMatch(/314159|15555550190/u)
+  await controller.dispose()
+  expect(() => controller.submitOtp('314159')).toThrow()
+})
+
+it('restores a confirmed phone challenge without resending or retaining a submitted OTP', async () => {
+  const f = await fixture({ phone: true }); f.approve()
+  const first = f.start()
+  await vi.waitFor(() => expect(first.status().phase).toBe('awaiting_phone_verification'))
+  first.submitOtp('314159'); await first.dispose()
+  const second = f.start()
+  await vi.waitFor(() => expect(second.status().phase).toBe('awaiting_phone_verification'))
+  expect(f.requests).toHaveLength(1); expect(f.register).not.toHaveBeenCalled()
+  second.submitOtp('314159')
+  await vi.waitFor(() => expect(second.status().phase).toBe('published'))
+})
+
+it('does not accept an OTP or register when the SMS send has a rejected receipt', async () => {
+  const f = await fixture({ phone: true, phoneRejected: true }); f.approve()
+  const first = f.start()
+  await vi.waitFor(() => expect(first.status()).toMatchObject({ phase: 'blocked', reason: 'phone_unavailable' }))
+  expect(() => first.submitOtp('314159')).toThrow('bootstrap_otp_unavailable')
+  await first.dispose()
+  const second = f.start()
+  await vi.waitFor(() => expect(second.status()).toMatchObject({ phase: 'blocked', reason: 'phone_unavailable' }))
+  expect(f.requests).toHaveLength(1); expect(f.register).not.toHaveBeenCalled()
+  expect(JSON.stringify(second.status())).not.toContain('private provider detail')
 })

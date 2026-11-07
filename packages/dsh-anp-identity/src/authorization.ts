@@ -125,8 +125,10 @@ export class AuthorizationEngine {
     const source = caller(verifiedCaller)
     if (input.parameters.usage !== undefined && !['ordinary', 'protocol'].includes(input.parameters.usage)) fail('invalid_create_parameters')
     if (input.parameters.profile === 'web' && input.parameters.usage !== 'protocol') fail('invalid_create_parameters')
+    if (input.parameters.identityOnly !== undefined && (typeof input.parameters.identityOnly !== 'boolean' || input.parameters.usage !== 'protocol')) fail('invalid_create_parameters')
     if (input.parameters.profile !== undefined && !['e1', 'web'].includes(input.parameters.profile)) fail('invalid_create_parameters')
     const parameters: CreateParameters = { ...(input.parameters.profile === undefined ? {} : { profile: input.parameters.profile }), ...(input.parameters.usage === undefined ? {} : { usage: input.parameters.usage }), label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+      ...(input.parameters.identityOnly === undefined ? {} : { identityOnly: input.parameters.identityOnly }),
       ...(input.parameters.handle === undefined ? {} : { handle: normalizeHandle(text(input.parameters.handle, 128)) }) }
     const domain = new URL(`https://${parameters.domain}`)
     if (domain.host !== parameters.domain || domain.username || domain.password || domain.pathname !== '/' || !parameters.path.startsWith('/') || /[?#]/u.test(parameters.path)) fail('invalid_create_parameters')

@@ -11,6 +11,7 @@ export const inject = ['anpIdentity']
 export interface Config {
   requestId: string
   profile: 'e1' | 'web'
+  identityOnly: boolean
   label: string
   domain: string
   path: string
@@ -20,6 +21,7 @@ export interface Config {
 }
 export const Config: z<Config> = z.object({
   requestId: z.string().required(), profile: z.union([z.const('e1'), z.const('web')]).default('e1'),
+  identityOnly: z.boolean().default(true),
   label: z.string().required(), domain: z.string().required(), path: z.string().required(), handle: z.string().required(),
   providerReadyTimeoutMs: z.number().min(1000).max(60000).default(10000),
 })
@@ -39,7 +41,7 @@ export async function apply(context: Context, config: Config): Promise<void> {
   const request = await bindIdentityClient(context).requestCreateIdentity({
     requestId: config.requestId,
     purpose: `Create protocol identity ${config.handle}; server registration and publication require independent verification.`,
-    parameters: { profile: config.profile, usage: 'protocol', label: config.label, domain: config.domain, path: config.path, handle: config.handle },
+    parameters: { profile: config.profile, usage: 'protocol', identityOnly: config.identityOnly, label: config.label, domain: config.domain, path: config.path, handle: config.handle },
   })
   if (request.id !== config.requestId) throw new Error('protocol_bootstrap_request_conflict')
 }

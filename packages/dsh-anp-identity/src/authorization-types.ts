@@ -21,7 +21,7 @@ export interface ControlledOperation {
   readonly httpOrigin?: string
   readonly oauthAudience?: string
 }
-export interface CreateParameters { readonly profile?: 'e1' | 'web'; readonly usage?: 'ordinary' | 'protocol'; readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
+export interface CreateParameters { readonly profile?: 'e1' | 'web'; readonly usage?: 'ordinary' | 'protocol'; readonly identityOnly?: boolean; readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
 export interface CreateResult { readonly reference: IdentityReference; readonly label: string }
 interface RequestBase {
   readonly id: string

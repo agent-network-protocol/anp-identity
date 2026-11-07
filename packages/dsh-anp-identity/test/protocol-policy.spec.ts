@@ -10,10 +10,10 @@ const identity = { storeId: 'store', identityId: 'identity', did: 'did:web:ident
 const consumer = '@deepseek-ai/dsh-mcp-client'
 const publicJwk = { kty: 'EC', crv: 'P-256', x: 'a'.repeat(43), y: 'b'.repeat(43), kid: identity.did + '#oauth', alg: 'ES256', use: 'sig' }
 const evidence: ValidatedTargetEvidence = { profile: 'mcp_machine', issuer: 'https://issuer.example', resource: 'https://resource.example/mcp', tokenEndpoint: 'https://issuer.example/token', metadataDigest: 'a'.repeat(64), expiresAt: Date.now() + 60000, sources: { resource: 'https://resource.example/.well-known/oauth-protected-resource/mcp', authorizationServer: 'https://issuer.example/.well-known/oauth-authorization-server' } }
-function fixture(profile: ValidatedTargetEvidence['profile'] = 'mcp_machine', publicTargets = false) {
+function fixture(profile: ValidatedTargetEvidence['profile'] = 'mcp_machine', publicTargets = false, scopes = ['agent.self.read']) {
   const context = {} as Context
   const policy: ProtocolUsePolicy = { id: 'approved-policy', version: 3, consumer, owner: '@agent-network-protocol/dsh-anp-identity', identity,
-    profiles: [profile], issuers: [evidence.issuer], resources: [evidence.resource], publicTargets, scopes: ['agent.self.read'], expiresAt: Date.now() + 60000 }
+    profiles: [profile], issuers: [evidence.issuer], resources: [evidence.resource], publicTargets, scopes, expiresAt: Date.now() + 60000 }
   let active = true
   let generation = Symbol('provider')
   let backendAvailable = true
@@ -32,6 +32,16 @@ function fixture(profile: ValidatedTargetEvidence['profile'] = 'mcp_machine', pu
 }
 
 describe('protocol target policies', () => {
+  it('permits an empty scope ceiling only for PAP Session and never widens its requested scopes', async () => {
+    const f = fixture('pap_session', false, [])
+    const discovery = { ...evidence, profile: 'pap_session' as const, companyId: 'https://company.example' }
+    const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery, requestedScopes: [] })
+    await lease.assertActive()
+    await expect(f.client.registerValidatedTarget({ identityRef: identity, policyRef: f.policy.id, discovery, requestedScopes: ['admin'] })).rejects.toThrow()
+    expect(() => fixture('mcp_machine', false, [])).toThrow()
+    expect(() => fixture('pap_account', false, [])).toThrow()
+    lease.dispose()
+  })
   it('binds exact Context, identity, target, scope and generation without implicit grants', async () => {
     const f = fixture()
     expect(() => f.authority.bind({} as Context)).toThrow()

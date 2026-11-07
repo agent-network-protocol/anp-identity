@@ -49,7 +49,8 @@ export class ProtocolIdentityAuthority {
     for (const policy of this.policies) {
       if (ids.has(policy.id) || !policy.id || !Number.isSafeInteger(policy.version) || policy.version < 1
         || !policy.consumer || policy.owner !== '@agent-network-protocol/dsh-anp-identity' || !policy.profiles.length || !Number.isSafeInteger(policy.expiresAt)
-        || !policy.scopes.length || !policy.publicTargets && (!policy.issuers.length || !policy.resources.length)) throw pluginError('invalid_request')
+        || !policy.scopes.length && !policy.profiles.every(profile => profile === 'pap_session')
+        || !policy.publicTargets && (!policy.issuers.length || !policy.resources.length)) throw pluginError('invalid_request')
       ids.add(policy.id)
       policy.issuers.forEach(value => exactHttps(value)); policy.resources.forEach(value => exactHttps(value))
     }

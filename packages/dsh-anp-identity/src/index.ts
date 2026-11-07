@@ -1287,7 +1287,9 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
           { fragment: 'device', role: 'device_signing' }, { fragment: 'agreement', role: 'e2ee_agreement' },
         ] : [{ fragment: 'root', role: 'root_control' }, { fragment: 'request', role: 'request_signing' }],
         ...(protocol ? { extensions: [{ type: 'device_manifest' as const, value: { devices: [{ deviceId: 'dsh-' + createHash('sha256').update(operationId).digest('hex').slice(0, 24),
-          signingKeyId: '#device', e2eeKeyId: '#agreement', profiles: [
+          signingKeyId: '#device', e2eeKeyId: '#agreement', profiles: parameters.identityOnly ? [
+            'anp.core.binding.v1', 'anp.identity.discovery.v1',
+          ] : [
             'anp.core.binding.v1', 'anp.identity.discovery.v1', 'anp.direct.base.v1',
             'anp.direct.e2ee.v2', 'anp.group.base.v2', 'anp.group.e2ee.v2',
           ] }] } }] } : {}) })

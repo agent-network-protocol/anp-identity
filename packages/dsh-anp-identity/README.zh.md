@@ -1,5 +1,7 @@
 # 面向 DeepSeek Harness 的 ANP Identity
 
+当前候选面向 Harness `0.2.2-rc.1`、Cordis `4.1.0` 与 Loader `1.1.0`，不再声明兼容 Harness `0.1.5`。Remote 描述符使用延迟 `create()` codec；同进程 Gateway 调用必须显式提供 Peer 并安装 Remote Access 服务。
+
 `@agent-network-protocol/dsh-anp-identity` 为 DSH 应用提供共享的多 DID 身份 Store。应用不需要各自实现私钥托管、DID Document 生命周期、崩溃恢复和请求签名。
 
 普通插件通过 `bindIdentityClient(ctx)` 申请创建身份和使用授权；`ctx.anpIdentity` 的旧 lease 接口保留给可信 Host 集成。私钥操作由 ANP Identity 原生模块完成；私钥在磁盘上加密保存。DSH catalog 只记录 label、handle 和 consumer grant 等非秘密元数据。

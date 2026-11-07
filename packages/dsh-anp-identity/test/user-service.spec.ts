@@ -14,6 +14,27 @@ const ORIGIN = 'https://api.example.com'
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('ordinary plugin authorization with a real native Store', () => {
+  it.each(['e1', 'web'] as const)('creates an explicitly identity-only %s protocol identity without messaging profiles', async profile => {
+    await using fixture = await userFixture()
+    const manager = fixture.managerService.acquireManagement(fixture.managerContext)
+    const input = createInput('identity-only-' + profile)
+    const request = await fixture.first.requestCreateIdentity({ ...input,
+      parameters: { ...input.parameters, profile, usage: 'protocol', identityOnly: true } })
+    expect(request.kind).toBe('create')
+    if (request.kind !== 'create') throw new Error('Expected creation request')
+    expect(request.parameters.identityOnly).toBe(true)
+    const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve' }) as CreateAuthorizationRequest
+    expect(approved.executionStatus).toBe('succeeded')
+    const reference = approved.result!.reference
+    const document = await manager.publicDocument(reference)
+    expect(document).toMatchObject({ deviceManifest: { devices: [{
+      profiles: ['anp.core.binding.v1', 'anp.identity.discovery.v1'],
+    }] } })
+    expect(JSON.stringify(document)).not.toMatch(/anp\.direct\.|anp\.group\.|ANPMessageService/u)
+    expect(await manager.grants(reference)).toEqual([])
+    await fixture.restart()
+    expect(await fixture.managerService.acquireManagement(fixture.managerContext).publicDocument(reference)).toEqual(document)
+  })
   it.each(['e1', 'web'] as const)('creates a %s protocol identity with messaging profiles and no automatic consumer access', async profile => {
     await using fixture = await userFixture()
     const manager = fixture.managerService.acquireManagement(fixture.managerContext)

@@ -47,6 +47,12 @@ export class IdentityManagerRemote extends TypertRemoteService {
     );
   }
   @Remote registrationBootstrapStatus() { return this.bootstrap ? [this.bootstrap.status()] : []; }
+  /** Accept a user-entered SMS code without persisting or returning it. */
+  @Remote submitRegistrationOtp(input: { code: string }) {
+    if (!this.bootstrap) throw new Error('bootstrap_otp_unavailable');
+    this.bootstrap.submitOtp(input.code);
+    return null;
+  }
   @Remote listIdentities() {
     return this.manager.listIdentities();
   }

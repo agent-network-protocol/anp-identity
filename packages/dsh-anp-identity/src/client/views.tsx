@@ -103,6 +103,7 @@ export function IdentitySettings({
   );
   const [tab, setTab] = useState<"identities" | "requests">("identities");
   const [history, setHistory] = useState(false);
+  const [otp, setOtp] = useState('');
   const identity = controller.selected();
   const blocked =
     identity?.deleteBlockedReason ||
@@ -115,10 +116,18 @@ export function IdentitySettings({
       <p className="anpi-muted">管理此 DSH 中保存的身份</p>
       {view.bootstraps.map(bootstrap => <div className="anpi-section" role="status" key={bootstrap.id}>
         <h3>协议身份注册</h3>
-        <p>{({ awaiting_approval: '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', registering: '注册中',
+        <p>{({ awaiting_approval: '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
           publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
         {bootstrap.phase === 'published' && <p className="anpi-small">注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。</p>}
         {bootstrap.reason === 'client_upgrade_required' && <p className="anpi-small">服务端尚未允许此身份客户端版本，请先完成准入配置或升级。</p>}
+        {bootstrap.reason === 'phone_unavailable' && <p className="anpi-small">短信验证码请求未确认成功，请检查服务端手机号注册配置。不会自动重发或绕过验证。</p>}
+        {bootstrap.phase === 'awaiting_phone_verification' && <form onSubmit={event => {
+          event.preventDefault(); const code = otp; setOtp(''); void controller.submitRegistrationOtp(code);
+        }}>
+          <label>短信验证码 <input aria-label="短信验证码" type="password" inputMode="numeric" autoComplete="one-time-code"
+            maxLength={6} value={otp} onChange={event => setOtp(event.target.value)} /></label>
+          <button type="submit" disabled={view.pending || !/^[0-9]{6}$/u.test(otp)}>验证并注册</button>
+        </form>}
         {bootstrap.reference && <CopyRow label="DID" value={bootstrap.reference.did} controller={controller} />}
         {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
         {bootstrap.clientId && <CopyRow label="CIMD" value={bootstrap.clientId} controller={controller} />}
@@ -641,6 +650,7 @@ function IdentityModal({
               <dd>{request.parameters.path}</dd>
               <dt>用途</dt><dd>{request.parameters.usage === 'protocol' ? 'MCP / PAP 协议身份（独立设备权限）' : '普通插件身份'}</dd>
               <dt>身份方法</dt><dd>{request.parameters.profile ?? 'e1'}</dd>
+              {request.parameters.usage === 'protocol' && <><dt>设备能力</dt><dd>{request.parameters.identityOnly ? '仅公共身份（不含消息能力）' : '身份与消息能力'}</dd></>}
             </dl>
             <p>参数由插件提供，请确认后继续。</p>
             <p className="anpi-small">Handle 由申请插件提供，保存不代表已在服务端注册或验证。</p>

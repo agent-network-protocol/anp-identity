@@ -17,7 +17,10 @@ export type ManagementRemote = {
   [K in keyof IdentityManagement]: (
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
-} & { registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>> };
+} & {
+  registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>>;
+  submitRegistrationOtp?: (input: { code: string }) => Promise<RemoteResult<null>>;
+};
 export type ManagerModal =
   | { readonly kind: "request"; readonly review: RequestReview }
   | { readonly kind: "result"; readonly review: RequestReview }
@@ -51,6 +54,15 @@ export const identityReference = (
 
 /** One shared controller owns both settings and overlay; remounts cannot duplicate prompts. */
 export class IdentityController {
+  /** Submit the code only to the authenticated manager; never retain it in view state. */
+  async submitRegistrationOtp(code: string): Promise<void> {
+    await this.action(async () => {
+      if (!this.remote.submitRegistrationOtp) throw new Error('SMS registration is unavailable');
+      const result = await this.remote.submitRegistrationOtp({ code });
+      if (!result.ok) throw new Error('SMS verification could not be submitted');
+      await this.refresh();
+    });
+  }
   private view: ManagerView = {
     loading: true,
     bootstraps: [],
