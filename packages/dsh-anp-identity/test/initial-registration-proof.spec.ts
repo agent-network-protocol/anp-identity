@@ -23,7 +23,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'c-initial-proof-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const provider = await IdentityProvider.initialize({ stateRoot: root, rootKeyKind: 'local_private_file' })
-  const native = provider.acquireLease({ consumer: 'initial-proof-owner', capabilities: ['IDENTITY_CREATE', 'IDENTITY_READ', 'IDENTITY_SIGN', 'IDENTITY_DOCUMENT_UPDATE', 'IDENTITY_DELETE'], ttlSeconds: 300 })
+  const native = provider.acquireLease({ consumer: 'initial-proof-owner', capabilities: ['IDENTITY_CREATE', 'IDENTITY_READ', 'IDENTITY_SIGN', 'IDENTITY_DOCUMENT_UPDATE', 'IDENTITY_HTTP_SIGNATURE', 'IDENTITY_DELETE'], ttlSeconds: 300 })
   cleanups.push(async () => native.dispose())
   const identity = await native.create({ profile: 'e1', domain: 'identity.example', pathSegments: ['user', randomUUID()],
     managedKeys: [{ fragment: 'root', role: 'root_control' }, { fragment: 'device', role: 'device_signing' }, { fragment: 'agreement', role: 'e2ee_agreement' }],
@@ -143,8 +143,8 @@ it('adds SIGN only to the private initial-register callsite and keeps default pu
   await (managerContext.anpIdentity as AnpIdentityService).registerLocalIdentity(managerContext, { reference: f.reference, origin,
     credentials: f.credentials, registration: { handle: 'dsh-proof-agent' }, fetch: f.transport })
   expect(requested.some(caps => caps.includes('IDENTITY_SIGN'))).toBe(true)
-  expect(requested.filter(caps => caps.includes('IDENTITY_SIGN')).every(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE,IDENTITY_SIGN')).toBe(true)
-  expect(requested.some(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE')).toBe(true)
+  expect(requested.filter(caps => caps.includes('IDENTITY_SIGN')).every(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE,IDENTITY_HTTP_SIGNATURE,IDENTITY_SIGN')).toBe(true)
+  expect(requested.some(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE,IDENTITY_HTTP_SIGNATURE')).toBe(true)
 })
 
 const source = process.env.DSH_IDENTITY_USER_SERVICE_SOURCE, python = process.env.DSH_IDENTITY_PYTHON

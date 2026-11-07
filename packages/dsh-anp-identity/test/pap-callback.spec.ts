@@ -27,7 +27,7 @@ async function fixture() {
       return structuredClone(bindings.get(id)!)
     },
   }
-  const native = { signManagementProof: async (_ref: unknown, request: { method: string; params: Record<string, unknown> }) => {
+  const native = { prepareHttpSignature: async () => ({ headerPatch: [{ name: 'signature-input', value: 'unit-signature-input' }, { name: 'signature', value: 'unit-http-signature' }] }), signManagementProof: async (_ref: unknown, request: { method: string; params: Record<string, unknown> }) => {
     proofs.push(request); return { type: 'awiki-device-signature-v1', signature: 'unit-signature' }
   } } as unknown as ProviderLease
   const driver = await createManagedPublicationDriver({ reference, origin, credentials: broker,
@@ -35,6 +35,9 @@ async function fixture() {
     withNative: async operation => operation(native),
     fetch: async input => {
       const request = input as Request
+      expect(request.headers.has('authorization')).toBe(false)
+      expect(request.headers.has('signature-input')).toBe(true)
+      expect(request.headers.has('signature')).toBe(true)
       const body = await request.json() as Record<string, unknown>
       if (request.url.endsWith('/did-auth/rpc')) return json({ result: { did: reference.did, checkpoint: { document_version: 1, registry_version: 1, document_hash: 'sha256:' + 'A'.repeat(43) },
         devices: [{ device_id: 'device', signing_key_id: reference.did + '#device', status: 'active', role: 'admin', management_ready: true }] } })

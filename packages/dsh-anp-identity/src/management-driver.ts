@@ -6,6 +6,7 @@ import type { PublicationBackend, PreparedClientMaterials, PublicationIntentV2 }
 import { exactHttps, parsePublicJson } from './publication-http.js'
 import { AnpIdentityPluginError, pluginError } from './errors.js'
 import { prepareInitialRegistrationProof } from './initial-registration-proof.js'
+import { createAuthenticatedHttp } from './http-auth.js'
 import { PapCallbackOperationSchema, PapCallbackRegistrationResultSchema, PapCallbackClaimResultSchema,
   PapCallbackManagementError, papCallbackManagementError } from './pap-callback.js'
 import type { PapCallbackManagementOperations, PapCallbackRegisterOperation, PapCallbackClaimOperation,
@@ -24,6 +25,17 @@ export interface ManagementCredentialBroker {
   set(reference: IdentityReference, origin: string, credential: DeviceManagementCredential): Promise<void>
   reserveOperation(reference: IdentityReference, origin: string, operationId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>
 }
+/** Sign the exact User Service request with the existing ANP HTTP signing port. */
+async function signedRequest(request: Request, input: {
+  reference: IdentityReference; origin: string; signingKeyId: string
+  withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
+  transport: typeof fetch; assertActive: () => Promise<void>
+}): Promise<Response> {
+  return input.withNative(native => createAuthenticatedHttp(input.reference, native,
+    new Set([input.origin]), input.assertActive, async () => input.signingKeyId,
+  ).dispatch(request, input.transport))
+}
+
 interface Checkpoint { document_version: number; document_hash: string; registry_version: number }
 interface Registry { did: string; checkpoint: Checkpoint; devices: Array<{ device_id: string; signing_key_id: string; status: string; role: string; management_ready: boolean }> }
 export interface ManagedPublicationDriver extends PapCallbackManagementOperations {
@@ -53,14 +65,19 @@ export async function createManagedPublicationDriver(input: {
   const transport = input.fetch ?? fetch
   const send: typeof fetch = async (request, init) => {
     await input.assertActive?.(); input.assertCurrent?.()
-    const response = await transport(request, init)
+    const auth = await credential()
+    const response = await signedRequest(new Request(request, init), {
+      reference, origin, signingKeyId: auth.signingKeyId, withNative: input.withNative,
+      transport: (request, init) => { input.assertCurrent?.(); return transport(request, init) },
+      assertActive: async () => { await input.assertActive?.(); input.assertCurrent?.() },
+    })
     try { await input.assertActive?.(); input.assertCurrent?.(); return response }
     catch (error) { await response.body?.cancel(); throw error }
   }
   const reference = Object.freeze(structuredClone(input.reference))
   const credential = async () => {
     const value = await input.credentials.get(reference, origin)
-    if (!value || !value.accessToken || !value.deviceId || !value.signingKeyId) throw pluginError('provider_unavailable')
+    if (!value || !value.deviceId || !value.signingKeyId) throw pluginError('provider_unavailable')
     return value
   }
   const read = async (request: Request, callbackErrors = false): Promise<Record<string, unknown>> => {
@@ -80,9 +97,8 @@ export async function createManagedPublicationDriver(input: {
     } finally { await reader?.cancel(); reader?.releaseLock() }
   }
   const rpc = async (method: string, params: unknown): Promise<Record<string, unknown>> => {
-    const auth = await credential()
     const result = await read(new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-      headers: { authorization: 'Bearer ' + auth.accessToken, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method, params }) }))
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method, params }) }))
     if (result.error || !result.result || typeof result.result !== 'object' || Array.isArray(result.result)) throw pluginError('provider_unavailable')
     return result.result as Record<string, unknown>
   }
@@ -123,7 +139,7 @@ export async function createManagedPublicationDriver(input: {
     const signed = await proof(methods[action], { ...body, http_path: httpPath, target_did: reference.did })
     await input.assertActive?.()
     const result = await read(new Request(origin + httpPath, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-      headers: { authorization: 'Bearer ' + auth.accessToken, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, authorizing_device_proof: signed }) }), action === 'pap-callback-register' || action === 'pap-callback-claim')
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, authorizing_device_proof: signed }) }), action === 'pap-callback-register' || action === 'pap-callback-claim')
     await input.assertActive?.()
     return result
   }
@@ -165,8 +181,8 @@ export async function createManagedPublicationDriver(input: {
       parsePublicJson(text)
       return text
     },
-    publishDocument: async (reference, session: ProviderDocumentChangeSession, assertActive) => {
-      if (JSON.stringify(reference) !== JSON.stringify(reference)) throw pluginError('invalid_request')
+    publishDocument: async (requestedReference, session: ProviderDocumentChangeSession, assertActive) => {
+      if (JSON.stringify(requestedReference) !== JSON.stringify(reference)) throw pluginError('invalid_request')
       await assertActive()
       if (await session.hostPhase() === 'publication_uncertain') {
         await session.reconcile(await checkpointObservation()); return
@@ -310,8 +326,11 @@ export async function registerLocalIdentity(input: {
   const result = envelope.result
   if (envelope.error || result?.state !== 'registered' || result.did !== input.reference.did || typeof result.access_token !== 'string') throw pluginError('provider_unavailable')
   const token = result.access_token
-  const registryResponse = await send(new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'device_registry_get', params: {} }) }))
+  const registryResponse = await signedRequest(new Request(origin + '/user-service/v1/did-auth/rpc', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'device_registry_get', params: {} }) }), {
+      reference: input.reference, origin, signingKeyId: candidates[0]!.kid, withNative: input.withNative,
+      transport: send, assertActive: async () => { input.assertActive?.() },
+    })
   if (registryResponse.status !== 200 || registryResponse.redirected) { await registryResponse.body?.cancel(); throw pluginError('provider_unavailable') }
   const registryBytes = await registryResponse.text()
   input.assertActive?.()

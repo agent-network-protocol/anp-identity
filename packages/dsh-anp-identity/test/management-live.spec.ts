@@ -11,6 +11,7 @@ import AnpIdentityService from '../src/index.js'
 import { openNativeProvider } from '../src/provider.js'
 import { createManagedCallbackFixture } from './helpers/managed-callback-fixture.js'
 import { createHash } from 'node:crypto'
+import { createAuthenticatedHttp } from '../src/http-auth.js'
 import { createManagedPublicationDriver } from '../src/management-driver.js'
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider'
 import { EncryptedManagementCredentialBroker } from '../src/management-credentials.js'
@@ -98,6 +99,33 @@ it.skipIf(!source || !python)('registers approved E1/Web local Manifests, authen
       const registered = await managerService.registerLocalIdentity(managerContext, { reference, origin: 'https://identity.example', credentials, fetch: transport,
         managementAudience: 'awiki-user-service', registration: { handle: 'dsh-cimd-' + run, email: 'dsh-cimd-' + run + '@example.invalid', ...(profile === 'web' ? { registration_operation_id: randomUUID() } : {}) } })
       expect(registered.state).toBe('registered')
+      const credential = await credentials.get(reference, 'https://identity.example')
+      expect(credential).toBeDefined()
+      const probeNative = nativeRegistration.provider.acquireLease({ consumer: 'http-auth-component', capabilities: ['IDENTITY_READ', 'IDENTITY_HTTP_SIGNATURE'], ttlSeconds: 60 })
+      extraNative.push(probeNative)
+      const authenticated = createAuthenticatedHttp(reference, probeNative, new Set(['https://identity.example']), async () => {}, async () => credential!.signingKeyId)
+      const capture = async () => {
+        let signed!: Request
+        await authenticated.dispatch(new Request('https://identity.example/user-service/v1/did-auth/rpc', { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'signed-probe', method: 'device_registry_get', params: {} }) }),
+          async request => { signed = request.clone(); return Response.json({}) })
+        expect(signed.headers.has('signature-input')).toBe(true)
+        expect(signed.headers.has('signature')).toBe(true)
+        expect(signed.headers.has('content-digest')).toBe(true)
+        expect(signed.headers.has('authorization')).toBe(false)
+        return signed
+      }
+      const signed = await capture()
+      const accepted = await transport(signed.clone())
+      expect(accepted.headers.get('authentication-info')).toContain('access_token=')
+      expect((await accepted.json()).result.did).toBe(reference.did)
+      expect((await (await transport(signed.clone())).json()).error).toMatchObject({ code: -32000 })
+      const changedBody = await capture()
+      expect((await (await transport(new Request(changedBody, { body: (await changedBody.clone().text()).replace('signed-probe', 'changed-body') }))).json()).error).toMatchObject({ code: -32000 })
+      const changedUrl = await capture()
+      expect((await (await transport(new Request(changedUrl.url + '?tampered=1', changedUrl))).json()).error).toMatchObject({ code: -32000 })
+      lastFailure = ''
+      if (profile === 'e1') await credentials.set(reference, 'https://identity.example', { ...credential!, accessToken: 'unusable-old-credential' })
       stage = profile + ':resolve'
       const configured = await managerService.configureManagedPublicationBackend(managerContext, profile, { reference, origin: 'https://identity.example', credentials, fetch: transport })
       stage = profile + ':publish'
@@ -121,7 +149,7 @@ it.skipIf(!source || !python)('registers approved E1/Web local Manifests, authen
       if (profile === 'web') {
         stage = 'web:concurrent-document-conflict'
         const withNative = async <T>(runNative: (native: ProviderLease) => Promise<T>) => {
-          const native = nativeRegistration.provider.acquireLease({ consumer: 'component-controller', capabilities: ['IDENTITY_READ', 'IDENTITY_DOCUMENT_UPDATE'], ttlSeconds: 60 })
+          const native = nativeRegistration.provider.acquireLease({ consumer: 'component-controller', capabilities: ['IDENTITY_READ', 'IDENTITY_DOCUMENT_UPDATE', 'IDENTITY_HTTP_SIGNATURE'], ttlSeconds: 60 })
           try { return await runNative(native) } finally { native.dispose() }
         }
         const driver = await createManagedPublicationDriver({ reference, origin: 'https://identity.example', credentials, fetch: transport, withNative })

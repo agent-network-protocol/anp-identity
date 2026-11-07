@@ -177,3 +177,6 @@ consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python
 协议身份通过显式 `usage: 'protocol'` 创建审批，使用本地 E1/Web 设备密钥、按能力投影的 ES256 发布，以及目标绑定的机器/PAP lease。真实 User Service 管理通道、加密凭据 broker、catalog v4 迁移与验证边界见 [发布与管理契约](./PUBLICATION.md)。
 
 可信 Host 发布 driver 同时提供 typed、设备绑定的 PAP callback 注册与一次领取。V2 PAP account 可独立声明严格 RFC 8252 loopback redirect；V1 与受保护公开获取 URL 保持 HTTPS 规则。这些 callback 能力不向 Remote 或模型工具开放。
+
+
+受信的 User Service 注册／发布驱动使用已有 ANP HTTP 签名能力和登记设备密钥签署注册后的每次请求，不复用注册时保存的 Bearer。设备操作授权与公开 API 形状保持不变，详见 [传输约定](PUBLICATION.md#registration-and-management)。
