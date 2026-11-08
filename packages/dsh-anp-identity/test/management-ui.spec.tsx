@@ -559,3 +559,70 @@ it('shows protocol HTTP-only approval without raw signing warnings or capability
   expect(f.remote.decide).not.toHaveBeenCalled();
   f.controller.dispose();
 });
+
+it.each(["approved", "expired", "cancelled"] as const)("closes a stale request review after another tab changes it to %s", async status => {
+  const pending = request("access", "cross-tab");
+  const f = fixture([pending]);
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [{ ...pending, status, version: 2 }] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.controller.getSnapshot().notice).toContain("不会自动重复授权");
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it("closes a pending review with a changed version without silently approving the new version", async () => {
+  const pending = request("access", "changed-version");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [{ ...pending, version: 2 }] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  expect(f.remote.getRequest).toHaveBeenCalledTimes(1);
+  f.controller.dispose();
+});
+
+it.each(["request_conflict", "request_not_pending", "request_not_found"])("refreshes a rejected stale decision (%s) without retrying approval", async code => {
+  const pending = request("access", "decision-race");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.decide.mockRejectedValueOnce(new Error(code));
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [] });
+  await act(() => f.controller.decide({ decision: "approve", mode: "once", identity: identity.reference }));
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  expect(f.remote.decide.mock.calls[0]?.[0]).toMatchObject({ requestId: pending.id, expectedVersion: 1, mode: "once" });
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.controller.getSnapshot().error).toBeNull();
+  expect(f.controller.getSnapshot().notice).toContain("不会自动重复授权");
+  expect(f.remote.listRequests).toHaveBeenCalledTimes(2);
+  f.controller.dispose();
+});
+
+it("closes a review removed from the pending-only list but retains an unchanged pending review", async () => {
+  const pending = request("access", "pending-only");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it("keeps an unrelated decision error visible without retrying or dismissing the review", async () => {
+  const pending = request("access", "unrelated-error");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.decide.mockRejectedValueOnce(new Error("provider_unavailable"));
+  await act(() => f.controller.decide({ decision: "approve", mode: "once", identity: identity.reference }));
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  expect(f.controller.getSnapshot().error).toBe("provider_unavailable");
+  f.controller.dispose();
+});

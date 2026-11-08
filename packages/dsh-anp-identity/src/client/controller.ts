@@ -150,6 +150,14 @@ export class IdentityController {
         selectedKey,
         ...(changed ? { publication: null, grants: [], document: null, documentOpen: false } : {}),
       });
+      // Another tab may have decided the request while this review stayed open.
+      // Never update its version silently or replay the user's approval.
+      const modal = this.view.modal;
+      if (modal?.kind === "request" && !this.view.pending &&
+        !requests.some(r => r.id === modal.review.request.id &&
+          r.status === "pending" && r.version === modal.review.request.version)) {
+        this.closeStaleRequest();
+      }
       await this.loadGrants();
       if (!this.pauseQueue && this.view.modal === null) {
         const next = this.view.requests.find((r) => !r.prompted);
@@ -257,6 +265,11 @@ export class IdentityController {
       if (focus?.isConnected) focus.focus();
     });
   }
+  private closeStaleRequest(): void {
+    this.patch({ pending: false });
+    this.closeModal();
+    this.patch({ notice: "此授权请求已处理、已过期或已变更，旧弹窗已关闭。请查看授权请求的最新状态；不会自动重复授权。" });
+  }
   async decide(
     decision: Omit<AuthorizationDecision, "requestId" | "expectedVersion">,
   ): Promise<void> {
@@ -281,7 +294,12 @@ export class IdentityController {
       this.closeModal(false);
       await this.refresh();
     } catch (error) {
-      this.fail(error);
+      if (error instanceof Error && ["request_conflict", "request_not_pending", "request_not_found"].includes(error.message)) {
+        this.closeStaleRequest();
+        await this.refresh();
+      } else {
+        this.fail(error);
+      }
     } finally {
       this.patch({ pending: false });
     }
