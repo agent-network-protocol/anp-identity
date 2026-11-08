@@ -1,3 +1,5 @@
+import type { OAuthClientIdentity } from "../publication-types.js";
+import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
 import type { IdentityReference } from "@agent-network-protocol/anp-identity";
 import type {
@@ -15,6 +17,9 @@ export type ManagementRemote = {
   [K in keyof IdentityManagement]: (
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
+} & {
+  registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>>;
+  submitRegistrationOtp?: (input: { code: string }) => Promise<RemoteResult<null>>;
 };
 export type ManagerModal =
   | { readonly kind: "request"; readonly review: RequestReview }
@@ -27,11 +32,13 @@ export type ManagerModal =
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
   readonly loading: boolean;
+  readonly bootstraps: readonly RegistrationBootstrapStatus[];
   readonly identities: readonly ManagedIdentitySummary[];
   readonly requests: readonly AuthorizationRequest[];
   readonly history: readonly AuthorizationRequest[];
   readonly selectedKey: string | null;
   readonly grants: readonly AuthorizationGrant[];
+  readonly publication: OAuthClientIdentity | null;
   readonly document: string | null;
   readonly documentOpen: boolean;
   readonly modal: ManagerModal | null;
@@ -47,12 +54,23 @@ export const identityReference = (
 
 /** One shared controller owns both settings and overlay; remounts cannot duplicate prompts. */
 export class IdentityController {
+  /** Submit the code only to the authenticated manager; never retain it in view state. */
+  async submitRegistrationOtp(code: string): Promise<void> {
+    await this.action(async () => {
+      if (!this.remote.submitRegistrationOtp) throw new Error('SMS registration is unavailable');
+      const result = await this.remote.submitRegistrationOtp({ code });
+      if (!result.ok) throw new Error('SMS verification could not be submitted');
+      await this.refresh();
+    });
+  }
   private view: ManagerView = {
     loading: true,
+    bootstraps: [],
     identities: [],
     requests: [],
     history: [],
     selectedKey: null,
+    publication: null,
     grants: [],
     document: null,
     documentOpen: false,
@@ -108,10 +126,12 @@ export class IdentityController {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     try {
-      const [identities, requests] = await Promise.all([
+      const [identities, requests, bootstrapResult] = await Promise.all([
         this.call("listIdentities"),
         this.call("listRequests", false),
+        this.remote.registrationBootstrapStatus?.(),
       ]);
+      if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
       const selectedKey = identities.some(
         (i) => identityKey(identityReference(i)) === this.view.selectedKey,
       )
@@ -122,13 +142,22 @@ export class IdentityController {
       const changed = selectedKey !== this.view.selectedKey;
       this.patch({
         loading: false,
+        bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
         requests: requests
           .filter((r) => r.status === "pending")
           .sort((a, b) => b.createdAt - a.createdAt),
         selectedKey,
-        ...(changed ? { grants: [], document: null, documentOpen: false } : {}),
+        ...(changed ? { publication: null, grants: [], document: null, documentOpen: false } : {}),
       });
+      // Another tab may have decided the request while this review stayed open.
+      // Never update its version silently or replay the user's approval.
+      const modal = this.view.modal;
+      if (modal?.kind === "request" && !this.view.pending &&
+        !requests.some(r => r.id === modal.review.request.id &&
+          r.status === "pending" && r.version === modal.review.request.version)) {
+        this.closeStaleRequest();
+      }
       await this.loadGrants();
       if (!this.pauseQueue && this.view.modal === null) {
         const next = this.view.requests.find((r) => !r.prompted);
@@ -150,6 +179,7 @@ export class IdentityController {
     this.selectionVersion++;
     this.patch({
       selectedKey: key,
+      publication: null,
       grants: [],
       document: null,
       documentOpen: false,
@@ -170,9 +200,13 @@ export class IdentityController {
     const selected = this.selected();
     if (!selected) return;
     const key = this.view.selectedKey;
-    const grants = await this.call("grants", identityReference(selected));
+    const [grants, publication] = await Promise.all([
+      this.call("grants", identityReference(selected)),
+      selected.catalogState === "active" ? this.call("publicationStatus", identityReference(selected))
+        .catch(() => ({state: "failed" as const, did: selected.reference.did})) : Promise.resolve(null),
+    ]);
     if (this.view.selectedKey === key) {
-      this.patch({ grants: grants.filter((g) => g.status === "active") });
+      this.patch({ publication, grants: grants.filter((g) => g.status === "active") });
       const modal = this.view.modal;
       if (
         (modal?.kind === "permissions" || modal?.kind === "revoke") &&
@@ -231,6 +265,11 @@ export class IdentityController {
       if (focus?.isConnected) focus.focus();
     });
   }
+  private closeStaleRequest(): void {
+    this.patch({ pending: false });
+    this.closeModal();
+    this.patch({ notice: "此授权请求已处理、已过期或已变更，旧弹窗已关闭。请查看授权请求的最新状态；不会自动重复授权。" });
+  }
   async decide(
     decision: Omit<AuthorizationDecision, "requestId" | "expectedVersion">,
   ): Promise<void> {
@@ -255,7 +294,12 @@ export class IdentityController {
       this.closeModal(false);
       await this.refresh();
     } catch (error) {
-      this.fail(error);
+      if (error instanceof Error && ["request_conflict", "request_not_pending", "request_not_found"].includes(error.message)) {
+        this.closeStaleRequest();
+        await this.refresh();
+      } else {
+        this.fail(error);
+      }
     } finally {
       this.patch({ pending: false });
     }
@@ -322,6 +366,17 @@ export class IdentityController {
       this.closeModal();
       await this.refresh();
     });
+  }
+  async retryPublication(): Promise<void> {
+    const selected = this.selected();
+    if (!selected || this.view.pending) return;
+    this.patch({pending: true, error: null});
+    try {
+      await this.call("retryPublication", identityReference(selected));
+      await this.refresh();
+    } catch {
+      this.patch({error: "身份发布尚未完成，请检查身份托管配置后重试。"});
+    } finally { this.patch({pending: false}); }
   }
   async toggleDocument(): Promise<void> {
     if (this.view.documentOpen) {

@@ -62,6 +62,7 @@ impl IdentityManager {
             schema_compatible: true,
             identity_count: self.engine.list_identities()?.len(),
             health: StoreHealth::Ready,
+            backend_available: self.engine.runtime.assert_backend_available().is_ok(),
         })
     }
 
@@ -141,6 +142,14 @@ impl IdentityManager {
 
     pub(crate) fn store_id(&self) -> &str {
         &self.engine.manifest().store_id
+    }
+
+    /// Require current access to the Store's pinned backend without changing its key or lock state.
+    pub fn assert_backend_available(&self) -> IdentityResult<()> {
+        self.engine
+            .runtime
+            .assert_backend_available()
+            .map_err(Into::into)
     }
 
     pub(crate) fn engine_mut(&mut self) -> &mut DidStore {

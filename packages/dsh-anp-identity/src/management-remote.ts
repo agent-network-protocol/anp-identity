@@ -1,3 +1,4 @@
+import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
@@ -10,17 +11,31 @@ import type {
   DeleteManagedIdentityInput,
 } from "./management-types.js";
 import contribution from "./remote.js";
+import z from '@deepseek-ai/schemastery';
+import type AnpIdentityService from './index.js';
+import { RegistrationBootstrapConfigSchema, startRegistrationBootstrap } from './registration-bootstrap.js';
+import type { RegistrationBootstrapInput, RegistrationBootstrapController } from './registration-bootstrap.js';
 import type {} from "@deepseek-ai/dsh-typert-registry";
+
+export interface Config { registrationBootstrap?: RegistrationBootstrapInput }
+export const Config: z<Config> = z.object({ registrationBootstrap: z.any() });
 
 export class IdentityManagerRemote extends TypertRemoteService {
   static inject = ["anpIdentity", "typert"];
+  static Config = Config;
   private readonly manager: IdentityManagement;
-  constructor(ctx: Context) {
+  private readonly bootstrap: RegistrationBootstrapController | undefined;
+  constructor(ctx: Context, config: Config = {}) {
     super(ctx, "anpIdentityManager");
-    const service = ctx.root.get("anpIdentity") as unknown as {
-      acquireManagement(): IdentityManagement;
+    const service = ctx.anpIdentity as unknown as {
+      acquireManagement(context: Context): IdentityManagement;
     };
-    this.manager = service.acquireManagement();
+    this.manager = service.acquireManagement(ctx);
+    this.bootstrap = config.registrationBootstrap === undefined ? undefined : startRegistrationBootstrap({
+      context: ctx, service: ctx.anpIdentity as AnpIdentityService, manager: this.manager,
+      config: RegistrationBootstrapConfigSchema.parse(config.registrationBootstrap),
+    });
+    ctx.effect(() => () => this.bootstrap?.dispose(), 'anp-identity: registration bootstrap');
     ctx.effect(() =>
       ctx.typert.register({
         package: contribution.package,
@@ -30,6 +45,13 @@ export class IdentityManagerRemote extends TypertRemoteService {
         invocations: contribution.descriptors,
       }),
     );
+  }
+  @Remote registrationBootstrapStatus() { return this.bootstrap ? [this.bootstrap.status()] : []; }
+  /** Accept a user-entered SMS code without persisting or returning it. */
+  @Remote submitRegistrationOtp(input: { code: string }) {
+    if (!this.bootstrap) throw new Error('bootstrap_otp_unavailable');
+    this.bootstrap.submitOtp(input.code);
+    return null;
   }
   @Remote listIdentities() {
     return this.manager.listIdentities();
@@ -49,6 +71,11 @@ export class IdentityManagerRemote extends TypertRemoteService {
   @Remote async revoke(input: RevokeGrantInput) {
     await this.manager.revoke(input);
     return null;
+  }
+  @Remote retryPublication(input: IdentityReference) { return this.manager.retryPublication(input); }
+  @Remote publicationStatus(input: IdentityReference) { return this.manager.publicationStatus(input); }
+  @Remote publishIdentity(input: { reference: IdentityReference; config: PublicationConfig }) {
+    return this.manager.publishIdentity(input);
   }
   @Remote publicDocument(input: IdentityReference) {
     return this.manager.publicDocument(input);

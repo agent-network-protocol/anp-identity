@@ -466,6 +466,7 @@ impl SealedKeyAgreementPort for ManagedIdentity {
             shared.as_bytes(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        self.assert_backend_available()?;
         Ok(sealed_delivery(&sealed, &aad, consumed))
     }
 }
@@ -506,6 +507,7 @@ impl SealedEnrollmentKeyAgreementPort for super::EnrollmentSession {
             shared.as_bytes(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        self.assert_backend_available()?;
         Ok(sealed_delivery(&sealed, &aad, consumed))
     }
 }
@@ -542,6 +544,7 @@ impl SealedRootExportPort for ManagedIdentity {
             exported.as_pkcs8_der(),
         )
         .map_err(|_| SealedProviderError::EnvelopeInvalid)?;
+        self.assert_backend_available()?;
         Ok(sealed_delivery(&sealed, &aad, consumed))
     }
 }
@@ -1056,6 +1059,9 @@ mod tests {
                 kid: key.kid.clone(),
                 purpose: match key.role {
                     crate::KeyRole::RootControl => super::super::MigrationKeyPurpose::RootControl,
+                    crate::KeyRole::OAuthAuthentication => {
+                        panic!("OAuth keys are not migration inputs")
+                    }
                     crate::KeyRole::RequestSigning => {
                         super::super::MigrationKeyPurpose::Authentication
                     }

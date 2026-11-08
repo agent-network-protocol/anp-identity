@@ -1,0 +1,184 @@
+{
+  "format": "awiki-publication-v2-wire-v1",
+  "document_id": "one",
+  "did_document": {
+    "id": "did:web:identity.example:agents:v2",
+    "verificationMethod": [
+      {
+        "id": "did:web:identity.example:agents:v2#oauth-1",
+        "controller": "did:web:identity.example:agents:v2",
+        "type": "JsonWebKey2020",
+        "publicKeyJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+          "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      }
+    ],
+    "authentication": [
+      "did:web:identity.example:agents:v2#oauth-1"
+    ]
+  },
+  "vectors": [
+    {
+      "request": {
+        "schema_version": 2,
+        "operation_id": "prepare-v2",
+        "expected_version": 0,
+        "client_name": "Agent V2",
+        "capabilities": {
+          "mcp_machine": true,
+          "pap_session": false,
+          "pap_account": false
+        },
+        "signing_keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+            "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "kid": "did:web:identity.example:agents:v2#oauth-1",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ],
+        "active_kid": "did:web:identity.example:agents:v2#oauth-1",
+        "redirect_uris": []
+      },
+      "profile": "mcp_machine",
+      "metadata": "{\"client_id\":\"https://identity.example/user-service/v1/agent-clients/one/client.json\",\"client_name\":\"Agent V2\",\"grant_types\":[\"client_credentials\"],\"jwks_uri\":\"https://identity.example/user-service/v1/agent-clients/one/jwks.json\",\"redirect_uris\":[],\"response_types\":[],\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_signing_alg\":\"ES256\"}",
+      "jwks": "{\"keys\":[{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"did:web:identity.example:agents:v2#oauth-1\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY\",\"y\":\"T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU\"}]}",
+      "metadata_sha256": "7d67de79a514dbae631888e45e29507eec3461d30f9d9240f1ab1a6979a595d7",
+      "key_set_digest": "d4abd6ace6627fad2e6885ce77f7983f2cfb2be78b71fc50c6ecbed2122a1789"
+    },
+    {
+      "request": {
+        "schema_version": 2,
+        "operation_id": "prepare-v2",
+        "expected_version": 0,
+        "client_name": "Agent V2",
+        "capabilities": {
+          "mcp_machine": false,
+          "pap_session": true,
+          "pap_account": false
+        },
+        "signing_keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+            "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "kid": "did:web:identity.example:agents:v2#oauth-1",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ],
+        "active_kid": "did:web:identity.example:agents:v2#oauth-1",
+        "redirect_uris": []
+      },
+      "profile": "pap_session",
+      "metadata": "{\"client_id\":\"https://identity.example/user-service/v1/agent-clients/one/client.json\",\"client_name\":\"Agent V2\",\"grant_types\":[],\"jwks_uri\":\"https://identity.example/user-service/v1/agent-clients/one/jwks.json\",\"redirect_uris\":[],\"response_types\":[],\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_signing_alg\":\"ES256\"}",
+      "jwks": "{\"keys\":[{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"did:web:identity.example:agents:v2#oauth-1\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY\",\"y\":\"T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU\"}]}",
+      "metadata_sha256": "c47d836428bb23e9fea9800f6cf8bc8d3fa208dfd6799aa5012d7985f1a18942",
+      "key_set_digest": "d4abd6ace6627fad2e6885ce77f7983f2cfb2be78b71fc50c6ecbed2122a1789"
+    },
+    {
+      "request": {
+        "schema_version": 2,
+        "operation_id": "prepare-v2",
+        "expected_version": 0,
+        "client_name": "Agent V2",
+        "capabilities": {
+          "mcp_machine": false,
+          "pap_session": true,
+          "pap_account": true
+        },
+        "signing_keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+            "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "kid": "did:web:identity.example:agents:v2#oauth-1",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ],
+        "active_kid": "did:web:identity.example:agents:v2#oauth-1",
+        "redirect_uris": [
+          "https://adapter.example/callback"
+        ]
+      },
+      "profile": "pap_account",
+      "metadata": "{\"client_id\":\"https://identity.example/user-service/v1/agent-clients/one/client.json\",\"client_name\":\"Agent V2\",\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"jwks_uri\":\"https://identity.example/user-service/v1/agent-clients/one/jwks.json\",\"redirect_uris\":[\"https://adapter.example/callback\"],\"response_types\":[\"code\"],\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_signing_alg\":\"ES256\"}",
+      "jwks": "{\"keys\":[{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"did:web:identity.example:agents:v2#oauth-1\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY\",\"y\":\"T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU\"}]}",
+      "metadata_sha256": "4055b84f75d9ef751cc9fe2bc2253d8e988de7a4856020c9ba061d583217c7f2",
+      "key_set_digest": "d4abd6ace6627fad2e6885ce77f7983f2cfb2be78b71fc50c6ecbed2122a1789"
+    },
+    {
+      "request": {
+        "schema_version": 2,
+        "operation_id": "prepare-v2",
+        "expected_version": 0,
+        "client_name": "Agent V2",
+        "capabilities": {
+          "mcp_machine": true,
+          "pap_session": true,
+          "pap_account": false
+        },
+        "signing_keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+            "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "kid": "did:web:identity.example:agents:v2#oauth-1",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ],
+        "active_kid": "did:web:identity.example:agents:v2#oauth-1",
+        "redirect_uris": []
+      },
+      "profile": "mcp_machine_pap_session",
+      "metadata": "{\"client_id\":\"https://identity.example/user-service/v1/agent-clients/one/client.json\",\"client_name\":\"Agent V2\",\"grant_types\":[\"client_credentials\"],\"jwks_uri\":\"https://identity.example/user-service/v1/agent-clients/one/jwks.json\",\"redirect_uris\":[],\"response_types\":[],\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_signing_alg\":\"ES256\"}",
+      "jwks": "{\"keys\":[{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"did:web:identity.example:agents:v2#oauth-1\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY\",\"y\":\"T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU\"}]}",
+      "metadata_sha256": "7d67de79a514dbae631888e45e29507eec3461d30f9d9240f1ab1a6979a595d7",
+      "key_set_digest": "d4abd6ace6627fad2e6885ce77f7983f2cfb2be78b71fc50c6ecbed2122a1789"
+    },
+    {
+      "request": {
+        "schema_version": 2,
+        "operation_id": "prepare-v2",
+        "expected_version": 0,
+        "client_name": "Agent V2",
+        "capabilities": {
+          "mcp_machine": true,
+          "pap_session": true,
+          "pap_account": true
+        },
+        "signing_keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+            "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "kid": "did:web:identity.example:agents:v2#oauth-1",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ],
+        "active_kid": "did:web:identity.example:agents:v2#oauth-1",
+        "redirect_uris": [
+          "https://adapter.example/callback"
+        ]
+      },
+      "profile": "mcp_machine_pap_account",
+      "metadata": "{\"client_id\":\"https://identity.example/user-service/v1/agent-clients/one/client.json\",\"client_name\":\"Agent V2\",\"grant_types\":[\"client_credentials\",\"authorization_code\",\"refresh_token\"],\"jwks_uri\":\"https://identity.example/user-service/v1/agent-clients/one/jwks.json\",\"redirect_uris\":[\"https://adapter.example/callback\"],\"response_types\":[\"code\"],\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_signing_alg\":\"ES256\"}",
+      "jwks": "{\"keys\":[{\"alg\":\"ES256\",\"crv\":\"P-256\",\"kid\":\"did:web:identity.example:agents:v2#oauth-1\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY\",\"y\":\"T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU\"}]}",
+      "metadata_sha256": "cec9d985e8e96b996195d9e93f58e4cbaaab13fa91de02f90282181ddd4f73f5",
+      "key_set_digest": "d4abd6ace6627fad2e6885ce77f7983f2cfb2be78b71fc50c6ecbed2122a1789"
+    }
+  ]
+}

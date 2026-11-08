@@ -1,6 +1,8 @@
 import { Context } from "@deepseek-ai/cordis";
 import TypertRegistry from "@deepseek-ai/dsh-typert-registry";
 import TypertGateway from "@deepseek-ai/dsh-api-gateway";
+import RemoteAccessService from "@deepseek-ai/dsh-api-remote-access";
+import { Peer } from "@deepseek-ai/dsh-client-connection";
 import { describe, expect, it, vi } from "vitest";
 import ManagerRemote from "../lib/management-remote.js";
 import contribution from "../src/remote.js";
@@ -32,6 +34,7 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
     const acquireManagement = vi.fn(() => manager);
     ctx.provide("anpIdentity", { acquireManagement });
     await ctx.plugin(TypertRegistry);
+    await ctx.plugin(RemoteAccessService);
     await ctx.plugin(TypertGateway);
     const plugin = ctx.plugin(ManagerRemote);
     await plugin;
@@ -42,6 +45,7 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
       );
       const invoke = (method: string, args: Record<string, unknown> = {}) =>
         ctx.typertGateway.invoke({
+          peer: new Peer(ctx, { principal: { kind: 'owner' } }),
           namespace: "anpIdentityManager",
           method,
           args,
@@ -55,6 +59,7 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
           integrations: [],
         },
       ]);
+      await expect(invoke('registrationBootstrapStatus')).resolves.toEqual([]);
       await expect(
         invoke("decide", {
           input: {
@@ -89,6 +94,10 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
         "acquireProvider",
         "exportPrivateKey",
         "requestCreateIdentity",
+        'registerLocalIdentity',
+        'configureManagedPublicationBackend',
+        'pinManagementContext',
+        'bindPapHostConsumer',
       ])
         await expect(invoke(method)).rejects.toMatchObject({
           code: "gateway/invocation-unavailable",

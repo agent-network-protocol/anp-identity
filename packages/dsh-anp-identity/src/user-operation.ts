@@ -1,3 +1,4 @@
+import { exactHttps } from './publication-http.js'
 import { createHash } from 'node:crypto'
 import type { SignRequest } from './types.js'
 import type { ControlledOperation } from './authorization-types.js'
@@ -12,6 +13,14 @@ export async function normalizeOperation(operation: UserOperation): Promise<{
   if (operation?.action === 'read') return {
     frozen: fingerprint('identity:read', 'Read public identity', { action: 'read' }),
     input: { action: 'read' },
+  }
+  if (operation?.action === 'oauth') {
+    const audience = exactHttps(operation.audience)
+    return {
+      frozen: { ...fingerprint('identity:sign', `OAuth client assertion: ${audience}`, { action: 'oauth', audience }),
+        signingPurpose: 'oauth_client_assertion', oauthAudience: audience },
+      input: { action: 'oauth', audience },
+    }
   }
   if (operation?.action === 'sign') {
     const original = operation.request

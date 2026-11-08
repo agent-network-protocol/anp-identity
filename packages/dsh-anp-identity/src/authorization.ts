@@ -1,3 +1,4 @@
+import { exactHttps } from './publication-http.js'
 import { syncDirectory } from './sync-directory.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
@@ -15,6 +16,7 @@ import type {
 export * from './authorization-types.js'
 const SCHEMA = 'anp-identity-authorization/1' as const
 const ORDINARY = ['identity:read', 'identity:sign', 'identity:http-auth'] as const
+const HTTP_ONLY = ['identity:read', 'identity:http-auth'] as const
 const FIVE_MINUTES = 300_000
 const SEVEN_DAYS = 7 * 24 * 60 * 60_000
 
@@ -53,9 +55,11 @@ function operation(value: ControlledOperation): ControlledOperation {
     capability: value.capability, fingerprint: value.fingerprint, summary: text(value.summary, 1024),
     ...(value.signingPurpose === undefined ? {} : { signingPurpose: text(value.signingPurpose, 256) }),
     ...(value.httpOrigin === undefined ? {} : { httpOrigin: origin(value.httpOrigin) }),
+    ...(value.oauthAudience === undefined ? {} : { oauthAudience: exactHttps(value.oauthAudience) }),
   }
   if ((result.capability === 'identity:sign') !== (result.signingPurpose !== undefined)
-    || (result.capability === 'identity:http-auth') !== (result.httpOrigin !== undefined)) fail('invalid_operation')
+    || (result.capability === 'identity:http-auth') !== (result.httpOrigin !== undefined)
+    || (result.signingPurpose === 'oauth_client_assertion') !== (result.oauthAudience !== undefined)) fail('invalid_operation')
   return result
 }
 function origin(value: string): string {
@@ -65,17 +69,21 @@ function origin(value: string): string {
   return parsed.origin
 }
 function snapshot(value: CapabilitySnapshot): CapabilitySnapshot {
-  if (value.capabilities.length !== ORDINARY.length || ORDINARY.some(cap => !value.capabilities.includes(cap))) fail('incompatible_identity_capabilities')
+  const capabilities = value.version === 'ordinary-http/1' ? HTTP_ONLY : ORDINARY
+  if (value.capabilities.length !== capabilities.length || capabilities.some(cap => !value.capabilities.includes(cap))
+    || value.version === 'ordinary-http/1' && (value.signingPurposes.length > 0 || (value.oauthAudiences?.length ?? 0) > 0)) fail('incompatible_identity_capabilities')
   return {
-    version: text(value.version, 256), capabilities: [...ORDINARY],
+    version: text(value.version, 256), capabilities: [...capabilities],
     signingPurposes: [...new Set(value.signingPurposes.map(v => text(v, 256)))].sort(),
-    httpOrigins: [...new Set(value.httpOrigins.map(origin))].sort(),
+    httpOrigins: [...new Set(value.httpOrigins.map(value => value === '*' ? value : origin(value)))].sort(),
+    ...(value.oauthAudiences === undefined ? {} : { oauthAudiences: [...new Set(value.oauthAudiences.map(value => exactHttps(value)))].sort() }),
   }
 }
 function permits(policy: CapabilitySnapshot, value: ControlledOperation): boolean {
   return policy.capabilities.includes(value.capability)
     && (value.signingPurpose === undefined || policy.signingPurposes.includes(value.signingPurpose))
-    && (value.httpOrigin === undefined || policy.httpOrigins.includes(value.httpOrigin))
+    && (value.httpOrigin === undefined || policy.httpOrigins.includes('*') || policy.httpOrigins.includes(value.httpOrigin))
+    && (value.oauthAudience === undefined || (policy.oauthAudiences ?? []).includes(value.oauthAudience))
 }
 
 /** Compute at the Host boundary from the actual immutable operation, not a plugin-provided digest. */
@@ -118,7 +126,12 @@ export class AuthorizationEngine {
 
   async requestCreate(verifiedCaller: VerifiedCaller, input: RequestCreateInput): Promise<CreateAuthorizationRequest> {
     const source = caller(verifiedCaller)
-    const parameters: CreateParameters = { label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+    if (input.parameters.usage !== undefined && !['ordinary', 'protocol'].includes(input.parameters.usage)) fail('invalid_create_parameters')
+    if (input.parameters.profile === 'web' && input.parameters.usage !== 'protocol') fail('invalid_create_parameters')
+    if (input.parameters.identityOnly !== undefined && (typeof input.parameters.identityOnly !== 'boolean' || input.parameters.usage !== 'protocol')) fail('invalid_create_parameters')
+    if (input.parameters.profile !== undefined && !['e1', 'web'].includes(input.parameters.profile)) fail('invalid_create_parameters')
+    const parameters: CreateParameters = { ...(input.parameters.profile === undefined ? {} : { profile: input.parameters.profile }), ...(input.parameters.usage === undefined ? {} : { usage: input.parameters.usage }), label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+      ...(input.parameters.identityOnly === undefined ? {} : { identityOnly: input.parameters.identityOnly }),
       ...(input.parameters.handle === undefined ? {} : { handle: normalizeHandle(text(input.parameters.handle, 128)) }) }
     const domain = new URL(`https://${parameters.domain}`)
     if (domain.host !== parameters.domain || domain.username || domain.password || domain.pathname !== '/' || !parameters.path.startsWith('/') || /[?#]/u.test(parameters.path)) fail('invalid_create_parameters')

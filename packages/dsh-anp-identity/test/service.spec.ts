@@ -26,6 +26,56 @@ const ALL_CLIENT_CAPABILITIES = [
 ] as const
 
 describe('DSH ANP Identity service', () => {
+  it('keeps legacy Provider info on its exact four-field version-1 wire format', async () => {
+    await using fixture = await healthFixture(['legacy-wire'])
+    const lease = fixture.ctx.anpIdentity.acquireProvider({ consumer: 'legacy-wire', capabilities: ['IDENTITY_READ'] })
+    try {
+      for (const available of [true, undefined]) {
+        fixture.setAvailable(available)
+        const info = await lease.info()
+        expect(Object.keys(info).sort()).toEqual(['health', 'identityCount', 'schemaCompatible', 'storeId'])
+        expect(info.health).toBe('ready')
+        expect(Object.hasOwn(info, 'backendAvailable')).toBe(false)
+      }
+    } finally { lease.dispose() }
+  })
+
+  it('rejects unavailable native backend before returning legacy Provider info and resumes after recovery', async () => {
+    await using fixture = await healthFixture(['legacy-wire'])
+    const lease = fixture.ctx.anpIdentity.acquireProvider({ consumer: 'legacy-wire', capabilities: ['IDENTITY_READ'] })
+    try {
+      fixture.setAvailable(false)
+      await expect(lease.info()).rejects.toMatchObject({ code: 'provider_unavailable' })
+      fixture.setAvailable(true)
+      await expect(lease.info()).resolves.toMatchObject({ health: 'ready' })
+    } finally { lease.dispose() }
+  })
+
+  it('reports live native backend unavailability while preserving catalog health and legacy info compatibility', async () => {
+    await using fixture = await healthFixture()
+    await expect(fixture.ctx.anpIdentity.health()).resolves.toMatchObject({ status: 'ready', catalog: 'ready' })
+    fixture.setAvailable(false)
+    await expect(fixture.ctx.anpIdentity.health()).resolves.toMatchObject({ status: 'unavailable', catalog: 'ready' })
+    fixture.setAvailable(true)
+    await expect(fixture.ctx.anpIdentity.health()).resolves.toMatchObject({ status: 'ready', catalog: 'ready' })
+    fixture.setAvailable(undefined)
+    await expect(fixture.ctx.anpIdentity.health()).resolves.toMatchObject({ status: 'ready', catalog: 'ready' })
+    expect(fixture.shortLeases()).toBeGreaterThan(0)
+    expect(fixture.shortLeases()).toBe(fixture.disposedShortLeases())
+  })
+
+  it.each(['provider', 'host'] as const)('does not report ready after %s disposal during the native health await', async disposed => {
+    await using fixture = await healthFixture()
+    const gate = fixture.holdInfo()
+    const pending = fixture.ctx.anpIdentity.health()
+    await gate.entered
+    if (disposed === 'provider') await fixture.disposeProvider()
+    else await fixture.ctx.fiber.dispose()
+    gate.release()
+    await expect(pending).resolves.toMatchObject({ status: 'unavailable' })
+    expect(fixture.shortLeases()).toBe(fixture.disposedShortLeases())
+  })
+
   it('creates Web through the same client lease without exposing a DID root', async () => {
     await using fixture = await serviceFixture(['web-client'])
     const client = await fixture.ctx.anpIdentity.acquireClient({
@@ -501,6 +551,47 @@ describe('DSH ANP Identity service', () => {
       .toBe(false)
   })
 })
+
+/** Real native Store and Context; only the readonly availability response/await is controlled. */
+async function healthFixture(consumers: string[] = []) {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-health-'))
+  const ctx = await createContext(root, consumers)
+  const registration = await openNativeProvider({ stateRoot: root, rootKeyProvider: 'injected',
+    rootKeyProviderId: 'dsh-health-test', injectedRootKey: Buffer.alloc(32, 78) })
+  let available: boolean | undefined = true
+  let shortLeases = 0, disposedShortLeases = 0
+  let hold: { enter(): void; released: Promise<void>; release(): void } | undefined
+  const provider: NativeIdentityProvider = { acquireLease(request) {
+    const native = registration.provider.acquireLease(request)
+    const short = request.capabilities.length === 1 && request.capabilities[0] === 'IDENTITY_READ' && request.ttlSeconds === 15
+    if (short) shortLeases += 1
+    return new Proxy(native, { get(target, property) {
+      if (property === 'info') return async () => {
+        const info = { ...await target.info(), backendAvailable: available }
+        const gate = hold
+        if (gate) { gate.enter(); await gate.released; if (hold === gate) hold = undefined }
+        if (available === undefined) Reflect.deleteProperty(info, 'backendAvailable')
+        return info
+      }
+      if (property === 'dispose') return () => { if (short) disposedShortLeases += 1; target.dispose() }
+      const value = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+  } }
+  const dispose = (ctx.anpIdentity as unknown as NativeProviderRegistry).registerProvider({ protocol: ANP_IDENTITY_NATIVE_PROVIDER_PROTOCOL, provider })
+  await waitForReady(ctx)
+  return { ctx, setAvailable: (value: boolean | undefined) => { available = value },
+    shortLeases: () => shortLeases, disposedShortLeases: () => disposedShortLeases, disposeProvider: dispose,
+    holdInfo() {
+      let enter!: () => void, release!: () => void
+      const entered = new Promise<void>(resolve => { enter = resolve })
+      const released = new Promise<void>(resolve => { release = resolve })
+      hold = { enter, released, release }
+      return { entered, release }
+    },
+    async [Symbol.asyncDispose]() { hold?.release(); await dispose(); await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) },
+  }
+}
 
 async function serviceFixture(consumers: string[]) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-anp-identity-service-'))

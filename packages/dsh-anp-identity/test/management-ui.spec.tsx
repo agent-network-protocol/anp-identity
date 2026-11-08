@@ -28,6 +28,7 @@ import type {
   AuthorizationRequest,
   CapabilitySnapshot,
 } from "../src/authorization-types.js";
+import type { RegistrationBootstrapStatus } from '../src/registration-bootstrap.js';
 
 const identity: ManagedIdentitySummary = {
   reference: {
@@ -104,6 +105,7 @@ function fixture(
   let grants = initialGrants;
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
+    registrationBootstrapStatus: vi.fn(async () => ok<RegistrationBootstrapStatus[]>([])),
     listIdentities: vi.fn(async () => ok(identities)),
     listRequests: vi.fn(async (history?: boolean) =>
       ok(
@@ -155,6 +157,9 @@ function fixture(
       grants = grants.filter((g) => g.id !== grantId);
       return ok(null);
     }),
+    retryPublication: vi.fn(async (ref) => ok({ state: "awaiting_configuration" as const, did: ref.did })),
+    publicationStatus: vi.fn(async (ref) => ok({ state: "local" as const, did: ref.did })),
+    publishIdentity: vi.fn(async (input) => ok({ state: "awaiting_configuration" as const, did: input.reference.did })),
     publicDocument: vi.fn(async (ref) =>
       ok({ id: ref.did, verificationMethod: [] }),
     ),
@@ -182,6 +187,20 @@ function fixture(
 afterEach(cleanup);
 
 describe("Identity management UI against Host-shaped Remote", () => {
+  it('shows safe registration phases and references without claiming an automatic protocol permission grant', async () => {
+    const f = fixture();
+    f.remote.registrationBootstrapStatus.mockResolvedValue({ ok: true, value: [{
+      id: 'work', requestId: 'create-work', phase: 'published', reference: identity.reference,
+      clientId: 'https://identity.example/user-service/v1/agent-clients/work/client.json',
+    }] });
+    f.render();
+    await act(() => f.controller.refresh());
+    expect(screen.getByText('协议身份注册')).toBeTruthy();
+    expect(screen.getByText('注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。')).toBeTruthy();
+    expect(screen.getByText('本地身份引用')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/access_token|accessToken|ciphertext|claim_secret/u);
+    f.controller.dispose();
+  });
   it("keeps complete identity values copyable while switching compact identity cards", async () => {
     const f = fixture();
     const copy = vi.spyOn(f.controller, "copy").mockResolvedValue(undefined);
@@ -495,4 +514,115 @@ describe("Identity management UI against Host-shaped Remote", () => {
       expect(f.remote.decide).not.toHaveBeenCalled();
     },
   );
+});
+
+it('submits an explicit SMS code only to the manager and clears the password input', async () => {
+  const f = fixture();
+  const submit = vi.fn(async () => ({ ok: true as const, value: null }));
+  Object.assign(f.remote, { submitRegistrationOtp: submit });
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ ok: true, value: [{
+    id: 'phone', requestId: 'create-phone', phase: 'awaiting_phone_verification',
+  }] });
+  f.render(); await act(() => f.controller.refresh());
+  const input = screen.getByLabelText('短信验证码') as HTMLInputElement;
+  expect(input.type).toBe('password');
+  expect((screen.getByRole('button', { name: '验证并注册' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(input, { target: { value: '314159' } });
+  fireEvent.click(screen.getByRole('button', { name: '验证并注册' }));
+  await waitFor(() => expect(submit).toHaveBeenCalledWith({ code: '314159' }));
+  expect(input.value).toBe('');
+  expect(JSON.stringify(f.controller.getSnapshot())).not.toContain('314159');
+  f.controller.dispose();
+});
+
+it('labels a wildcard HTTP approval as all HTTPS domains rather than a literal star', async () => {
+  const pending = request('access', 'wildcard-review');
+  const f = fixture([pending]);
+  const wildcard = { ...snapshot, httpOrigins: ['*'] };
+  f.remote.getRequest.mockResolvedValue({ ok: true, value: { request: pending, identities: [identity], snapshot: wildcard,
+    snapshots: [{ identity: identity.reference, snapshot: wildcard }] } });
+  f.render(); await act(() => f.controller.refresh());
+  expect(await screen.findByText(/全部 HTTPS 域名（通配权限）/)).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it('shows protocol HTTP-only approval without raw signing warnings or capability', async () => {
+  const pending = request('access', 'device-http-review');
+  const f = fixture([pending]);
+  const httpOnly: CapabilitySnapshot = { version: 'ordinary-http/1', capabilities: ['identity:read', 'identity:http-auth'], signingPurposes: [], httpOrigins: ['https://anp-demo.awiki.info'] };
+  f.remote.getRequest.mockResolvedValue({ ok: true, value: { request: pending, identities: [identity], snapshot: httpOnly,
+    snapshots: [{ identity: identity.reference, snapshot: httpOnly }] } });
+  f.render(); await act(() => f.controller.refresh());
+  expect(await screen.findByText('仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。')).toBeTruthy();
+  expect(screen.queryByText('签名可在外部使用，不受网站列表限制。')).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it.each(["approved", "expired", "cancelled"] as const)("closes a stale request review after another tab changes it to %s", async status => {
+  const pending = request("access", "cross-tab");
+  const f = fixture([pending]);
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [{ ...pending, status, version: 2 }] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.controller.getSnapshot().notice).toContain("不会自动重复授权");
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it("closes a pending review with a changed version without silently approving the new version", async () => {
+  const pending = request("access", "changed-version");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [{ ...pending, version: 2 }] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  expect(f.remote.getRequest).toHaveBeenCalledTimes(1);
+  f.controller.dispose();
+});
+
+it.each(["request_conflict", "request_not_pending", "request_not_found"])("refreshes a rejected stale decision (%s) without retrying approval", async code => {
+  const pending = request("access", "decision-race");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.decide.mockRejectedValueOnce(new Error(code));
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [] });
+  await act(() => f.controller.decide({ decision: "approve", mode: "once", identity: identity.reference }));
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  expect(f.remote.decide.mock.calls[0]?.[0]).toMatchObject({ requestId: pending.id, expectedVersion: 1, mode: "once" });
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.controller.getSnapshot().error).toBeNull();
+  expect(f.controller.getSnapshot().notice).toContain("不会自动重复授权");
+  expect(f.remote.listRequests).toHaveBeenCalledTimes(2);
+  f.controller.dispose();
+});
+
+it("closes a review removed from the pending-only list but retains an unchanged pending review", async () => {
+  const pending = request("access", "pending-only");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  f.remote.listRequests.mockResolvedValue({ ok: true, value: [] });
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().modal).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it("keeps an unrelated decision error visible without retrying or dismissing the review", async () => {
+  const pending = request("access", "unrelated-error");
+  const f = fixture([pending]);
+  await act(() => f.controller.refresh());
+  f.remote.decide.mockRejectedValueOnce(new Error("provider_unavailable"));
+  await act(() => f.controller.decide({ decision: "approve", mode: "once", identity: identity.reference }));
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  expect(f.controller.getSnapshot().modal?.kind).toBe("request");
+  expect(f.controller.getSnapshot().error).toBe("provider_unavailable");
+  f.controller.dispose();
 });

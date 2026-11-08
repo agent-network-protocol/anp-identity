@@ -21,7 +21,7 @@ use crate::secret::SecretBytes;
 use crate::store_lock::StoreWriteGuard;
 use crate::{DidError, DidResult, KeyRole};
 
-const RECORD_SCHEMA_VERSION: u32 = 1;
+const RECORD_SCHEMA_VERSION: u32 = 2;
 const RECORD_NONCE_LEN: usize = 12;
 const RECORD_HKDF_SALT: &[u8] = b"anp-identity:keystore:hkdf-salt:v1";
 
@@ -44,6 +44,8 @@ pub(crate) enum SealIfAbsent {
 struct EncryptedRecord {
     schema_version: u32,
     secret_ref: SecretRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    algorithm: Option<crate::KeyAlgorithm>,
     cipher: String,
     kdf: String,
     nonce_b64u: String,
@@ -187,6 +189,7 @@ fn seal_record(
         .map_err(|_| DidError::Crypto)?;
     Ok(EncryptedRecord {
         schema_version: RECORD_SCHEMA_VERSION,
+        algorithm: Some(crate::registry::algorithm_for_role(secret_ref.role)),
         secret_ref,
         cipher: "chacha20-poly1305".to_string(),
         kdf: "hkdf-sha256".to_string(),
@@ -198,7 +201,11 @@ fn seal_record(
 }
 
 fn open_record(root_key: &RootKey, record: &EncryptedRecord) -> DidResult<SecretBytes> {
-    if record.schema_version != RECORD_SCHEMA_VERSION
+    if !matches!(record.schema_version, 1 | RECORD_SCHEMA_VERSION)
+        || (record.schema_version == 1 && record.secret_ref.role == KeyRole::OAuthAuthentication)
+        || (record.schema_version == 2
+            && record.algorithm
+                != Some(crate::registry::algorithm_for_role(record.secret_ref.role)))
         || record.cipher != "chacha20-poly1305"
         || record.kdf != "hkdf-sha256"
     {
@@ -248,6 +255,17 @@ fn aad_for_ref(schema_version: u32, secret_ref: &SecretRef) -> Vec<u8> {
     push_field(&mut aad, "kid", &secret_ref.key_id);
     push_field(&mut aad, "role", key_role_name(secret_ref.role));
     push_field(&mut aad, "version", &secret_ref.version.to_string());
+    if schema_version >= 2 {
+        push_field(
+            &mut aad,
+            "algorithm",
+            match crate::registry::algorithm_for_role(secret_ref.role) {
+                crate::KeyAlgorithm::P256 => "p256",
+                crate::KeyAlgorithm::Ed25519 => "ed25519",
+                crate::KeyAlgorithm::X25519 => "x25519",
+            },
+        );
+    }
     aad
 }
 
@@ -265,6 +283,7 @@ fn key_role_name(role: KeyRole) -> &'static str {
         KeyRole::RootControl => "root-control",
         KeyRole::DeviceSigning => "device-signing",
         KeyRole::RequestSigning => "request-signing",
+        KeyRole::OAuthAuthentication => "oauth-authentication-p256",
         KeyRole::E2eeSigning => "e2ee-signing",
         KeyRole::E2eeAgreement => "e2ee-agreement",
     }
@@ -404,3 +423,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod migration_tests;

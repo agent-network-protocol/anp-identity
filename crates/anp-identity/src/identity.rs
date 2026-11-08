@@ -411,9 +411,11 @@ impl DidIdentity {
             role: metadata.role,
             version: metadata.version,
         };
-        self.runtime
-            .key_store()
-            .open(self.runtime.root_key(), &secret_ref)
+        self.runtime.with_private_access(|| {
+            self.runtime
+                .key_store()
+                .open(self.runtime.root_key(), &secret_ref)
+        })
     }
 }
 

@@ -168,6 +168,7 @@ impl DidIdentity {
         ));
         pkcs8_der.extend_from_slice(&ED25519_PKCS8_PREFIX);
         pkcs8_der.extend_from_slice(secret.expose());
+        self.runtime().assert_backend_available()?;
         Ok(ExportedRootPrivateKey { pkcs8_der })
     }
 
@@ -345,6 +346,7 @@ impl DidIdentity {
         use ed25519_dalek::Signer;
         envelope.signature_b64u =
             URL_SAFE_NO_PAD.encode(signing_key.sign(&signature_input).to_bytes());
+        self.runtime().assert_backend_available()?;
         Ok(envelope)
     }
 

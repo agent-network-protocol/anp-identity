@@ -22,6 +22,14 @@ impl ManagedIdentity {
         project_public_identity(&self.store_id, &engine)
     }
 
+    /// Require read-only access to the Store's pinned backend without changing its lock state.
+    pub fn assert_backend_available(&self) -> IdentityResult<()> {
+        self.lock_engine()?
+            .runtime()
+            .assert_backend_available()
+            .map_err(Into::into)
+    }
+
     pub(crate) fn lock_engine(&self) -> IdentityResult<MutexGuard<'_, DidIdentity>> {
         self.engine.lock().map_err(|_| IdentityError::Internal)
     }

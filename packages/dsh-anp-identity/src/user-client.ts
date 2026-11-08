@@ -1,3 +1,4 @@
+import type { OAuthClientIdentity } from './publication-types.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PublicIdentity, SignRequest, Signature, IdentityReference } from './types.js'
 import type { AuthorizationRequest, AuthorizationExecution, RequestCreateInput } from './authorization-types.js'
@@ -7,6 +8,7 @@ export type UserOperation =
   | { readonly action: 'read' }
   | { readonly action: 'sign'; readonly request: SignRequest }
   | { readonly action: 'http'; readonly request: Request }
+  | { readonly action: 'oauth'; readonly audience: string }
 
 export interface UserAccessRequest {
   readonly requestId: string
@@ -18,6 +20,8 @@ export interface UserAccessRequest {
 /** A caller- and identity-bound object with no management or Provider methods. */
 export interface AuthorizedIdentity {
   publicIdentity(executionId?: string): Promise<PublicIdentity>
+  oauthClientIdentity(executionId?: string): Promise<OAuthClientIdentity>
+  signOAuthClientAssertion(audience: string, executionId?: string): Promise<string>
   sign(request: SignRequest, executionId?: string): Promise<Signature>
   readonly authenticatedHttp: {
     dispatch(request: Request, executionId?: string): Promise<Response>

@@ -97,6 +97,7 @@ fn namespace_delete_rejects_pending_document_and_root_state() {
     let did = identity.did().to_string();
     identity
         .prepare_update(crate::DocumentUpdateSpec {
+            oauth_client: None,
             request_signing_rotation: Some(crate::RequestSigningRotation {
                 old_kid: "#request".to_string(),
                 new_fragment: "request-next".to_string(),

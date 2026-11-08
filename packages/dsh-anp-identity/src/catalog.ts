@@ -1,3 +1,4 @@
+import { PublicationRecordSchema, type PublicationRecord } from './publication-types.js'
 import { syncDirectory } from './sync-directory.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -15,7 +16,7 @@ import lockfile from 'proper-lockfile'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
 import { pluginError } from './errors.js'
 
-export const CATALOG_SCHEMA = 'anp-identity-catalog/2' as const
+export const CATALOG_SCHEMA = 'anp-identity-catalog/4' as const
 export const CREATE_INTENT_SCHEMA = 'anp-identity-create-intent/1' as const
 const MAX_CATALOG_BYTES = 4 * 1024 * 1024
 const LOCK_TIMEOUT_MS = 10_000
@@ -31,6 +32,7 @@ export interface CatalogEntry {
   readonly handle?: string
   readonly createdByConsumer?: string
   /** Durable create provenance, not an access grant. */
+  readonly publication?: PublicationRecord
   readonly creationOperationId?: string
   readonly grantedConsumers: string[]
   readonly createdAt: string
@@ -103,12 +105,14 @@ export class CatalogStore {
       if (bytes.byteLength > MAX_CATALOG_BYTES) throw pluginError('catalog_corrupt')
       let value: unknown
       try { value = JSON.parse(bytes.toString('utf8')) } catch { throw pluginError('catalog_corrupt') }
-      if (isRecord(value) && value.schema === 'anp-identity-catalog/1') {
+      if (isRecord(value) && ['anp-identity-catalog/1', 'anp-identity-catalog/2', 'anp-identity-catalog/3'].includes(String(value.schema))) {
         const upgraded = parseCatalog({ ...value, schema: CATALOG_SCHEMA })
         // Preserve legacy associations exactly; never synthesize user grants.
         // The validated live v1 catalog is authoritative while holding the lock.
         // Repair leftovers from the former non-atomic backup writer on retry.
-        await this.writeBytesAtomic(`${this.catalogPath}.before-v2`, bytes, 'backup')
+        if (value.schema === 'anp-identity-catalog/1') await this.writeBytesAtomic(`${this.catalogPath}.before-v2`, bytes, 'backup')
+        if (value.schema !== 'anp-identity-catalog/3') await this.writeBytesAtomic(`${this.catalogPath}.before-v3`, bytes, 'backup')
+        await this.writeBytesAtomic(`${this.catalogPath}.before-v4`, bytes, 'backup')
         await this.writeCatalog({ ...upgraded, catalogGeneration: upgraded.catalogGeneration + 1 })
       } else parseCatalog(value)
     })
@@ -425,6 +429,7 @@ function parseEntry(value: unknown): CatalogEntry {
     ...(value.handle === undefined ? {} : { handle: normalizeHandle(value.handle) }),
     ...(value.createdByConsumer === undefined ? {} : { createdByConsumer: value.createdByConsumer }),
     ...(value.creationOperationId === undefined ? {} : { creationOperationId: value.creationOperationId }),
+    ...(value.publication === undefined ? {} : { publication: parsePublication(value.publication) }),
     grantedConsumers,
     createdAt: value.createdAt,
     lastUsedAt: value.lastUsedAt,
@@ -520,4 +525,10 @@ function isPluginCatalogError(error: unknown): boolean {
     && error.name === 'AnpIdentityPluginError'
     && 'code' in error
     && error.code === 'catalog_corrupt'
+}
+
+function parsePublication(value: unknown): PublicationRecord {
+  const result = PublicationRecordSchema.safeParse(value)
+  if (!result.success) throw pluginError('catalog_corrupt')
+  return result.data
 }

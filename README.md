@@ -21,11 +21,13 @@ Applications use a small, purpose-oriented API:
   key agreement, migration, and Root Transfer.
 
 The ordinary API does not expose private keys, raw ECDH results, storage
-records, generations, journals, or the internal Store engine. The one explicit
-plaintext exception is the default-off Rust `root-export` feature required by
-the existing, user-confirmed `RootKeyEnvelopeV1` transfer protocol.
+records, generations, journals, or the internal Store engine. The default-off Rust `root-export` feature permits the existing, user-confirmed
+`RootKeyEnvelopeV1` transfer protocol. A separate default-off `pin-recovery`
+capability permits single-root encrypted PIN backup and operation-bound pending
+recovery; see [the custody contract](docs/pin-root-recovery.md). Neither exposes
+private material through Node or Dart.
 
-The Rust crate pins ANP Rust `1.0.6`. Rust and native Node packages have
+The Rust crate pins ANP Rust `1.0.7`. Rust and native Node packages have
 independent release versions; publishing the Rust crate does not publish npm
 packages. Manual dispatch of the Node artifact workflow defaults to
 `build_only=true`: it builds release packages without install tests. Select
@@ -240,6 +242,7 @@ Optional Rust features are default-off:
 |---|---|
 | `key-import` | A trusted one-way migration host |
 | `root-export` | A trusted, user-confirmed legacy `RootKeyEnvelopeV1` sender |
+| `pin-recovery` | Trusted Rust Core for single-root PIN backup and pending device recovery |
 
 Rust 1.88 or newer is required. The Node package requires Node.js 18 or newer.
 DSH consumers require Node.js `^22.19.0 || >=24.0.0`.
@@ -487,6 +490,15 @@ The Store records the chosen provider binding and a root-key fingerprint.
 Opening it with another provider or key fails closed. An injected or environment
 key must be uniformly random; do not pass a password.
 
+Local private files remain a fully supported explicit choice. On Unix, `root-key.b64u`
+is owner-only (`0600`); private-key records are separate ChaCha20-Poly1305 ciphertexts
+with HKDF-SHA256 record keys. OS keyring support is optional. For an opened keyring
+Store, private operations now recheck the bound backend before use and before
+returning a result; Linux checks never unlock the collection. `StoreInfo.backend_available`
+reports current access separately from structural `health: ready`. Unlocking the
+same backend restores use without rekeying. File, injected and environment-backed
+Stores keep their existing opened-Store behavior.
+
 Copying both a local root-key file and the encrypted Store permits offline
 decryption. Use a platform vault or keyring when the threat model requires the
 root key to be protected separately from application data.
@@ -595,3 +607,43 @@ scripts/              API and release verification gates
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
+
+
+### Local OAuth and PAP signer foundation
+
+Managed `request_signing` keys retain Ed25519 behavior. The distinct managed
+`oauth_authentication` role creates a P-256 authentication key, projected as a
+`JsonWebKey2020` method and an ES256 public JWK. Root control, device signing and
+E2EE retain their existing algorithms and purpose checks. A selector is required
+when multiple OAuth-capable keys exist. Client assertions fix `iss=sub=client_id`,
+exact audience, a 60-second lifetime and fresh 256-bit `jti`; signatures use JOSE's
+64-byte R||S representation.
+
+`prepareOAuthKeyChange` persists a candidate key in the existing document-change
+journal. Candidate public material is explicitly separate from active material;
+verified DID publication commits the key before a later ANPCIMD/JWKS publication
+can authorize its external use. E1 instances without local root control return
+`capability_unavailable`. Web candidates require the publisher's restricted key
+control path. Local availability never proves remote publication or ready-admin
+authority. `BindOAuthClient` uses the same stable client URL and existing
+publication/reconcile flow.
+
+The Host-only Provider additionally offers typed PAP Delegation, delegated Session
+and DPoP operations. Delegated and DPoP keys have separate opaque handles and
+purpose/scope-bound encrypted records. Handles alone are not authorization.
+Current Provider capabilities, consumer ownership and generation are checked;
+leases are rechecked before returning results. Delegation contains no Company or
+user identity. Session claims bind actual method/URI and optional token hash;
+DPoP uses a different key. No arbitrary temporary `sign(bytes)` or private-key
+export is added. `signManagementProof` emits only the allowlisted existing AWiki
+DeviceProof JCS transcripts, using an Ed25519 device key.
+
+New identity and ciphertext records use schema 2 with explicit algorithms. Legacy
+schema-1 records remain readable only for their original unambiguous roles; their
+original encryption AAD is preserved. Writes upgrade the identity record, and old
+binaries reject schema 2. Temporary creation/retirement uses the Store lock,
+generation checks and recovery journal; namespace deletion includes temporary
+secrets. See [Node contracts](bindings/node/README.md) and the
+[public interoperability vector](bindings/node/test/fixtures/local-signer-v2-vector.json).
+This source implements local custody/signing; remote publication, target discovery,
+caller permissions, OAuth grants and PAP product state remain Host/consumer duties.

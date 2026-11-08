@@ -11,10 +11,13 @@ If Harness is absent, use local docs/tests/CI and disclose missing acceptance ev
   normal document/device changes. Web has no DID RootControl, Root Import,
   root transfer, or recovery. The Store encryption root remains method-independent.
   Do not add K1, PlainLegacy, P-256 legacy E2EE,
-  backup, root-provider rekey, or root-control rotation. The approved private-key
+  general backup, root-provider rekey, or root-control rotation. The approved private-key
   egress exception is the default-off `root-export` Rust API used by the
   existing `RootKeyEnvelopeV1` transfer flow. Do not generalize it to other key
-  roles or expose it through the default Node binding.
+  roles or expose it through the default Node binding. The user-approved
+  `pin-recovery` Rust-only exception permits single-root PIN backup and
+  operation-bound pending recovery as specified in [the custody contract](docs/pin-root-recovery.md).
+  This exception does not expose root material through Node or Dart.
 - Keep all comments, documentation comments, errors, and logs in English.
 - Except for the explicit Rust root-key export, private key material must never
   appear in a public API output, FFI export, serialized DTO, debug output, or

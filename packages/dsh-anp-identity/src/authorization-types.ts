@@ -7,7 +7,9 @@ export interface CapabilitySnapshot {
   readonly version: string
   readonly capabilities: readonly OrdinaryCapability[]
   readonly signingPurposes: readonly string[]
+  /** HTTPS origins, or '*' only when the Host and user explicitly approve all HTTPS origins. */
   readonly httpOrigins: readonly string[]
+  readonly oauthAudiences?: readonly string[]
 }
 export type AuthorizationMode = 'once' | 'permanent'
 export type RequestStatus = 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired'
@@ -18,8 +20,9 @@ export interface ControlledOperation {
   readonly summary: string
   readonly signingPurpose?: string
   readonly httpOrigin?: string
+  readonly oauthAudience?: string
 }
-export interface CreateParameters { readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
+export interface CreateParameters { readonly profile?: 'e1' | 'web'; readonly usage?: 'ordinary' | 'protocol'; readonly identityOnly?: boolean; readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
 export interface CreateResult { readonly reference: IdentityReference; readonly label: string }
 interface RequestBase {
   readonly id: string

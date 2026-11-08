@@ -32,6 +32,9 @@ pub(crate) struct ManagedPrivateKey {
 impl ManagedPrivateKey {
     pub(crate) fn generate(fragment: String, role: KeyRole) -> Self {
         let mut bytes = match role {
+            KeyRole::OAuthAuthentication => p256::ecdsa::SigningKey::random(&mut OsRng)
+                .to_bytes()
+                .into(),
             KeyRole::E2eeAgreement => x25519_dalek::StaticSecret::random_from_rng(OsRng).to_bytes(),
             KeyRole::RootControl
             | KeyRole::DeviceSigning
@@ -111,7 +114,12 @@ pub(crate) fn build_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
 
     let mut supplied_keys = managed_keys
         .iter()
-        .filter(|key| key.role != KeyRole::RootControl)
+        .filter(|key| {
+            !matches!(
+                key.role,
+                KeyRole::RootControl | KeyRole::OAuthAuthentication
+            )
+        })
         .map(supplied_managed_key)
         .collect::<Vec<_>>();
     for external in &spec.external_keys {
@@ -140,6 +148,16 @@ pub(crate) fn build_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
         },
     )
     .map_err(|_| DidError::InvalidIdentity)?;
+    for key in managed_keys
+        .iter()
+        .filter(|key| key.role == KeyRole::OAuthAuthentication)
+    {
+        append_oauth_method(
+            &mut unsigned,
+            &format!("{did}#{}", key.fragment),
+            &key.public_key(),
+        )?;
+    }
     apply_extensions(&mut unsigned, &did, &spec.extensions)?;
 
     let created_at = Utc::now().to_rfc3339();
@@ -218,10 +236,7 @@ fn build_web_identity(spec: &DidCreateSpec) -> DidResult<BuiltIdentity> {
     let mut assertion = Vec::new();
     let mut agreement = Vec::new();
     let mut add_key = |kid: String, role: KeyRole, public: PublicKeyMaterial| -> DidResult<()> {
-        methods.push(json!({
-            "id": kid, "type": "Multikey", "controller": did,
-            "publicKeyMultibase": public_key_multibase(&public)?,
-        }));
+        methods.push(verification_method(&did, &kid, &public)?);
         for relationship in relationships(role) {
             match relationship {
                 DidVerificationRelationship::Authentication => authentication.push(kid.clone()),
@@ -330,6 +345,11 @@ pub(crate) fn public_key_from_secret(
     }
     let mut bytes = Zeroizing::new([0_u8; 32]);
     bytes.copy_from_slice(secret.expose());
+    if role == KeyRole::OAuthAuthentication
+        && p256::ecdsa::SigningKey::from_slice(bytes.as_slice()).is_err()
+    {
+        return Err(DidError::InvalidIdentity);
+    }
     Ok(public_key_from_raw(role, &bytes))
 }
 
@@ -339,6 +359,7 @@ pub(crate) fn public_keys_equal(left: &PublicKeyMaterial, right: &PublicKeyMater
             left.to_bytes() == right.to_bytes()
         }
         (PublicKeyMaterial::X25519(left), PublicKeyMaterial::X25519(right)) => left == right,
+        (PublicKeyMaterial::Secp256r1(left), PublicKeyMaterial::Secp256r1(right)) => left == right,
         _ => false,
     }
 }
@@ -393,8 +414,52 @@ pub(crate) fn public_key_multibase(public_key: &PublicKeyMaterial) -> DidResult<
             encoded.extend_from_slice(bytes);
             Ok(format!("z{}", bs58::encode(encoded).into_string()))
         }
+        PublicKeyMaterial::Secp256r1(key) => {
+            let mut encoded = vec![0x80, 0x24];
+            encoded.extend_from_slice(key.to_encoded_point(true).as_bytes());
+            Ok(format!("z{}", bs58::encode(encoded).into_string()))
+        }
         _ => Err(DidError::InvalidPublicKey),
     }
+}
+
+pub(crate) fn append_oauth_method(
+    document: &mut Value,
+    kid: &str,
+    public: &PublicKeyMaterial,
+) -> DidResult<()> {
+    let did = document["id"]
+        .as_str()
+        .ok_or(DidError::InvalidIdentity)?
+        .to_owned();
+    let object = document.as_object_mut().ok_or(DidError::InvalidIdentity)?;
+    object
+        .entry("verificationMethod")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or(DidError::InvalidIdentity)?
+        .push(verification_method(&did, kid, public)?);
+    object
+        .entry("authentication")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or(DidError::InvalidIdentity)?
+        .push(json!(kid));
+    Ok(())
+}
+
+fn verification_method(did: &str, kid: &str, public: &PublicKeyMaterial) -> DidResult<Value> {
+    if let PublicKeyMaterial::Secp256r1(key) = public {
+        let point = key.to_encoded_point(false);
+        return Ok(
+            json!({"id":kid,"type":"JsonWebKey2020","controller":did,"publicKeyJwk":{
+                "kty":"EC","crv":"P-256","x":URL_SAFE_NO_PAD.encode(point.x().ok_or(DidError::InvalidPublicKey)?),"y":URL_SAFE_NO_PAD.encode(point.y().ok_or(DidError::InvalidPublicKey)?)
+            }}),
+        );
+    }
+    Ok(
+        json!({"id":kid,"type":"Multikey","controller":did,"publicKeyMultibase":public_key_multibase(public)?}),
+    )
 }
 
 pub(crate) fn document_digest(document: &Value) -> DidResult<String> {
@@ -439,6 +504,7 @@ pub(crate) fn key_metadata_from_public(
     Ok(KeyMetadata {
         kid: kid.to_string(),
         role,
+        algorithm: Some(crate::registry::algorithm_for_role(role)),
         origin,
         state,
         material_erased: false,
@@ -453,6 +519,11 @@ fn public_key_from_raw(role: KeyRole, bytes: &Zeroizing<[u8; 32]>) -> PublicKeyM
         KeyRole::E2eeAgreement => {
             let secret = x25519_dalek::StaticSecret::from(**bytes);
             PublicKeyMaterial::X25519(x25519_dalek::PublicKey::from(&secret).to_bytes())
+        }
+        KeyRole::OAuthAuthentication => {
+            let key = p256::ecdsa::SigningKey::from_slice(bytes.as_slice())
+                .expect("validated P-256 scalar");
+            PublicKeyMaterial::Secp256r1(*key.verifying_key())
         }
         KeyRole::RootControl
         | KeyRole::DeviceSigning
@@ -477,7 +548,7 @@ fn anp_role(role: KeyRole) -> DidKeyRole {
     match role {
         KeyRole::RootControl => DidKeyRole::RootControl,
         KeyRole::DeviceSigning => DidKeyRole::DeviceSigning,
-        KeyRole::RequestSigning => DidKeyRole::RequestSigning,
+        KeyRole::RequestSigning | KeyRole::OAuthAuthentication => DidKeyRole::RequestSigning,
         KeyRole::E2eeSigning => DidKeyRole::E2eeSigning,
         KeyRole::E2eeAgreement => DidKeyRole::E2eeAgreement,
     }
@@ -493,7 +564,9 @@ fn relationships(role: KeyRole) -> Vec<DidVerificationRelationship> {
             DidVerificationRelationship::Authentication,
             DidVerificationRelationship::AssertionMethod,
         ],
-        KeyRole::RequestSigning => vec![DidVerificationRelationship::Authentication],
+        KeyRole::RequestSigning | KeyRole::OAuthAuthentication => {
+            vec![DidVerificationRelationship::Authentication]
+        }
         KeyRole::E2eeSigning => vec![DidVerificationRelationship::AssertionMethod],
         KeyRole::E2eeAgreement => vec![DidVerificationRelationship::KeyAgreement],
     }
@@ -567,13 +640,13 @@ pub(crate) fn key_metadata(
     created_at: &str,
 ) -> DidResult<KeyMetadata> {
     let method = find_verification_method(document, kid).ok_or(DidError::InvalidIdentity)?;
-    let multibase = method
-        .get("publicKeyMultibase")
-        .and_then(Value::as_str)
-        .ok_or(DidError::InvalidPublicKey)?;
+    let public =
+        anp::authentication::extract_public_key(&method).map_err(|_| DidError::InvalidPublicKey)?;
+    let multibase = public_key_multibase(&public)?;
     Ok(KeyMetadata {
         kid: kid.to_string(),
         role,
+        algorithm: Some(crate::registry::algorithm_for_role(role)),
         origin,
         state: KeyState::Active,
         material_erased: false,

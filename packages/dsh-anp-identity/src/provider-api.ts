@@ -1,6 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { UserIdentityClient } from './user-client.js'
 import type {
+  OAuthPublicJwk,
+  OAuthClientAssertionRequest,
   CreateIdentityRequest,
   IdentityDescriptor,
   IdentityReference,
@@ -99,7 +101,8 @@ export interface HostProviderLease {
   readonly consumer: string
   readonly capabilities: readonly ProviderCapability[]
   dispose(): void
-  info(): Promise<StoreInfo>
+  /** Version-1 wire fields; backend availability is checked before this projection. */
+  info(): Promise<Pick<StoreInfo, 'storeId' | 'schemaCompatible' | 'identityCount' | 'health'>>
   recover(): Promise<RecoveryReport>
   list(): Promise<IdentityDescriptor[]>
   publicIdentity(reference: IdentityReference): Promise<PublicIdentity>
@@ -107,6 +110,8 @@ export interface HostProviderLease {
   recoverIdentity(reference: IdentityReference): Promise<void>
   create(request: CreateIdentityRequest): Promise<PublicIdentity>
   delete(reference: IdentityReference): Promise<void>
+  oauthPublicJwk(reference: IdentityReference, kid?: string): Promise<OAuthPublicJwk>
+  signOAuthClientAssertion(reference: IdentityReference, request: OAuthClientAssertionRequest): Promise<string>
   sign(reference: IdentityReference, request: SignRequest): Promise<Signature>
   verify(reference: IdentityReference, request: VerifyRequest): Promise<'valid' | 'invalid'>
   signOriginProof(reference: IdentityReference, request: OriginProofRequest): Promise<SignedOriginProof>
@@ -144,6 +149,7 @@ export interface HostProviderLease {
 }
 
 export interface AnpIdentityService {
+  bindProtocolConsumer(context: Context): import('./protocol-client.js').ProtocolIdentityClient
   bindUserConsumer(context: Context): UserIdentityClient
   health(): Promise<import('./types.js').AnpIdentityHealth>
   acquireClient(input: import('./types.js').ClientRequest): Promise<import('./types.js').IdentityClientLease>

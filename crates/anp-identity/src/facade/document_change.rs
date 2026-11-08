@@ -21,6 +21,18 @@ pub struct DocumentChangeRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "change", rename_all = "snake_case")]
 pub enum DocumentChange {
+    #[serde(rename = "create_oauth_key")]
+    CreateOAuthKey {
+        fragment: String,
+        operation_id: String,
+        expected_revision: u64,
+    },
+    #[serde(rename = "bind_oauth_client")]
+    BindOAuthClient {
+        client_id: String,
+        kid: String,
+        metadata_sha256: String,
+    },
     RotateSigningKey {
         old_kid: String,
         new_fragment: String,
@@ -78,6 +90,7 @@ pub struct IdentityService {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedDocumentChange {
+    pub base_evidence: VerifiedPublicationEvidence,
     pub operation_id: String,
     pub candidate_document: DidDocument,
     pub candidate_digest: String,
@@ -147,13 +160,22 @@ impl ManagedIdentity {
         &mut self,
         request: DocumentChangeRequest,
     ) -> IdentityResult<DocumentChangeSession> {
+        for change in &request.changes {
+            if let DocumentChange::BindOAuthClient { kid, .. } = change {
+                self.oauth_public_jwk(crate::KeySelector::Kid(kid.clone()))?;
+            }
+        }
         let spec = request.into_engine_spec()?;
-        let prepared = self.lock_engine()?.prepare_update(spec)?;
+        let mut engine = self.lock_engine()?;
+        let base_evidence = candidate_base_evidence(&engine)?;
+        let prepared = engine.prepare_update(spec)?;
+        drop(engine);
         Ok(DocumentChangeSession::new(
             self.store_id.clone(),
             self.reference.clone(),
             Arc::clone(&self.engine),
             PreparedDocumentChange {
+                base_evidence,
                 operation_id: prepared.revision_id,
                 candidate_document: DidDocument::from_verified(prepared.candidate_document),
                 candidate_digest: prepared.candidate_digest,
@@ -162,13 +184,19 @@ impl ManagedIdentity {
     }
 
     pub fn resume_document_change(&mut self) -> IdentityResult<Option<DocumentChangeSession>> {
-        let pending = self.lock_engine()?.pending_revision();
-        Ok(pending.map(|pending| {
+        let engine = self.lock_engine()?;
+        let Some(pending) = engine.pending_revision() else {
+            return Ok(None);
+        };
+        let base_evidence = candidate_base_evidence(&engine)?;
+        drop(engine);
+        Ok(Some({
             DocumentChangeSession::new(
                 self.store_id.clone(),
                 self.reference.clone(),
                 Arc::clone(&self.engine),
                 PreparedDocumentChange {
+                    base_evidence,
                     operation_id: pending.revision_id,
                     candidate_document: DidDocument::from_verified(pending.candidate_document),
                     candidate_digest: pending.candidate_digest,
@@ -178,8 +206,21 @@ impl ManagedIdentity {
     }
 }
 
+fn candidate_base_evidence(engine: &DidIdentity) -> IdentityResult<VerifiedPublicationEvidence> {
+    let checkpoint = engine
+        .record()
+        .checkpoint
+        .as_ref()
+        .ok_or(IdentityError::CorruptState)?;
+    Ok(VerifiedPublicationEvidence {
+        document_version: checkpoint.document_version,
+        registry_version: checkpoint.registry_version,
+        document_digest: checkpoint.document_digest.clone(),
+    })
+}
+
 impl DocumentChangeSession {
-    fn new(
+    pub(crate) fn new(
         store_id: String,
         reference: IdentityRef,
         engine: Arc<Mutex<DidIdentity>>,
@@ -376,9 +417,35 @@ impl DocumentChangeRequest {
         let mut request_signing_mutations = Vec::new();
         let mut device_mutations = Vec::new();
         let mut services = None;
+        let mut oauth_client = None;
 
         for change in self.changes {
             match change {
+                DocumentChange::BindOAuthClient {
+                    client_id,
+                    kid,
+                    metadata_sha256,
+                } => {
+                    if oauth_client.is_some() {
+                        return Err(IdentityError::InvalidRequest);
+                    }
+                    oauth_client = Some(crate::lifecycle::OAuthBindingSpec {
+                        client_id,
+                        kid,
+                        metadata_sha256,
+                    });
+                }
+                DocumentChange::CreateOAuthKey {
+                    fragment,
+                    operation_id,
+                    expected_revision,
+                } => {
+                    request_signing_mutations.push(RequestSigningMutationSpec::CreateOAuth {
+                        fragment,
+                        operation_id,
+                        expected_revision,
+                    });
+                }
                 DocumentChange::RotateSigningKey {
                     old_kid,
                     new_fragment,
@@ -442,6 +509,7 @@ impl DocumentChangeRequest {
         }
 
         Ok(DocumentUpdateSpec {
+            oauth_client,
             request_signing_rotation,
             request_signing_mutations,
             device_mutations,
@@ -481,7 +549,13 @@ fn validate_evidence(
 ) -> IdentityResult<()> {
     if evidence.document_version == 0
         || evidence.registry_version == 0
-        || evidence.document_digest != expected_digest
+        || evidence
+            .document_digest
+            .strip_prefix("sha256:")
+            .unwrap_or(&evidence.document_digest)
+            != expected_digest
+                .strip_prefix("sha256:")
+                .unwrap_or(expected_digest)
     {
         return Err(IdentityError::InvalidRequest);
     }

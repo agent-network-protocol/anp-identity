@@ -12,6 +12,9 @@ import type {
   IdentityReference,
   JsonValue,
   OriginProofRequest,
+  OAuthClientAssertionRequest,
+  OAuthPublicJwk,
+  OAuthKeyChangeRequest,
   PreparedDocumentChange,
   PreparedIdentityTransition,
   PublicIdentity,
@@ -32,6 +35,8 @@ export type ProviderCapability =
   | 'IDENTITY_CREATE'
   | 'IDENTITY_IMPORT'
   | 'IDENTITY_SIGN'
+  | 'IDENTITY_PAP_SESSION'
+  | 'IDENTITY_PAP_DPOP'
   | 'IDENTITY_ECDH_SEALED'
   | 'IDENTITY_DOCUMENT_UPDATE'
   | 'IDENTITY_KEY_LIFECYCLE'
@@ -291,12 +296,26 @@ export interface ProviderLease {
   recoverIdentity(reference: IdentityReference): Promise<void>
   create(request: CreateIdentityRequest): Promise<PublicIdentity>
   delete(reference: IdentityReference): Promise<void>
+  providerCapabilities(): Promise<LocalSignerCapabilities>
+  prepareOAuthKeyChange(reference: IdentityReference, request: OAuthKeyChangeRequest): Promise<ProviderDocumentChangeSession>
+  exportCandidateOAuthPublicJwk(reference: IdentityReference, kid: string): Promise<OAuthPublicJwk>
+  createDelegatedKey(reference: IdentityReference, request: CreateTemporaryKeyRequest): Promise<TemporaryKey>
+  createDpopKey(reference: IdentityReference, request: CreateTemporaryKeyRequest): Promise<TemporaryKey>
+  describeTemporaryKey(reference: IdentityReference, request: DescribeTemporaryKeyRequest): Promise<TemporaryKey>
+  issuePapDelegation(reference: IdentityReference, request: PapDelegationRequest): Promise<string>
+  signPapSessionRequest(reference: IdentityReference, request: PapSessionRequest): Promise<string>
+  signDpopProof(reference: IdentityReference, request: DpopProofRequest): Promise<string>
+  retireTemporaryKey(reference: IdentityReference, request: RetireTemporaryKeyRequest): Promise<void>
+  oauthPublicJwk(reference: IdentityReference, kid?: string): Promise<OAuthPublicJwk>
+  signOAuthClientAssertion(reference: IdentityReference, request: OAuthClientAssertionRequest): Promise<string>
   sign(reference: IdentityReference, request: SignRequest): Promise<Signature>
   verify(reference: IdentityReference, request: VerifyRequest): Promise<'valid' | 'invalid'>
   signOriginProof(
     reference: IdentityReference,
     request: OriginProofRequest,
   ): Promise<SignedOriginProof>
+  signWebRegistrationProof(reference: IdentityReference, request: WebRegistrationProofRequest): Promise<ManagementProof>
+  signManagementProof(reference: IdentityReference, request: ManagementProofRequest): Promise<ManagementProof>
   signObjectProof(reference: IdentityReference, request: ObjectProofRequest): Promise<JsonValue>
   signDocumentProof(reference: IdentityReference, request: DocumentProofRequest): Promise<JsonValue>
   prepareHttpSignature(request: ExactHttpSigningRequest): Promise<PreparedHttpSignatureAttempt>
@@ -387,3 +406,22 @@ export interface PreparedIdentityMaterialImport {
   offer(): SealedIdentityMaterialImportOffer
   complete(token: string, envelopes: SealedSecretEnvelope[]): Promise<PublicIdentity>
 }
+
+/** Host-only local custody API version 2. The owner must equal the lease consumer. */
+export interface LocalSignerCapabilities { api_version: 2; algorithms: ('EdDSA' | 'ES256')[]; features: string[] }
+export interface P256PublicJwk { kty: 'EC'; crv: 'P-256'; x: string; y: string }
+export interface TemporaryKeyScope { owner: string; company_id: string; user_id: string; account_slot?: string }
+export type TemporaryKeyPurpose = 'pap_session' | 'pap_dpop'
+export interface TemporaryKeyReference { handle: string; generation: number }
+export interface TemporaryKey extends TemporaryKeyReference { purpose: TemporaryKeyPurpose; public_jwk: P256PublicJwk; thumbprint: string }
+export interface CreateTemporaryKeyRequest { operation_id: string; scope: TemporaryKeyScope }
+export interface RetireTemporaryKeyRequest extends TemporaryKeyReference { scope: TemporaryKeyScope }
+export interface DescribeTemporaryKeyRequest extends RetireTemporaryKeyRequest { purpose: TemporaryKeyPurpose }
+export interface PapDelegationRequest { client_id: string; key: 'default' | { kid: string }; delegated_key: TemporaryKeyReference; scope: TemporaryKeyScope; ttl_seconds: number }
+export interface PapSessionRequest extends RetireTemporaryKeyRequest { delegation: string; client_id: string; sid: string; sub: string; agent_id?: string; http_method: string; http_uri: string; access_token?: string }
+export interface DpopProofRequest extends RetireTemporaryKeyRequest { http_method: string; http_uri: string; access_token?: string; nonce?: string }
+
+export interface ManagementProofRequest { key: 'default' | { kid: string }; method: 'agent_client_prepare' | 'agent_client_activate' | 'agent_client_status' | 'agent_client_resolve' | 'agent_client_pap_callback_register' | 'agent_client_pap_callback_claim' | 'device_oauth_keys_update' | 'device_document_update'; params: JsonValue; audience?: string }
+export interface ManagementProof { type: 'awiki-device-signature-v1'; key_id: string; created_at: string; expires_at: string; nonce: string; signature: string }
+
+export interface WebRegistrationProofRequest { key: 'default' | { kid: string }; business_projection: JsonValue }

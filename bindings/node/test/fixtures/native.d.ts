@@ -41,6 +41,10 @@ export type JsIdentityTransitionSession = IdentityTransitionSession
 export declare class ManagedIdentity {
   reference(): Promise<JsIdentityRef>
   publicIdentity(): Promise<any>
+  oauthPublicJwk(kid?: string | undefined | null): Promise<any>
+  exportCandidateOauthPublicJwk(kid: string): Promise<any>
+  prepareOauthKeyChange(request: any): Promise<JsDocumentChangeSession>
+  signOauthClientAssertion(request: any): Promise<string>
   sign(request: JsSignRequest): Promise<JsSignature>
   verify(request: JsVerifyRequest): Promise<string>
   signOriginProof(request: JsOriginProofRequest): Promise<any>
@@ -99,8 +103,22 @@ export declare class ProviderLease {
   create(request: any): Promise<any>
   delete(identity: JsIdentityRef): Promise<void>
   verify(identity: JsIdentityRef, request: JsVerifyRequest): Promise<string>
+  providerCapabilities(): Promise<any>
+  exportCandidateOauthPublicJwk(identity: JsIdentityRef, kid: string): Promise<any>
+  prepareOauthKeyChange(identity: JsIdentityRef, request: any): Promise<JsProviderDocumentChangeSession>
+  createDelegatedKey(identity: JsIdentityRef, request: any): Promise<any>
+  createDpopKey(identity: JsIdentityRef, request: any): Promise<any>
+  issuePapDelegation(identity: JsIdentityRef, request: any): Promise<string>
+  signPapSessionRequest(identity: JsIdentityRef, request: any): Promise<string>
+  signDpopProof(identity: JsIdentityRef, request: any): Promise<string>
+  describeTemporaryKey(identity: JsIdentityRef, request: any): Promise<any>
+  retireTemporaryKey(identity: JsIdentityRef, request: any): Promise<void>
+  oauthPublicJwk(identity: JsIdentityRef, kid?: string | undefined | null): Promise<any>
+  signOauthClientAssertion(identity: JsIdentityRef, request: any): Promise<string>
   sign(identity: JsIdentityRef, request: JsSignRequest): Promise<JsSignature>
   signOriginProof(identity: JsIdentityRef, request: JsOriginProofRequest): Promise<any>
+  signWebRegistrationProof(identity: JsIdentityRef, request: any): Promise<any>
+  signManagementProof(identity: JsIdentityRef, request: any): Promise<any>
   signObjectProof(identity: JsIdentityRef, request: any): Promise<any>
   signDocumentProof(identity: JsIdentityRef, request: any): Promise<any>
   prepareHttpSignature(request: JsExactHttpSigningRequest): Promise<any>

@@ -391,3 +391,50 @@ function worker(root: string, grantId: string, executionId: string): Promise<str
     child.once('exit', code => code === 0 ? resolve(stdout) : reject(new Error(`Authorization worker exited ${code}: ${stderr}`)))
   })
 }
+
+it('requires explicit wildcard review, permits new HTTPS domains, and still enforces revocation and Host narrowing', async () => {
+  const wildcard = { ...policy, httpOrigins: ['*'] };
+  await using f = await fixture({ resolveSnapshot: async () => wildcard });
+  const http = (origin: string) => freezeOperation({ capability: 'identity:http-auth', summary: 'GET ' + origin, httpOrigin: origin }, { method: 'GET', url: origin + '/' });
+  const first = http('https://one.example');
+  const request = await f.engine.requestAccess(caller, { requestId: 'wildcard', purpose: 'Any HTTPS domain', identity, operation: first });
+  expect(await f.engine.listGrants()).toEqual([]);
+  await expect(f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: policy })).rejects.toMatchObject({ code: 'review_snapshot_changed' });
+  const approved = await f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: wildcard });
+  if (approved.kind !== 'access' || !approved.grantId) throw new Error('Expected access grant');
+  const lease = await f.engine.open(caller, approved.grantId);
+  await f.engine.admit(caller, lease, first, 'domain-one');
+  await f.engine.recordExecution(caller, 'domain-one', 'succeeded');
+  await f.engine.admit(caller, lease, http('https://two.example'), 'domain-two');
+  await f.engine.recordExecution(caller, 'domain-two', 'succeeded');
+  const narrowed = f.reopen({ resolveSnapshot: async () => ({ ...policy, httpOrigins: ['https://one.example'] }) });
+  await expect(narrowed.admit(caller, lease, http('https://two.example'), 'narrowed')).rejects.toMatchObject({ code: 'operation_not_permitted' });
+  await expect((async () => f.engine.admit(caller, lease, http('http://insecure.example'), 'insecure'))()).rejects.toMatchObject({ code: 'invalid_http_origin' });
+  const grant = (await f.engine.listGrants())[0]!;
+  await f.engine.revoke(grant.id, grant.version);
+  await expect(f.engine.admit(caller, lease, first, 'revoked-wildcard')).rejects.toThrow();
+});
+
+it('does not silently broaden an existing exact-origin grant when the Host switches to wildcard', async () => {
+  await using f = await fixture();
+  const grant = await approve(f.engine, 'permanent');
+  const lease = await f.engine.open(caller, grant.id);
+  const widened = f.reopen({ resolveSnapshot: async () => ({ ...policy, httpOrigins: ['*'] }) });
+  const operation = freezeOperation({ capability: 'identity:http-auth', summary: 'New domain', httpOrigin: 'https://new.example' }, { url: 'https://new.example/' });
+  await expect(widened.admit(caller, lease, operation, 'not-implicitly-approved')).rejects.toMatchObject({ code: 'operation_not_permitted' });
+});
+
+it('keeps one-time wildcard approval bound to the reviewed exact HTTP operation', async () => {
+  const wildcard = { ...policy, httpOrigins: ['*'] };
+  await using f = await fixture({ resolveSnapshot: async () => wildcard });
+  const make = (url: string) => freezeOperation({ capability: 'identity:http-auth', summary: 'GET ' + url, httpOrigin: new URL(url).origin }, { method: 'GET', url });
+  const operation = make('https://one.example/approved');
+  const request = await f.engine.requestAccess(caller, { requestId: 'once-any-domain', purpose: 'One exact HTTP operation', identity, operation });
+  const approved = await f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'once', reviewedSnapshot: wildcard });
+  if (approved.kind !== 'access' || !approved.grantId) throw new Error('Expected access grant');
+  const lease = await f.engine.open(caller, approved.grantId);
+  await expect(f.engine.admit(caller, lease, make('https://two.example/other'), 'wrong-wildcard-target')).rejects.toMatchObject({ code: 'operation_mismatch' });
+  await f.engine.admit(caller, lease, operation, 'exact-wildcard-target');
+  await f.engine.recordExecution(caller, 'exact-wildcard-target', 'succeeded');
+  await expect(f.engine.admit(caller, lease, operation, 'reused-wildcard-once')).rejects.toThrow();
+});
