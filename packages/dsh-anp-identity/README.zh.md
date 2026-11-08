@@ -186,3 +186,18 @@ consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python
 
 
 受信的 User Service 注册／发布驱动使用已有 ANP HTTP 签名能力和登记设备密钥签署注册后的每次请求，不复用注册时保存的 Bearer。设备操作授权与公开 API 形状保持不变，详见 [传输约定](PUBLICATION.md#registration-and-management)。
+
+## Configurable registration service
+
+New registration configurations default to `https://awiki.me`. The authenticated
+**Settings → Identity → Identity service** form saves the HTTPS root address on
+the Host (not in browser local storage). Saving does not send an OTP, create an
+identity, publish a DID or migrate an existing identity.
+
+Omit `registrationBootstrap.origin` to use this saved default for a new flow.
+An explicitly configured origin keeps precedence. Every new default-based flow
+pins its original origin by its stable id/requestId; changing the preference or
+restarting the Host cannot redirect an existing verification or publication flow.
+Use a new identity and new flow IDs when moving between services, and configure
+the matching DID domain/Handle in the creation request. Existing `id.awiki.info`
+identities and their MCP/PAP bindings remain unchanged.

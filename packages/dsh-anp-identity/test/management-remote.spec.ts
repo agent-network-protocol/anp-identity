@@ -31,8 +31,10 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
       })),
       revoke: vi.fn(async () => undefined),
     };
-    const acquireManagement = vi.fn(() => manager);
-    ctx.provide("anpIdentity", { acquireManagement });
+    const acquireManagement = vi.fn((_context: Context) => manager);
+    const registrationServiceSettings = vi.fn(async (_context: Context) => ({ origin: 'https://awiki.me', version: 0 }));
+    const configureRegistrationService = vi.fn(async (_context: Context, input: { origin: string; expectedVersion: number }) => ({ origin: input.origin, version: input.expectedVersion + 1 }));
+    ctx.provide("anpIdentity", { acquireManagement, registrationServiceSettings, configureRegistrationService });
     await ctx.plugin(TypertRegistry);
     await ctx.plugin(RemoteAccessService);
     await ctx.plugin(TypertGateway);
@@ -60,6 +62,12 @@ describe("manager Host Remote with the real DSH registry and gateway", () => {
         },
       ]);
       await expect(invoke('registrationBootstrapStatus')).resolves.toEqual([]);
+      await expect(invoke('registrationServiceSettings')).resolves.toEqual({ origin: 'https://awiki.me', version: 0 });
+      await expect(invoke('configureRegistrationService', { input: { origin: 'https://service.example', expectedVersion: 0, credentials: 'not-accepted' } })).rejects.toMatchObject({ code: 'gateway/input-invalid' });
+      expect(configureRegistrationService).not.toHaveBeenCalled();
+      await expect(invoke('configureRegistrationService', { input: { origin: 'https://service.example', expectedVersion: 0 } })).resolves.toEqual({ origin: 'https://service.example', version: 1 });
+      expect(registrationServiceSettings.mock.calls[0]![0]).toBe(acquireManagement.mock.calls[0]![0]);
+      expect(configureRegistrationService.mock.calls[0]![0]).toBe(acquireManagement.mock.calls[0]![0]);
       await expect(
         invoke("decide", {
           input: {

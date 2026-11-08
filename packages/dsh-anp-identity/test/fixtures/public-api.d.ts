@@ -1,4 +1,5 @@
 // ===== index.d.ts =====
+import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PapCallbackManagementOperations } from './pap-callback.js';
 import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
 import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
@@ -43,6 +44,7 @@ export declare const Config: z<Config>;
 export declare class AnpIdentityService extends Service implements AnpIdentityServiceContract {
     static Config: z<Config>;
     private readonly resolvedConfig;
+    private readonly registrationSettings;
     private readonly catalogStore;
     private providerSlot;
     private readonly publications;
@@ -116,6 +118,10 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
         deviceId: string;
         state: 'registered';
     }>;
+    /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
+    registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings>;
+    configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings): Promise<RegistrationServiceSettings>;
+    resolveRegistrationServiceOrigin(context: Context, key: string, fingerprint: string): Promise<string>;
     /** Pin the actual ready provider for an approved local identity and the original manager Context.
      * @param context - Original root-installed manager Context.
      * @param reference - Local identity whose current provider is being pinned.
@@ -553,7 +559,7 @@ export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
     id: z.ZodString;
     requestId: z.ZodString;
     stateRoot: z.ZodString;
-    origin: z.ZodString;
+    origin: z.ZodDefault<z.ZodString>;
     email: z.ZodOptional<z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>>;
     phone: z.ZodOptional<z.ZodString>;
     clientName: z.ZodString;
@@ -1244,6 +1250,7 @@ export declare function createPublicationBackend(input: {
 export declare function parsePublicJson(text: string): unknown;
 
 // ===== management-remote.d.ts =====
+import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
@@ -1261,13 +1268,18 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     static inject: string[];
     static Config: z<Config>;
     private readonly manager;
-    private readonly bootstrap;
+    private readonly managerContext;
+    private bootstrap;
+    private readonly bootstrapReady;
+    private bootstrapError;
     constructor(ctx: Context, config?: Config);
     registrationBootstrapStatus(): import("./registration-bootstrap.js").RegistrationBootstrapStatus[];
+    registrationServiceSettings(): Promise<import("./registration-service-types.js").RegistrationServiceSettings>;
+    configureRegistrationService(input: UpdateRegistrationServiceSettings): Promise<import("./registration-service-types.js").RegistrationServiceSettings>;
     /** Accept a user-entered SMS code without persisting or returning it. */
     submitRegistrationOtp(input: {
         code: string;
-    }): null;
+    }): Promise<null>;
     listIdentities(): Promise<import("./management-types.js").ManagedIdentitySummary[]>;
     listRequests(input?: boolean): Promise<import("./authorization-types.js").AuthorizationRequest[]>;
     getRequest(input: string): Promise<import("./management-types.js").RequestReview>;

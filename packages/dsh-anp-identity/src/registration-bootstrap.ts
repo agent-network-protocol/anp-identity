@@ -1,3 +1,4 @@
+import { DEFAULT_REGISTRATION_ORIGIN } from './registration-service-types.js'
 /** Private Host orchestration from a real creation approval to verified device publication. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
@@ -22,7 +23,7 @@ export const RegistrationBootstrapConfigSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
   requestId: z.string().min(1).max(128),
   stateRoot: z.string().refine(isAbsolute),
-  origin: z.string().refine(value => { try { return new URL(exactHttps(value)).origin === value } catch { return false } }),
+  origin: z.string().refine(value => { try { return new URL(exactHttps(value)).origin === value } catch { return false } }).default(DEFAULT_REGISTRATION_ORIGIN),
   email: z.string().email().max(254).transform(value => value.trim().toLowerCase()).optional(),
   phone: z.string().regex(/^\+[1-9][0-9]{6,14}$/u).optional(),
   clientName: z.string().trim().min(1).max(128),

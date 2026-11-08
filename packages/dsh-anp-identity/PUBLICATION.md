@@ -153,3 +153,12 @@ protocol policies before requesting identity creation or access. Existing
 profiles and encrypted custody must retain their original matching keys.
 The older credential-package references above describe earlier integration
 candidates; this release uses the `0.2.2-rc.1` peers declared by its manifest.
+
+Registration-service preferences are manager-only, generation/CAS-protected,
+atomically persisted non-secret settings. They default to https://awiki.me and
+are configurable in Settings → Identity. The preference is only used when a
+new bootstrap omits an explicit origin; immutable per-flow pins prevent a later
+preference update from redirecting an in-progress factor or publication. The UI
+does not create identities or request codes when saving the URL. Creation
+parameters, contact method and protocol policies still require their existing
+Host configuration and approvals.

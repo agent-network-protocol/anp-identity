@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
@@ -24,18 +26,34 @@ export class IdentityManagerRemote extends TypertRemoteService {
   static inject = ["anpIdentity", "typert"];
   static Config = Config;
   private readonly manager: IdentityManagement;
-  private readonly bootstrap: RegistrationBootstrapController | undefined;
+  private readonly managerContext: Context;
+  private bootstrap: RegistrationBootstrapController | undefined;
+  private readonly bootstrapReady: Promise<void>;
+  private bootstrapError: Error | undefined;
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, "anpIdentityManager");
     const service = ctx.anpIdentity as unknown as {
       acquireManagement(context: Context): IdentityManagement;
     };
-    this.manager = service.acquireManagement(ctx);
-    this.bootstrap = config.registrationBootstrap === undefined ? undefined : startRegistrationBootstrap({
-      context: ctx, service: ctx.anpIdentity as AnpIdentityService, manager: this.manager,
-      config: RegistrationBootstrapConfigSchema.parse(config.registrationBootstrap),
-    });
-    ctx.effect(() => () => this.bootstrap?.dispose(), 'anp-identity: registration bootstrap');
+    this.managerContext = ctx;
+    const manager = service.acquireManagement(ctx);
+    this.manager = manager;
+    let disposed = false;
+    this.bootstrapReady = (async () => {
+      if (config.registrationBootstrap === undefined) return;
+      const input = RegistrationBootstrapConfigSchema.parse(config.registrationBootstrap);
+      if (config.registrationBootstrap.origin === undefined) {
+        const { origin: _origin, ...rest } = input;
+        const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+        input.origin = await (ctx.anpIdentity as AnpIdentityService).resolveRegistrationServiceOrigin(
+          ctx, digest(input.id + '\0' + input.requestId), digest(JSON.stringify(rest)));
+      }
+      if (!disposed) this.bootstrap = startRegistrationBootstrap({
+        context: ctx, service: ctx.anpIdentity as AnpIdentityService, manager, config: input,
+      });
+    })();
+    void this.bootstrapReady.catch(() => { this.bootstrapError = new Error('registration_service_settings_unavailable'); });
+    ctx.effect(() => () => { disposed = true; return this.bootstrap?.dispose(); }, 'anp-identity: registration bootstrap');
     ctx.effect(() =>
       ctx.typert.register({
         package: contribution.package,
@@ -46,9 +64,12 @@ export class IdentityManagerRemote extends TypertRemoteService {
       }),
     );
   }
-  @Remote registrationBootstrapStatus() { return this.bootstrap ? [this.bootstrap.status()] : []; }
+  @Remote registrationBootstrapStatus() { if (this.bootstrapError) throw this.bootstrapError; return this.bootstrap ? [this.bootstrap.status()] : []; }
+  @Remote registrationServiceSettings() { return (this.managerContext.anpIdentity as AnpIdentityService).registrationServiceSettings(this.managerContext); }
+  @Remote configureRegistrationService(input: UpdateRegistrationServiceSettings) { return (this.managerContext.anpIdentity as AnpIdentityService).configureRegistrationService(this.managerContext, input); }
   /** Accept a user-entered SMS code without persisting or returning it. */
-  @Remote submitRegistrationOtp(input: { code: string }) {
+  @Remote async submitRegistrationOtp(input: { code: string }) {
+    await this.bootstrapReady;
     if (!this.bootstrap) throw new Error('bootstrap_otp_unavailable');
     this.bootstrap.submitOtp(input.code);
     return null;
