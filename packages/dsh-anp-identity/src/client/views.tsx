@@ -185,6 +185,7 @@ function RegistrationProgress({ controller, bootstrap, approvalCompleted = false
 }): ReactNode {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [otp, setOtp] = useState('');
+  const handle = bootstrap.reference && view.identities.find(identity => identityKey(identity.reference) === identityKey(bootstrap.reference!))?.handle;
   return <div className="anpi-section" role="status">
         <h3>协议身份注册</h3>
         {bootstrap.origin && <p className="anpi-small">注册服务：{bootstrap.origin}</p>}
@@ -211,9 +212,10 @@ function RegistrationProgress({ controller, bootstrap, approvalCompleted = false
             maxLength={6} value={otp} onChange={event => setOtp(event.target.value)} /></label>
           <button type="submit" disabled={view.pending || !/^[0-9]{6}$/u.test(otp)}>验证并注册</button>
         </form>}
+        {handle && <CopyRow label="Handle" value={handle} controller={controller} />}
         {bootstrap.reference && <CopyRow label="DID" value={bootstrap.reference.did} controller={controller} />}
-        {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
         {bootstrap.clientId && <CopyRow label="CIMD" value={bootstrap.clientId} controller={controller} />}
+        {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
   </div>;
 }
 
