@@ -39,7 +39,7 @@ import {
 } from './catalog.js'
 import { pluginError, AnpIdentityPluginError } from './errors.js'
 import { createAuthenticatedHttp } from './http-auth.js'
-import { UserIdentityService, requestSigningKid } from './user-service.js'
+import { UserIdentityService, httpSigningKey } from './user-service.js'
 import type { UserIdentityClient } from './user-client.js'
 import type { CapabilitySnapshot, CreateParameters, CreateResult, VerifiedCaller } from './authorization-types.js'
 import type { IdentityManagement, ManagedIdentitySummary } from './management-types.js'
@@ -1247,7 +1247,9 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     this.assertNoHostAssociations(entry)
     const identity = await this.withUserNative(native => native.publicIdentity(reference))
     if (identity.state !== 'active' || !identity.capabilities.didWba) throw pluginError('provider_incompatible')
-    requestSigningKid(identity)
+    const http = httpSigningKey(identity)
+    if (http.httpOnly) return { version: 'ordinary-http/1', capabilities: ['identity:read', 'identity:http-auth'],
+      signingPurposes: [], httpOrigins: [...(this.resolvedConfig.httpAllowedOrigins.get(caller.consumer) ?? [])].sort() }
     return { version: 'ordinary-use/1', capabilities: ['identity:read', 'identity:sign', 'identity:http-auth'],
       signingPurposes: this.resolvedConfig.oauthAllowedAudiences.has(caller.consumer)
         ? ['application_assertion', 'oauth_client_assertion'] : ['authentication', 'application_assertion'],

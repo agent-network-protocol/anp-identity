@@ -546,3 +546,16 @@ it('labels a wildcard HTTP approval as all HTTPS domains rather than a literal s
   expect(f.remote.decide).not.toHaveBeenCalled();
   f.controller.dispose();
 });
+
+it('shows protocol HTTP-only approval without raw signing warnings or capability', async () => {
+  const pending = request('access', 'device-http-review');
+  const f = fixture([pending]);
+  const httpOnly: CapabilitySnapshot = { version: 'ordinary-http/1', capabilities: ['identity:read', 'identity:http-auth'], signingPurposes: [], httpOrigins: ['https://anp-demo.awiki.info'] };
+  f.remote.getRequest.mockResolvedValue({ ok: true, value: { request: pending, identities: [identity], snapshot: httpOnly,
+    snapshots: [{ identity: identity.reference, snapshot: httpOnly }] } });
+  f.render(); await act(() => f.controller.refresh());
+  expect(await screen.findByText('仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。')).toBeTruthy();
+  expect(screen.queryByText('签名可在外部使用，不受网站列表限制。')).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});

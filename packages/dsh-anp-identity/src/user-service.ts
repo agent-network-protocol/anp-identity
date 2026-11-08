@@ -146,10 +146,15 @@ export class UserIdentityService {
         dispatch: async (request: Request, executionId?: string) => {
           return run({ action: 'http', request }, executionId, async (native, operation, assertActive) => {
             if (operation.action !== 'http') throw pluginError('invalid_request')
+            const identity = await native.publicIdentity(lease.identity)
+            const signing = httpSigningKey(identity)
+            if (signing.httpOnly && identityControlPath(new URL(operation.request.url).pathname)) {
+              throw pluginError('capability_forbidden')
+            }
             const origins = new Set([new URL(operation.request.url).origin])
             return createAuthenticatedHttp(lease.identity, native, origins, assertActive, async () => {
-              const identity = await native.publicIdentity(lease.identity)
-              return requestSigningKid(identity)
+              const current = await native.publicIdentity(lease.identity)
+              return httpSigningKey(current).kid
             }).dispatch(operation.request, outgoing => fetch(outgoing))
           })
         },
@@ -158,9 +163,33 @@ export class UserIdentityService {
   }
 }
 
+/** Reject control-plane paths even when intermediaries decode separators or dot segments. */
+function identityControlPath(pathname: string): boolean {
+  let current = pathname
+  for (let depth = 0; depth < 5; depth++) {
+    const normalized = new URL('https://http-policy.invalid' + current.replace(/\\/gu, '/').replace(/\/+/gu, '/')).pathname
+    if (/^\/user-service(?:\/|$)/iu.test(normalized) || /^\/did-auth(?:\/|$)/iu.test(normalized)
+      || /^\/agent-clients\/device(?:\/|$)/iu.test(normalized)) return true
+    if (!/%[0-9a-f]{2}/iu.test(current)) return false
+    try { current = decodeURIComponent(current) } catch { throw pluginError('invalid_request') }
+  }
+  throw pluginError('invalid_request')
+}
+
 export function requestSigningKid(identity: PublicIdentity): string {
   const keys = identity.activeKeys.filter(key => key.algorithm === 'ed25519'
     && key.purposes.includes('authentication') && key.purposes.includes('application_assertion') && !key.purposes.includes('device_assertion'))
   if (keys.length !== 1) throw pluginError('provider_incompatible')
   return keys[0]!.kid
+}
+
+/** Select an authentication key for exact HTTP requests, never for raw assertions. */
+export function httpSigningKey(identity: PublicIdentity): { kid: string; httpOnly: boolean } {
+  const ordinary = identity.activeKeys.filter(key => key.algorithm === 'ed25519'
+    && key.purposes.includes('authentication') && key.purposes.includes('application_assertion') && !key.purposes.includes('device_assertion'))
+  if (ordinary.length) return { kid: requestSigningKid(identity), httpOnly: false }
+  const devices = identity.activeKeys.filter(key => key.algorithm === 'ed25519'
+    && key.purposes.includes('authentication') && key.purposes.includes('device_assertion'))
+  if (devices.length !== 1) throw pluginError('provider_incompatible')
+  return { kid: devices[0]!.kid, httpOnly: true }
 }

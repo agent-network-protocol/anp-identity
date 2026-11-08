@@ -2,6 +2,8 @@
 
 当前候选面向 Harness `0.2.2-rc.1`、Cordis `4.1.0` 与 Loader `1.1.0`，不再声明兼容 Harness `0.1.5`。Remote 描述符使用延迟 `create()` codec；同进程 Gateway 调用必须显式提供 Peer 并安装 Remote Access 服务。
 
+没有专用请求签名密钥的公共协议身份，可通过 `ordinary-http/1` 审批，仅使用唯一设备认证密钥执行本机精确 HTTP 请求签名和公开身份读取；不能做通用原始签名或 OAuth 断言。有专用请求签名密钥的身份保持原有能力，已有授权不会扩大。旧版本不识别该 HTTP-only 快照，降级前需撤销或归档这些授权。
+
 显式列入 `userConsumers` 的插件可配置 `httpAllowedOrigins[consumer]: ['*']`，允许任意 HTTPS 域名。管理界面会在审批前明确显示这一广泛权限；每次请求仍须同时符合已批准授权和当前 Host 策略。已有精确域名授权不会自动扩大，单次操作绑定和撤销检查不变；Legacy Host 消费者不能使用该通配符。旧版本不识别通配授权快照，降级前需撤销这些授权。
 
 `@agent-network-protocol/dsh-anp-identity` 为 DSH 应用提供共享的多 DID 身份 Store。应用不需要各自实现私钥托管、DID Document 生命周期、崩溃恢复和请求签名。

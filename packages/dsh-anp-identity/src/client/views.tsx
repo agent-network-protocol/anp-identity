@@ -86,7 +86,7 @@ function Scope({
         <p>无法读取权限范围，暂不能授权。</p>
       )}
       <p className="anpi-small">{FULL_PERMISSION_NOTICE}</p>
-      <p className="anpi-small">签名可在外部使用，不受网站列表限制。</p>
+      <p className="anpi-small">{snapshot?.capabilities.includes('identity:sign') ? '签名可在外部使用，不受网站列表限制。' : '仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。'}</p>
     </>
   );
 }
@@ -902,7 +902,7 @@ function AccessForm({
       )}
       <div className="anpi-access-scope">
         <p className="anpi-small">{FULL_PERMISSION_NOTICE}</p>
-        <p className="anpi-small">签名可在外部使用，不受网站列表限制。</p>
+        <p className="anpi-small">{snapshot?.capabilities.includes('identity:sign') ? '签名可在外部使用，不受网站列表限制。' : '仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。'}</p>
         <details>
           <summary>全部使用权限 · 查看范围</summary>
           {snapshot ? (

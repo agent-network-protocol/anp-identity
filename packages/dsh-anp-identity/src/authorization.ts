@@ -16,6 +16,7 @@ import type {
 export * from './authorization-types.js'
 const SCHEMA = 'anp-identity-authorization/1' as const
 const ORDINARY = ['identity:read', 'identity:sign', 'identity:http-auth'] as const
+const HTTP_ONLY = ['identity:read', 'identity:http-auth'] as const
 const FIVE_MINUTES = 300_000
 const SEVEN_DAYS = 7 * 24 * 60 * 60_000
 
@@ -68,9 +69,11 @@ function origin(value: string): string {
   return parsed.origin
 }
 function snapshot(value: CapabilitySnapshot): CapabilitySnapshot {
-  if (value.capabilities.length !== ORDINARY.length || ORDINARY.some(cap => !value.capabilities.includes(cap))) fail('incompatible_identity_capabilities')
+  const capabilities = value.version === 'ordinary-http/1' ? HTTP_ONLY : ORDINARY
+  if (value.capabilities.length !== capabilities.length || capabilities.some(cap => !value.capabilities.includes(cap))
+    || value.version === 'ordinary-http/1' && (value.signingPurposes.length > 0 || (value.oauthAudiences?.length ?? 0) > 0)) fail('incompatible_identity_capabilities')
   return {
-    version: text(value.version, 256), capabilities: [...ORDINARY],
+    version: text(value.version, 256), capabilities: [...capabilities],
     signingPurposes: [...new Set(value.signingPurposes.map(v => text(v, 256)))].sort(),
     httpOrigins: [...new Set(value.httpOrigins.map(value => value === '*' ? value : origin(value)))].sort(),
     ...(value.oauthAudiences === undefined ? {} : { oauthAudiences: [...new Set(value.oauthAudiences.map(value => exactHttps(value)))].sort() }),

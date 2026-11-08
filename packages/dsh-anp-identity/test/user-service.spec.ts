@@ -722,3 +722,34 @@ it('binds explicit wildcard HTTP configuration to real user approval and native 
   await expect(authorized.authenticatedHttp.dispatch(new Request('https://third.example/query'))).rejects.toThrow();
   expect(sent).toHaveLength(2);
 });
+
+it.each(['e1', 'web'] as const)('authorizes exact HTTP authentication for a %s protocol device without granting raw signing', async profile => {
+  await using f = await userFixture();
+  const manager = f.managerService.acquireManagement(f.managerContext);
+  const input = createInput('protocol-http-' + profile);
+  const creation = await f.first.requestCreateIdentity({ ...input, parameters: { ...input.parameters, profile, usage: 'protocol', identityOnly: true } });
+  const created = await manager.decide({ requestId: creation.id, expectedVersion: creation.version, decision: 'approve' }) as CreateAuthorizationRequest;
+  const reference = created.result!.reference;
+  const request = await f.first.requestAccess({ requestId: 'protocol-http-access', purpose: 'Read ANP description', identity: reference,
+    operation: { action: 'http', request: new Request(ORIGIN + '/ad.json') } });
+  const review = await manager.getRequest(request.id);
+  expect(review.snapshot).toMatchObject({ version: 'ordinary-http/1', capabilities: ['identity:read', 'identity:http-auth'], signingPurposes: [] });
+  expect(await manager.grants(reference)).toEqual([]);
+  const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: review.snapshot! }) as AccessAuthorizationRequest;
+  const identity = await f.first.openAuthorizedIdentity(approved.grantId!);
+  const sent: Request[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async value => { sent.push(new Request(value)); return Response.json({ ok: true }); });
+  await identity.authenticatedHttp.dispatch(new Request(ORIGIN + '/ad.json'));
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.headers.get('signature-input')).toContain('#device');
+  for (const path of ['/user-service/v1/did-auth/rpc', '/%75ser-service/v1/did-auth/rpc', '/%2fuser-service/v1/did-auth/rpc', '/prefix/%2e%2e/user-service/v1/did-auth/rpc']) {
+    await expect(identity.authenticatedHttp.dispatch(new Request(ORIGIN + path, { method: 'POST', body: '{}' }))).rejects.toMatchObject({ code: 'capability_forbidden' });
+  }
+  await expect(identity.sign({ purpose: 'authentication', kid: reference.did + '#device', payload: Buffer.from('not-an-http-request') })).rejects.toMatchObject({ code: 'operation_not_permitted' });
+  await expect(identity.signOAuthClientAssertion('https://issuer.example')).rejects.toMatchObject({ code: 'operation_not_permitted' });
+  await expect(identity.authenticatedHttp.dispatch(new Request('https://other.example/ad.json'))).rejects.toThrow();
+  expect(sent).toHaveLength(1);
+  const grant = (await manager.grants(reference))[0]!;
+  await manager.revoke({ grantId: grant.id, expectedVersion: grant.version });
+  await expect(identity.authenticatedHttp.dispatch(new Request(ORIGIN + '/ad.json'))).rejects.toThrow();
+});
