@@ -2,6 +2,8 @@
 
 This candidate targets Harness `0.2.2-rc.1`, Cordis `4.1.0`, and Loader `1.1.0`, not Harness `0.1.5`. Remote descriptors use lazy `create()` codecs. In-process Gateway callers must supply an explicit Peer and install the Remote Access service.
 
+An explicitly configured `userConsumers` entry may use `httpAllowedOrigins[consumer]: ['*']` for any HTTPS origin. The manager labels this broad permission before user approval. Both the approved grant and current Host policy must permit each dispatch; existing exact-origin grants never widen silently. Legacy Host consumers cannot use this wildcard. One-time operation binding and revocation remain enforced. Older versions do not understand wildcard snapshots; revoke those grants before downgrading.
+
 `@agent-network-protocol/dsh-anp-identity` gives DSH applications one shared, multi-DID identity store without making each application implement key custody, DID document lifecycle, crash recovery, or request signing.
 
 Ordinary plugins use `bindIdentityClient(ctx)` to request user-approved identity creation and use. Trusted Host integrations retain a separate facade through `ctx.anpIdentity`. The plugin delegates private-key operations to the ANP Identity native module, keeps private keys encrypted at rest, and stores only non-secret DSH metadata—labels, handles, and consumer grants—in its catalog.

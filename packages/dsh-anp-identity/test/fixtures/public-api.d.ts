@@ -29,7 +29,7 @@ export interface Config {
     readonly allowConsumers?: string[];
     /** Narrow Host-only consumers permitted to acquire Provider leases. */
     readonly allowProviderConsumers?: string[];
-    /** Exact HTTPS origins permitted per consumer for authenticated HTTP. */
+    /** HTTPS origins per consumer; explicit User consumers may opt into '*' with user approval. */
     readonly httpAllowedOrigins?: Record<string, string[]>;
     /** Run native Store recovery when a Provider opens. */
     readonly recoveryOnOpen?: boolean;
@@ -856,6 +856,7 @@ export interface CapabilitySnapshot {
     readonly version: string;
     readonly capabilities: readonly OrdinaryCapability[];
     readonly signingPurposes: readonly string[];
+    /** HTTPS origins, or '*' only when the Host and user explicitly approve all HTTPS origins. */
     readonly httpOrigins: readonly string[];
     readonly oauthAudiences?: readonly string[];
 }

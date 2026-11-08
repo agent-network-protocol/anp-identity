@@ -72,14 +72,14 @@ function snapshot(value: CapabilitySnapshot): CapabilitySnapshot {
   return {
     version: text(value.version, 256), capabilities: [...ORDINARY],
     signingPurposes: [...new Set(value.signingPurposes.map(v => text(v, 256)))].sort(),
-    httpOrigins: [...new Set(value.httpOrigins.map(origin))].sort(),
+    httpOrigins: [...new Set(value.httpOrigins.map(value => value === '*' ? value : origin(value)))].sort(),
     ...(value.oauthAudiences === undefined ? {} : { oauthAudiences: [...new Set(value.oauthAudiences.map(value => exactHttps(value)))].sort() }),
   }
 }
 function permits(policy: CapabilitySnapshot, value: ControlledOperation): boolean {
   return policy.capabilities.includes(value.capability)
     && (value.signingPurpose === undefined || policy.signingPurposes.includes(value.signingPurpose))
-    && (value.httpOrigin === undefined || policy.httpOrigins.includes(value.httpOrigin))
+    && (value.httpOrigin === undefined || policy.httpOrigins.includes('*') || policy.httpOrigins.includes(value.httpOrigin))
     && (value.oauthAudience === undefined || (policy.oauthAudiences ?? []).includes(value.oauthAudience))
 }
 

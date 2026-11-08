@@ -79,7 +79,7 @@ function Scope({
           <p>签名用途：{snapshot.signingPurposes.join("、") || "无"}</p>
           {!!snapshot.oauthAudiences?.length && <p>OAuth 目标：{snapshot.oauthAudiences.join("、")}</p>}
           <p className="anpi-break">
-            网站：{snapshot.httpOrigins.join("、") || "无"}
+            网站：{snapshot.httpOrigins.includes('*') ? '全部 HTTPS 域名（通配权限）' : snapshot.httpOrigins.join("、") || "无"}
           </p>
         </>
       ) : (
@@ -923,7 +923,7 @@ function AccessForm({
           )}
         </details>
         <p className="anpi-small anpi-break">
-          网站：{snapshot?.httpOrigins.join("、") || "无"}
+          网站：{snapshot?.httpOrigins.includes('*') ? '全部 HTTPS 域名（通配权限）' : snapshot?.httpOrigins.join("、") || "无"}
         </p>
       </div>
       <DecisionActions

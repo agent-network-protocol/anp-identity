@@ -98,7 +98,7 @@ export interface Config {
   readonly allowConsumers?: string[]
   /** Narrow Host-only consumers permitted to acquire Provider leases. */
   readonly allowProviderConsumers?: string[]
-  /** Exact HTTPS origins permitted per consumer for authenticated HTTP. */
+  /** HTTPS origins per consumer; explicit User consumers may opt into '*' with user approval. */
   readonly httpAllowedOrigins?: Record<string, string[]>
   /** Run native Store recovery when a Provider opens. */
   readonly recoveryOnOpen?: boolean
@@ -1804,7 +1804,10 @@ function resolveConfig(config: Config): ResolvedConfig {
   for (const [consumer, origins] of Object.entries(config.httpAllowedOrigins ?? {})) {
     validateConsumer(consumer)
     if (!allowConsumers.has(consumer)) throw new TypeError('anp-identity: HTTP consumer must be allowed')
-    const normalized = origins.map(normalizeHttpsOrigin)
+    if (origins.includes('*') && !userConsumers.has(consumer)) {
+      throw new TypeError('anp-identity: wildcard HTTP origins require an explicit User consumer')
+    }
+    const normalized = origins.map(value => value === '*' ? value : normalizeHttpsOrigin(value))
     if (new Set(normalized).size !== normalized.length) {
       throw new TypeError('anp-identity: HTTP origins must be unique')
     }

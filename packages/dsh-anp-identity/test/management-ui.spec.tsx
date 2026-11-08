@@ -534,3 +534,15 @@ it('submits an explicit SMS code only to the manager and clears the password inp
   expect(JSON.stringify(f.controller.getSnapshot())).not.toContain('314159');
   f.controller.dispose();
 });
+
+it('labels a wildcard HTTP approval as all HTTPS domains rather than a literal star', async () => {
+  const pending = request('access', 'wildcard-review');
+  const f = fixture([pending]);
+  const wildcard = { ...snapshot, httpOrigins: ['*'] };
+  f.remote.getRequest.mockResolvedValue({ ok: true, value: { request: pending, identities: [identity], snapshot: wildcard,
+    snapshots: [{ identity: identity.reference, snapshot: wildcard }] } });
+  f.render(); await act(() => f.controller.refresh());
+  expect(await screen.findByText(/全部 HTTPS 域名（通配权限）/)).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});

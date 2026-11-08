@@ -7,6 +7,7 @@ export interface CapabilitySnapshot {
   readonly version: string
   readonly capabilities: readonly OrdinaryCapability[]
   readonly signingPurposes: readonly string[]
+  /** HTTPS origins, or '*' only when the Host and user explicitly approve all HTTPS origins. */
   readonly httpOrigins: readonly string[]
   readonly oauthAudiences?: readonly string[]
 }

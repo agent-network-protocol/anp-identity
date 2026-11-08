@@ -696,3 +696,29 @@ async function start(root: string, origins = [ORIGIN], hooks?: StartupHooks) {
   }
   return { ctx, service, first, second, managerContext: managerContext!, hostContext: hostContext!, firstContext: contexts.get('user-one')!, installations }
 }
+
+it('binds explicit wildcard HTTP configuration to real user approval and native signing without bypassing revocation', async () => {
+  await using f = await userFixture();
+  const reference = await createApproved(f, 'wildcard-http');
+  await f.restart(['*']);
+  const manager = f.managerService.acquireManagement(f.managerContext);
+  const request = await f.first.requestAccess({ requestId: 'wildcard-http-use', purpose: 'Use arbitrary HTTPS domains', identity: reference,
+    operation: { action: 'http', request: new Request('https://first.example/query') } });
+  const review = await manager.getRequest(request.id);
+  expect(review.snapshot?.httpOrigins).toEqual(['*']);
+  expect(await manager.grants(reference)).toEqual([]);
+  const approved = await manager.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: review.snapshot! }) as AccessAuthorizationRequest;
+  const authorized = await f.first.openAuthorizedIdentity(approved.grantId!);
+  const sent: Request[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    const outgoing = new Request(input); sent.push(outgoing); return new Response('ok');
+  });
+  await authorized.authenticatedHttp.dispatch(new Request('https://first.example/query'));
+  await authorized.authenticatedHttp.dispatch(new Request('https://second.example/query'));
+  expect(sent.map(item => new URL(item.url).origin)).toEqual(['https://first.example', 'https://second.example']);
+  expect(sent.every(item => item.headers.has('signature'))).toBe(true);
+  const grant = (await manager.grants(reference))[0]!;
+  await manager.revoke({ grantId: grant.id, expectedVersion: grant.version });
+  await expect(authorized.authenticatedHttp.dispatch(new Request('https://third.example/query'))).rejects.toThrow();
+  expect(sent).toHaveLength(2);
+});
