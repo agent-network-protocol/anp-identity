@@ -138,11 +138,11 @@ The separate `test/registration-bootstrap-web-live.spec.ts` exercises fresh root
 
 The focused MCP lane uses `vitest.mcp-product.config.mjs` with the explicit `DSH_MCP_PRODUCT_HARNESS_SOURCE` checkout. Its aliases select one real Host Cordis/Loader implementation for both root and Agent Preset trees; they do not fabricate an installed caller or relax admission. The test TLS publisher uses `identity.example` to match the actual DID domain, with an exact test CA/address map. Post-registration observations count HTTP Signature requests and require zero cached registration-Bearer requests. SMTP/Siteverify transports remain component fixtures; these checks are not public-network System or GUI acceptance.
 
-## DSH npm release 0.1.7
+## DSH npm release 0.1.8
 
 This plugin targets Harness `0.2.2-rc.1` and depends on the exact
 `@agent-network-protocol/anp-identity@0.2.6` runtime wrapper. Install the DSH
-bundle with `pnpm dsh plugin --profile <profile> add @agent-network-protocol/dsh-anp-identity@0.1.7`.
+bundle with `pnpm dsh plugin --profile <profile> add @agent-network-protocol/dsh-anp-identity@0.1.8`.
 The wrapper selects a matching prebuilt addon for macOS x64/arm64, Linux GNU
 x64/arm64, or Windows x64; no local Rust build is needed on those targets.
 Do not replace that dependency with an older same-API-looking binary.
