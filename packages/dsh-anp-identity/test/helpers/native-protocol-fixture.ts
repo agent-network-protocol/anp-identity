@@ -50,7 +50,8 @@ export async function createNativeProtocolFixture(options: {
     failureContext = ctx
     const entries: Array<{ options: { name: string }; disabled: boolean; fiber: Context['fiber'] }> = []
     ctx.provide('loader', { *entries() { yield* entries } })
-    await ctx.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer), httpAllowedOrigins: options.httpAllowedOrigins,
+    await ctx.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer),
+      ...(options.httpAllowedOrigins === undefined ? {} : { httpAllowedOrigins: options.httpAllowedOrigins }),
       protocolPolicies: consumers.map(item => ({ id: item.policyRef, version: 1, consumer: item.consumer, owner: '@agent-network-protocol/dsh-anp-identity', identity: identity.reference,
         profiles: item.profiles ?? ['pap_session', 'pap_account', 'mcp_machine'], issuers: item.issuers ?? ['https://company.example'],
         resources: item.resources ?? ['https://company.example/api'], publicTargets: false, scopes: item.scopes ?? ['agent.self.read', 'pap.read'], expiresAt: Date.now() + 3600000 })) })
