@@ -11,7 +11,7 @@ export function composeRegistrationPhone(code: string, number: string): string |
   const dialing = code.trim();
   const national = number.trim().replace(/[\s()-]/gu, '');
   if (!/^\+[1-9][0-9]{0,3}$/u.test(dialing) || !/^[0-9]+$/u.test(national)) return undefined;
-  if (dialing === '+86' && !/^1[3-9][0-9]{9}$/u.test(national)) return undefined;
+  if (dialing === '+86' && !/^1[0-9]{10}$/u.test(national)) return undefined;
   return normalizeRegistrationPhone(dialing + national);
 }
 export const registrationInputSchema = z.object({

@@ -26,10 +26,12 @@ export type ManagementRemote = {
   registrationServiceSettings?: () => Promise<RemoteResult<RegistrationServiceSettings>>;
   configureRegistrationService?: (input: UpdateRegistrationServiceSettings) => Promise<RemoteResult<RegistrationServiceSettings>>;
   registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>>;
+  retryRegistrationSms?: () => Promise<RemoteResult<null>>;
   submitRegistrationOtp?: (input: { code: string }) => Promise<RemoteResult<null>>;
 };
 export type ManagerModal =
   | { readonly kind: "registration" }
+  | { readonly kind: "registration-progress"; readonly requestId: string }
   | { readonly kind: "request"; readonly review: RequestReview }
   | { readonly kind: "result"; readonly review: RequestReview }
   | {
@@ -70,6 +72,14 @@ export class IdentityController {
       if (!this.remote.submitRegistrationOtp) throw new Error('SMS registration is unavailable');
       const result = await this.remote.submitRegistrationOtp({ code });
       if (!result.ok) throw new Error('SMS verification could not be submitted');
+      await this.refresh();
+    });
+  }
+  async retryRegistrationSms(): Promise<void> {
+    await this.action(async () => {
+      if (!this.remote.retryRegistrationSms) throw new Error('SMS retry is unavailable');
+      const result = await this.remote.retryRegistrationSms();
+      if (!result.ok) throw new Error('SMS retry could not be started');
       await this.refresh();
     });
   }
@@ -341,6 +351,12 @@ export class IdentityController {
       this.patch({ pending: false });
     }
   }
+  openRegistrationProgress(requestId: string): void {
+    if (this.view.pending || !this.view.bootstraps.some(flow => flow.requestId === requestId)) return;
+    this.captureFocus();
+    this.requestReviewEpoch++;
+    this.patch({ modal: { kind: "registration-progress", requestId }, error: null });
+  }
   closeModal(later = true): void {
     if (this.view.pending) return;
     if (later && this.view.modal?.kind === "registration") {
@@ -379,7 +395,14 @@ export class IdentityController {
               ? "创建结果待核对，请查看已处理请求；不要重复创建。"
               : null,
       });
-      this.closeModal(false);
+      if (result.kind === "create" && result.status === "approved" &&
+        this.view.bootstraps.some(flow => flow.requestId === result.id)) {
+        // Keep the owner in the registration flow while the private bootstrap advances.
+        this.requestReviewEpoch++;
+        this.patch({ modal: { kind: "registration-progress", requestId: result.id } });
+      } else {
+        this.closeModal(false);
+      }
       await this.refresh();
     } catch (error) {
       if (error instanceof Error && ["request_conflict", "request_not_pending", "request_not_found"].includes(error.message)) {

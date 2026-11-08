@@ -618,6 +618,8 @@ export declare function startRegistrationBootstrap(options: {
     manager: IdentityManagement;
     config: RegistrationBootstrapConfig;
     fetch?: typeof fetch;
+    /** Explicit owner retry of a failed SMS challenge, never registration or publication. */
+    retryPhoneChallenge?: boolean;
 }): RegistrationBootstrapController;
 
 // ===== target-policy.d.ts =====
@@ -1323,6 +1325,8 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     submitRegistrationOtp(input: {
         code: string;
     }): Promise<null>;
+    /** Owner-only retry; an uncertain registration must never be replayed. */
+    retryRegistrationSms(): Promise<null>;
     listIdentities(): Promise<import("./management-types.js").ManagedIdentitySummary[]>;
     listRequests(input?: boolean): Promise<import("./authorization-types.js").AuthorizationRequest[]>;
     getRequest(input: string): Promise<import("./management-types.js").RequestReview>;

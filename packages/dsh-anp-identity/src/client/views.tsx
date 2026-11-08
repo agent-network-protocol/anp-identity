@@ -1,3 +1,4 @@
+import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import { composeRegistrationPhone } from '../registration-onboarding-types.js';
 import { IDENTITY_PROMPT } from '../agent-guidance-text.js';
 import type { RegistrationServiceSettings } from '../registration-service-types.js';
@@ -178,6 +179,44 @@ function RegistrationServiceForm({ controller, settings, pending }: {
   </div>;
 }
 
+/** Shared owner-only registration progress for settings and the approval continuation. */
+function RegistrationProgress({ controller, bootstrap, approvalCompleted = false }: {
+  controller: IdentityController; bootstrap: RegistrationBootstrapStatus; approvalCompleted?: boolean;
+}): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const [otp, setOtp] = useState('');
+  return <div className="anpi-section" role="status">
+        <h3>协议身份注册</h3>
+        {bootstrap.origin && <p className="anpi-small">注册服务：{bootstrap.origin}</p>}
+        {bootstrap.clientVersion && <p className="anpi-small">客户端版本头：{bootstrap.clientVersion}</p>}
+        <p>{({ awaiting_approval: approvalCompleted ? '创建已批准，正在准备验证' : '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
+          publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
+        {bootstrap.phase === 'awaiting_approval' && <div>
+          {!approvalCompleted && view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
+            <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>
+            <Button disabled={view.pending || view.modal !== null} onClick={() => { void controller.openRequest(bootstrap.requestId); }}>继续创建审批</Button>
+          </> : <p className="anpi-small">创建已批准，正在准备注册并请求验证码，请稍候。请勿重复创建；结果会在这里更新。</p>}
+        </div>}
+        {bootstrap.phase === 'published' && <p className="anpi-small">注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。</p>}
+        {bootstrap.reason === 'client_upgrade_required' && <p className="anpi-small">短信未发送：注册服务拒绝了当前客户端版本（client.upgrade_required），这不是验证码错误。请让服务管理员核对上方服务地址和客户端版本准入；不要重复创建身份。</p>}
+        {bootstrap.reason === 'phone_unavailable' && <p className="anpi-small">短信验证码请求未确认成功，请检查服务端手机号注册配置。不会自动重发或绕过验证。</p>}
+        {bootstrap.phase === 'blocked' && ['phone_unavailable','client_upgrade_required'].includes(bootstrap.reason ?? '') &&
+          <div><p className="anpi-small">修复服务或版本准入后，可手动重试发送验证码。沿用当前身份，不会再次创建或重放注册。</p>
+            <Button disabled={view.pending} onClick={() => { void controller.retryRegistrationSms(); }}>重试发送验证码</Button></div>}
+        {bootstrap.phase === 'awaiting_phone_verification'  && <form onSubmit={event => {
+          event.preventDefault(); const code = otp; setOtp(''); void controller.submitRegistrationOtp(code);
+        }}>
+          <p className="anpi-small">发送请求已受理不等于短信已送达。请使用此注册服务为当前 Handle 签发的验证码，不能复用其他环境或登录流程的验证码。</p>
+          <label>短信验证码 <input aria-label="短信验证码" type="password" inputMode="numeric" autoComplete="one-time-code"
+            maxLength={6} value={otp} onChange={event => setOtp(event.target.value)} /></label>
+          <button type="submit" disabled={view.pending || !/^[0-9]{6}$/u.test(otp)}>验证并注册</button>
+        </form>}
+        {bootstrap.reference && <CopyRow label="DID" value={bootstrap.reference.did} controller={controller} />}
+        {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
+        {bootstrap.clientId && <CopyRow label="CIMD" value={bootstrap.clientId} controller={controller} />}
+  </div>;
+}
+
 /** Actual settings-section contribution, not a stand-alone preview. */
 export function IdentitySettings({
   controller,
@@ -190,7 +229,6 @@ export function IdentitySettings({
   );
   const [tab, setTab] = useState<"identities" | "requests">("identities");
   const [history, setHistory] = useState(false);
-  const [otp, setOtp] = useState('');
   const identity = controller.selected();
   const blocked =
     identity?.deleteBlockedReason ||
@@ -209,32 +247,11 @@ export function IdentitySettings({
         <p className="anpi-small">Agent 会打开创建入口；Handle、手机号/邮箱和验证码只在本页面填写。创建、验证、发布及第三方使用授权是不同步骤。</p>
       </div>
       {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
-      {view.bootstraps.map(bootstrap => <div className="anpi-section" role="status" key={bootstrap.id}>
-        <h3>协议身份注册</h3>
-        {bootstrap.origin && <p className="anpi-small">注册服务：{bootstrap.origin}</p>}
-        {bootstrap.clientVersion && <p className="anpi-small">客户端版本头：{bootstrap.clientVersion}</p>}
-        <p>{({ awaiting_approval: '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
-          publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
-        {bootstrap.phase === 'awaiting_approval' && <div>
-          {view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
-            <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>
-            <Button disabled={view.pending || view.modal !== null} onClick={() => { void controller.openRequest(bootstrap.requestId); }}>继续创建审批</Button>
-          </> : <p className="anpi-small">创建正在处理或结果待核对，请刷新查看当前状态，不要重复创建。</p>}
-        </div>}
-        {bootstrap.phase === 'published' && <p className="anpi-small">注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。</p>}
-        {bootstrap.reason === 'client_upgrade_required' && <p className="anpi-small">服务端返回 client.upgrade_required，不能将 HTTP 200 视为成功。请核对上方注册服务和客户端版本，完成准入配置或升级。</p>}
-        {bootstrap.reason === 'phone_unavailable' && <p className="anpi-small">短信验证码请求未确认成功，请检查服务端手机号注册配置。不会自动重发或绕过验证。</p>}
-        {bootstrap.phase === 'awaiting_phone_verification' && <form onSubmit={event => {
-          event.preventDefault(); const code = otp; setOtp(''); void controller.submitRegistrationOtp(code);
-        }}>
-          <p className="anpi-small">发送请求已受理不等于短信已送达。请使用此注册服务为当前 Handle 签发的验证码，不能复用其他环境或登录流程的验证码。</p>
-          <label>短信验证码 <input aria-label="短信验证码" type="password" inputMode="numeric" autoComplete="one-time-code"
-            maxLength={6} value={otp} onChange={event => setOtp(event.target.value)} /></label>
-          <button type="submit" disabled={view.pending || !/^[0-9]{6}$/u.test(otp)}>验证并注册</button>
-        </form>}
-        {bootstrap.reference && <CopyRow label="DID" value={bootstrap.reference.did} controller={controller} />}
-        {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
-        {bootstrap.clientId && <CopyRow label="CIMD" value={bootstrap.clientId} controller={controller} />}
+      {view.bootstraps.map(bootstrap => <div key={bootstrap.id}>
+        {view.modal?.kind === 'registration-progress' && view.modal.requestId === bootstrap.requestId ? null :
+          <RegistrationProgress controller={controller} bootstrap={bootstrap} />}
+        {bootstrap.phase !== 'awaiting_approval' && <Button disabled={view.pending || view.modal !== null}
+          onClick={() => controller.openRegistrationProgress(bootstrap.requestId)}>继续注册</Button>}
       </div>)}
       <div className="anpi-tabs" role="tablist" aria-label="身份管理">
         <button
@@ -612,6 +629,7 @@ export function IdentityOverlay({
   if (!view.modal) return null;
   const modal = view.modal;
   const key = modal.kind === "registration" ? "registration" :
+    modal.kind === "registration-progress" ? `registration-progress:${modal.requestId}` :
     modal.kind === "request" || modal.kind === "result"
       ? `${modal.review.request.id}:${modal.review.request.version}`
       : modal.kind === "permissions" || modal.kind === "revoke"
@@ -638,6 +656,15 @@ function IdentityModal({
   if (modal.kind === "registration") {
     title = "创建公共身份";
     content = <RegistrationForm controller={controller} />;
+  } else if (modal.kind === "registration-progress") {
+    title = "完成身份注册";
+    const bootstrap = view.bootstraps.find(flow => flow.requestId === modal.requestId);
+    content = <>
+      {bootstrap ? <RegistrationProgress controller={controller} bootstrap={bootstrap} approvalCompleted /> :
+        <p role="status">正在读取注册状态，请稍候…</p>}
+      <p className="anpi-small">创建身份、验证联系方式和发布是不同步骤。你可以稍后继续，不会丢失当前流程。</p>
+      <Button disabled={view.pending} onClick={() => controller.closeModal()}>稍后继续</Button>
+    </>;
   } else if (modal.kind === "result") {
     title = "请求结果";
     const request = modal.review.request;

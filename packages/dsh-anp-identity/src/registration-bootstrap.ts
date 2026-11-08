@@ -110,6 +110,8 @@ export function startRegistrationBootstrap(options: {
   manager: IdentityManagement
   config: RegistrationBootstrapConfig
   fetch?: typeof fetch
+  /** Explicit owner retry of a failed SMS challenge, never registration or publication. */
+  retryPhoneChallenge?: boolean
 }): RegistrationBootstrapController {
   const config = RegistrationBootstrapConfigSchema.parse(options.config)
   const controller = new AbortController()
@@ -125,6 +127,7 @@ export function startRegistrationBootstrap(options: {
   let pinnedReference: IdentityReference | undefined
   let manager = options.manager
   let backend: Awaited<ReturnType<AnpIdentityService['configureManagedPublicationBackend']>> | undefined
+  let retryPhoneChallenge = options.retryPhoneChallenge === true
   let otpCode: string | undefined
   const assertManagerActive = () => {
     controller.signal.throwIfAborted()
@@ -288,6 +291,13 @@ export function startRegistrationBootstrap(options: {
       assertActive()
       const state = await journal()
       await establishKey(state.emailAttempted || state.phoneAttempted || state.registerStarted || state.registered)
+      if (retryPhoneChallenge) {
+        retryPhoneChallenge = false
+        if (!config.phone || state.registered || state.registerStarted || state.phoneDelivered) throw new Error('bootstrap_phone_unavailable')
+        // The explicit retry is serialized by the existing cross-process journal lock.
+        state.phoneAttempted = false
+        await save(state)
+      }
       if (!state.registered) {
         if (state.registerStarted) { update('registration_uncertain'); return }
         if (config.phone) {
