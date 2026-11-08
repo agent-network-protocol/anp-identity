@@ -753,3 +753,14 @@ it.each(['e1', 'web'] as const)('authorizes exact HTTP authentication for a %s p
   await manager.revoke({ grantId: grant.id, expectedVersion: grant.version });
   await expect(identity.authenticatedHttp.dispatch(new Request(ORIGIN + '/ad.json'))).rejects.toThrow();
 });
+
+it('keeps registration preferences at the real manager boundary and persists them without changing identities', async () => {
+  await using f = await userFixture();
+  expect(await f.managerService.registrationServiceSettings(f.managerContext)).toEqual({ origin: 'https://awiki.me', version: 0 });
+  await expect(f.managerService.registrationServiceSettings(f.firstContext)).rejects.toThrow();
+  await expect(f.managerService.configureRegistrationService(f.firstContext, { origin: 'https://other.example', expectedVersion: 0 })).rejects.toThrow();
+  await f.managerService.configureRegistrationService(f.managerContext, { origin: 'https://service.example', expectedVersion: 0 });
+  expect(await f.managerService.acquireManagement(f.managerContext).listIdentities()).toEqual([]);
+  await f.restart();
+  expect((await f.managerService.registrationServiceSettings(f.managerContext)).origin).toBe('https://service.example');
+});

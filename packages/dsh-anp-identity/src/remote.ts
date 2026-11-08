@@ -37,6 +37,8 @@ const decision = version
   .strict();
 const methods = [
   ["registrationBootstrapStatus", undefined],
+  ["registrationServiceSettings", undefined],
+  ["configureRegistrationService", z.object({ origin: z.string().min(1).max(2048), expectedVersion: z.number().int().nonnegative() }).strict()],
   ["submitRegistrationOtp", z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict()],
   ["listIdentities", undefined],
   ["listRequests", z.boolean().optional()],

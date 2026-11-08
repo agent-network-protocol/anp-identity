@@ -1,3 +1,4 @@
+import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from '../registration-service-types.js';
 import type { OAuthClientIdentity } from "../publication-types.js";
 import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
@@ -18,6 +19,8 @@ export type ManagementRemote = {
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
 } & {
+  registrationServiceSettings?: () => Promise<RemoteResult<RegistrationServiceSettings>>;
+  configureRegistrationService?: (input: UpdateRegistrationServiceSettings) => Promise<RemoteResult<RegistrationServiceSettings>>;
   registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>>;
   submitRegistrationOtp?: (input: { code: string }) => Promise<RemoteResult<null>>;
 };
@@ -31,6 +34,7 @@ export type ManagerModal =
     }
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
+  readonly registrationService: RegistrationServiceSettings | null;
   readonly loading: boolean;
   readonly bootstraps: readonly RegistrationBootstrapStatus[];
   readonly identities: readonly ManagedIdentitySummary[];
@@ -64,6 +68,7 @@ export class IdentityController {
     });
   }
   private view: ManagerView = {
+    registrationService: null,
     loading: true,
     bootstraps: [],
     identities: [],
@@ -126,11 +131,13 @@ export class IdentityController {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     try {
-      const [identities, requests, bootstrapResult] = await Promise.all([
+      const [identities, requests, bootstrapResult, settingsResult] = await Promise.all([
         this.call("listIdentities"),
         this.call("listRequests", false),
         this.remote.registrationBootstrapStatus?.(),
+        this.remote.registrationServiceSettings?.(),
       ]);
+      if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
       if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
       const selectedKey = identities.some(
         (i) => identityKey(identityReference(i)) === this.view.selectedKey,
@@ -142,6 +149,7 @@ export class IdentityController {
       const changed = selectedKey !== this.view.selectedKey;
       this.patch({
         loading: false,
+        registrationService: settingsResult?.ok ? settingsResult.value : null,
         bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
         requests: requests
@@ -174,6 +182,21 @@ export class IdentityController {
     } finally {
       this.refreshing = false;
     }
+  }
+  async configureRegistrationService(origin: string, expectedVersion: number): Promise<boolean> {
+    if (this.view.pending || !this.remote.configureRegistrationService) return false;
+    this.patch({ pending: true, error: null });
+    try {
+      const result = await this.remote.configureRegistrationService({ origin, expectedVersion });
+      if (!result.ok) throw new Error(result.error.message);
+      this.patch({ registrationService: result.value, notice: "身份服务地址已保存，仅用于后续新注册；已有身份和正在进行的流程不会迁移。" });
+      return true;
+    } catch (error) {
+      const conflict = error instanceof Error && error.message === 'registration_service_conflict';
+      if (conflict) await this.refresh();
+      this.patch({ error: conflict ? "配置已在其他页面更新，请刷新后重新确认。" : "保存失败，请填写不含路径、参数或账户信息的 HTTPS 服务根地址。" });
+      return false;
+    } finally { this.patch({ pending: false }); }
   }
   async selectIdentity(key: string): Promise<void> {
     this.selectionVersion++;

@@ -1,3 +1,4 @@
+import type { RegistrationServiceSettings } from '../registration-service-types.js';
 import {
   useEffect,
   useRef,
@@ -91,6 +92,34 @@ function Scope({
   );
 }
 
+function RegistrationServiceForm({ controller, settings, pending }: {
+  controller: IdentityController; settings: RegistrationServiceSettings; pending: boolean;
+}): ReactNode {
+  const [draft, setDraft] = useState(settings.origin);
+  const [version, setVersion] = useState(settings.version);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) { setDraft(settings.origin); setVersion(settings.version); }
+  }, [settings.origin, settings.version, dirty]);
+  return <div className="anpi-section">
+    <h3>身份服务</h3>
+    <form onSubmit={event => {
+      event.preventDefault();
+      void controller.configureRegistrationService(draft, version).then(saved => { if (saved) setDirty(false); });
+    }}>
+      <label>身份服务地址 <input aria-label="身份服务地址" type="url" required value={draft}
+        placeholder="https://awiki.me" disabled={pending}
+        onChange={event => { setDraft(event.target.value); setDirty(true); }} /></label>
+      <Button disabled={pending || !dirty || !draft.trim()} type="submit">保存服务地址</Button>
+      {dirty && <Button disabled={pending} type="button" onClick={() => {
+        setDraft(settings.origin); setVersion(settings.version); setDirty(false);
+      }}>重新载入已保存地址</Button>}
+    </form>
+    <p className="anpi-small">默认 https://awiki.me。这里只保存新注册使用的 HTTPS 根地址，不发送验证码、不创建身份。</p>
+    <p className="anpi-small">已有身份和正在进行的注册继续使用原服务。跨服务注册必须创建新的身份及注册流程，不能只修改已有 DID 的域名。</p>
+  </div>;
+}
+
 /** Actual settings-section contribution, not a stand-alone preview. */
 export function IdentitySettings({
   controller,
@@ -114,6 +143,7 @@ export function IdentitySettings({
     <section className="anpi">
       <h2>身份</h2>
       <p className="anpi-muted">管理此 DSH 中保存的身份</p>
+      {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
       {view.bootstraps.map(bootstrap => <div className="anpi-section" role="status" key={bootstrap.id}>
         <h3>协议身份注册</h3>
         {bootstrap.origin && <p className="anpi-small">注册服务：{bootstrap.origin}</p>}

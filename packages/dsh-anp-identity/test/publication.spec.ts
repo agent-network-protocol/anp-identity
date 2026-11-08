@@ -84,7 +84,7 @@ function backendFixture() {
   let prepareCount = 0
   const backend: PublicationBackend = {
     origin: 'https://identity.example',
-    clientId: id => `https://identity.example/user-service/v1/agent-clients/${id}/client.json`,
+    clientId: id => `https://identity.example/${id}/client.json`,
     async prepare(id, request) {
       prepareCount++
       const hash = sha(JSON.stringify(request))
@@ -92,8 +92,8 @@ function backendFixture() {
         expect(hash).toBe(requestHash)
         return row
       }
-      const clientId = backend.clientId(id)
-      const metadata = JSON.stringify({ client_id: clientId, client_name: request.client_name, jwks_uri: clientId.replace('client.json', 'jwks.json'),
+      const clientId = await backend.clientId(id)
+      const metadata = JSON.stringify({ client_id: clientId, client_name: request.client_name, jwks_uri: 'https://identity.example/public-keys/signing.json',
         redirect_uris: request.redirect_uris, grant_types: ['authorization_code'], response_types: ['code'], token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_signing_alg: 'EdDSA' })
       row = { state: 'prepared', client_id: clientId, operation_id: request.operation_id, version: request.expected_version + 1,
         metadata, jwks: JSON.stringify({ keys: ['signing_keys' in request ? request.signing_keys[0] : request.key] }), metadata_sha256: sha(metadata) }
@@ -295,4 +295,27 @@ it('reports an incompatible older native Provider before starting publication', 
   f.managerService.registerPublicationBackend(f.managerContext,'test',server.backend)
   await expect(f.manager.publishIdentity({reference,config})).rejects.toMatchObject({code:'provider_incompatible'})
   expect(server.prepareCount).toBe(0)
+})
+
+
+it('uses server-selected client and JWKS URLs without deriving their paths', async () => {
+  const requests: string[] = []
+  const clientId = 'https://identity.example/cgw/client.json'
+  const jwksUri = 'https://identity.example/key-store/active-public-keys'
+  const backend = createPublicationBackend({
+    origin: 'https://identity.example',
+    authenticatedFetch: async request => {
+      requests.push(request.url)
+      return Response.json({ state: 'local', client_id: clientId, jwks_uri: jwksUri })
+    },
+    publicFetch: async request => { requests.push(request.url); return Response.json({ keys: [] }) },
+    publishDocument: async () => {},
+  })
+  expect(await backend.clientId('opaque-document-id')).toBe(clientId)
+  await backend.readPublic('opaque-document-id', 'jwks.json', jwksUri)
+  expect(requests).toEqual([
+    'https://identity.example/user-service/v1/agent-clients/opaque-document-id/status', jwksUri,
+  ])
+  await expect(backend.readPublic('opaque-document-id', 'jwks.json', 'https://other.example/keys')).rejects.toThrow()
+  expect(requests).toHaveLength(2)
 })

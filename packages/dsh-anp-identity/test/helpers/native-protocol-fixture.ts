@@ -76,7 +76,7 @@ export async function createNativeProtocolFixture(options: {
       origin: publicationOrigin, clientId: id => `${publicationOrigin}/user-service/v1/agent-clients/${id}/client.json`,
       async prepare(id, input) {
         if (!('schema_version' in input)) throw new Error('fixture_requires_v2')
-        const clientId = backend.clientId(id)
+        const clientId = await backend.clientId(id)
         const metadata = JSON.stringify({ client_id: clientId, jwks_uri: clientId.replace('client.json', 'jwks.json'), client_name: input.client_name,
           redirect_uris: input.redirect_uris, grant_types: [...(input.capabilities.mcp_machine ? ['client_credentials'] : []), ...(input.capabilities.pap_account ? ['authorization_code', 'refresh_token'] : [])],
           response_types: input.capabilities.pap_account ? ['code'] : [], token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_signing_alg: 'ES256' })

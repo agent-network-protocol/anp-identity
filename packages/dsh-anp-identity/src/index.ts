@@ -1,3 +1,5 @@
+import { RegistrationServiceSettingsStore } from './registration-service-settings.js'
+import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js'
 import type { PapCallbackManagementOperations } from './pap-callback.js'
 import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
 import { installedConsumerEntries, resolveInstalledConsumer } from './installed-consumer.js'
@@ -220,6 +222,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   static Config = Config
 
   private readonly resolvedConfig: ResolvedConfig
+  private readonly registrationSettings: RegistrationServiceSettingsStore
   private readonly catalogStore: CatalogStore
   private providerSlot: ProviderSlot | undefined
   private readonly publications: PublicationCoordinator
@@ -234,6 +237,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   public constructor(ctx: Context, config: Config) {
     super(ctx, 'anpIdentity')
     this.resolvedConfig = resolveConfig(config)
+    this.registrationSettings = new RegistrationServiceSettingsStore(this.resolvedConfig.stateRoot)
     this.catalogStore = new CatalogStore(this.resolvedConfig.stateRoot)
     this.hostContext = ctx
     this.publications = new PublicationCoordinator(this.catalogStore, { withNative: operation => this.withPublicationNative(operation) })
@@ -968,6 +972,17 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     } })
     assertActive()
     return result
+  }
+
+  /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
+  registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings> {
+    return this.registrationSettings.read(() => this.assertManagementContext(context))
+  }
+  configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings): Promise<RegistrationServiceSettings> {
+    return this.registrationSettings.update(input, () => this.assertManagementContext(context))
+  }
+  resolveRegistrationServiceOrigin(context: Context, key: string, fingerprint: string): Promise<string> {
+    return this.registrationSettings.pin(key, fingerprint, () => this.assertManagementContext(context))
   }
 
   /** Pin the actual ready provider for an approved local identity and the original manager Context.

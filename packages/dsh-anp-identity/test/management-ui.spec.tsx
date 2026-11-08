@@ -101,10 +101,16 @@ function fixture(
   requests: AuthorizationRequest[] = [],
   initialGrants: AuthorizationGrant[] = [],
 ) {
+  let serviceSettings = { origin: "https://awiki.me", version: 0 };
   let identities = [identity, second];
   let grants = initialGrants;
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
+    registrationServiceSettings: vi.fn(async () => ok(serviceSettings)),
+    configureRegistrationService: vi.fn(async input => {
+      serviceSettings = { origin: input.origin, version: input.expectedVersion + 1 };
+      return ok(serviceSettings);
+    }),
     registrationBootstrapStatus: vi.fn(async () => ok<RegistrationBootstrapStatus[]>([])),
     listIdentities: vi.fn(async () => ok(identities)),
     listRequests: vi.fn(async (history?: boolean) =>
@@ -624,5 +630,44 @@ it("keeps an unrelated decision error visible without retrying or dismissing the
   expect(f.remote.decide).toHaveBeenCalledTimes(1);
   expect(f.controller.getSnapshot().modal?.kind).toBe("request");
   expect(f.controller.getSnapshot().error).toBe("provider_unavailable");
+  f.controller.dispose();
+});
+
+it('edits and saves the registration origin without creating an identity, sending an OTP or migrating an existing flow', async () => {
+  const f = fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ ok: true, value: [{
+    id: 'existing', requestId: 'existing', phase: 'published', origin: 'https://id.awiki.info',
+    reference: identity.reference,
+  }] });
+  f.render(); await act(() => f.controller.refresh());
+  expect((screen.getByLabelText('身份服务地址') as HTMLInputElement).value).toBe('https://awiki.me');
+  fireEvent.change(screen.getByLabelText('身份服务地址'), { target: { value: 'https://service.example' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存服务地址' }));
+  await waitFor(() => expect(f.remote.configureRegistrationService).toHaveBeenCalledWith({ origin: 'https://service.example', expectedVersion: 0 }));
+  expect(screen.getByText('注册服务：https://id.awiki.info')).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+it('retains the reviewed version of an unsaved origin when another page updates the preference', async () => {
+  const f = fixture(); f.render(); await act(() => f.controller.refresh());
+  fireEvent.change(screen.getByLabelText('身份服务地址'), { target: { value: 'https://draft.example' } });
+  f.remote.registrationServiceSettings.mockResolvedValue({ ok: true, value: { origin: 'https://new.example', version: 4 } });
+  await act(() => f.controller.refresh());
+  fireEvent.click(screen.getByRole('button', { name: '保存服务地址' }));
+  await waitFor(() => expect(f.remote.configureRegistrationService).toHaveBeenCalledWith({ origin: 'https://draft.example', expectedVersion: 0 }));
+  f.controller.dispose();
+});
+
+it('refreshes a conflicting preference and requires an explicit reload before replacing the unsaved draft', async () => {
+  const f = fixture(); f.render(); await act(() => f.controller.refresh());
+  fireEvent.change(screen.getByLabelText('身份服务地址'), { target: { value: 'https://draft.example' } });
+  f.remote.registrationServiceSettings.mockResolvedValue({ ok: true, value: { origin: 'https://other.example', version: 2 } });
+  f.remote.configureRegistrationService.mockRejectedValueOnce(new Error('registration_service_conflict'));
+  fireEvent.click(screen.getByRole('button', { name: '保存服务地址' }));
+  await screen.findByText('配置已在其他页面更新，请刷新后重新确认。');
+  expect((screen.getByLabelText('身份服务地址') as HTMLInputElement).value).toBe('https://draft.example');
+  fireEvent.click(screen.getByRole('button', { name: '重新载入已保存地址' }));
+  await waitFor(() => expect((screen.getByLabelText('身份服务地址') as HTMLInputElement).value).toBe('https://other.example'));
+  expect(f.remote.configureRegistrationService).toHaveBeenCalledTimes(1);
   f.controller.dispose();
 });

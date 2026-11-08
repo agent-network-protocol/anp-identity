@@ -151,8 +151,10 @@ export async function createManagedPublicationDriver(input: {
   const resolved = await deviceCommand('resolve', randomUUID())
   const documentId = resolved.document_id as string
   if (!/^[A-Za-z0-9_-]{1,128}$/u.test(documentId)) throw pluginError('provider_incompatible')
-  const clientId = `${origin}/user-service/v1/agent-clients/${documentId}/client.json`
-  if (resolved.client_id !== clientId) throw pluginError('provider_incompatible')
+  if (typeof resolved.client_id !== 'string' || typeof resolved.jwks_uri !== 'string') throw pluginError('provider_incompatible')
+  const clientId = exactHttps(resolved.client_id, true)
+  const jwksUri = exactHttps(resolved.jwks_uri, true)
+  if (new URL(clientId).origin !== origin || new URL(jwksUri).origin !== origin) throw pluginError('provider_incompatible')
   const checkpointObservation = async (): Promise<VerifiedRemoteDocument> => {
     const result = await deviceCommand('resolve', randomUUID())
     const checkpoint = result.checkpoint as Checkpoint | undefined
@@ -171,9 +173,11 @@ export async function createManagedPublicationDriver(input: {
       if (id !== documentId) throw pluginError('invalid_request')
       return await deviceCommand('activate', randomUUID(), { publication_operation_id: operationId }) as unknown as PreparedClientMaterials
     },
-    readPublic: async (id, part) => {
+    readPublic: async (id, part, url) => {
       if (id !== documentId) throw pluginError('invalid_request')
-      const response = await send(new Request(`${origin}/user-service/v1/agent-clients/${id}/${part}`, { redirect: 'manual', signal: AbortSignal.timeout(15000) }))
+      const target = url ?? (part === 'client.json' ? clientId : jwksUri)
+      if (new URL(exactHttps(target, true)).origin !== origin) throw pluginError('provider_incompatible')
+      const response = await send(new Request(target, { redirect: 'manual', signal: AbortSignal.timeout(15000) }))
       if (response.status !== 200 || response.redirected) { await response.body?.cancel(); throw pluginError('provider_unavailable') }
       const text = await response.text()
       input.assertCurrent?.()
