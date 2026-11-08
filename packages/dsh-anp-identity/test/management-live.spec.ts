@@ -144,7 +144,7 @@ it.skipIf(!source || !python)('registers approved E1/Web local Manifests, authen
       } else result = await manager.publishIdentity(publication)
       expect(result.state).toBe('published')
       expect(result.algorithm).toBe('ES256')
-      expect(result.clientId).toContain('/agent-clients/' + configured.documentId + '/client.json')
+      expect(result.clientId).toBe('https://identity.example/dsh-cimd-' + run + '/client.json')
       await expect(manager.retryPublication(reference)).resolves.toMatchObject({ state: 'published', clientId: result.clientId })
       if (profile === 'web') {
         stage = 'web:concurrent-document-conflict'

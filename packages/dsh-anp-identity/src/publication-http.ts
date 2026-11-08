@@ -72,12 +72,20 @@ export function createPublicationBackend(input: {
     } catch { throw pluginError('provider_unavailable') }
   }
   return Object.freeze({
-    origin, clientId: (id: string) => `${base(id)}/client.json`,
+    origin, clientId: async (id: string) => {
+      const response = await input.authenticatedFetch(new Request(`${base(id)}/status`, {
+        redirect: 'manual', signal: AbortSignal.timeout(15000),
+      }))
+      const status = parsePublicJson(await body(response)) as { client_id?: unknown }
+      if (typeof status.client_id !== 'string' || new URL(exactHttps(status.client_id, true)).origin !== origin) throw pluginError('provider_incompatible')
+      return status.client_id
+    },
     prepare: (id, value) => command(id, 'prepare', value),
     activate: (id, operationId) => command(id, 'activate', { operation_id: operationId }),
-    readPublic: async (id, part) => {
+    readPublic: async (id, part, url) => {
       try {
-        return await body(await (input.publicFetch ?? fetch)(new Request(`${base(id)}/${part}`, {
+        if (!url || new URL(exactHttps(url, true)).origin !== origin) throw pluginError('provider_incompatible')
+        return await body(await (input.publicFetch ?? fetch)(new Request(url, {
           redirect: 'manual', signal: AbortSignal.timeout(15000),
         })))
       } catch { throw pluginError('provider_unavailable') }

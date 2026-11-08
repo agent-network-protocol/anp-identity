@@ -6,7 +6,7 @@ import { pluginError } from '../src/errors.js'
 
 const reference = { storeId: 'store', identityId: 'identity', did: 'did:web:identity.example:callback' }
 const origin = 'https://identity.example'
-const clientId = origin + '/user-service/v1/agent-clients/one/client.json'
+const clientId = origin + '/cgw/client.json'
 const secret = Buffer.alloc(32, 7).toString('base64url')
 const registration = () => ({ transaction_id: 'callback-transaction', client_id: clientId, issuer: 'https://company.example',
   redirect_uri: origin + '/user-service/v1/pap-callback', state_sha256: 'a'.repeat(64), claim_sha256: 'b'.repeat(64),
@@ -41,7 +41,7 @@ async function fixture() {
       const body = await request.json() as Record<string, unknown>
       if (request.url.endsWith('/did-auth/rpc')) return json({ result: { did: reference.did, checkpoint: { document_version: 1, registry_version: 1, document_hash: 'sha256:' + 'A'.repeat(43) },
         devices: [{ device_id: 'device', signing_key_id: reference.did + '#device', status: 'active', role: 'admin', management_ready: true }] } })
-      if (request.url.endsWith('/resolve')) return json({ did: reference.did, document_id: 'one', client_id: clientId })
+      if (request.url.endsWith('/resolve')) return json({ did: reference.did, document_id: 'one', client_id: clientId, jwks_uri: origin + '/keys/current.json' })
       if (request.url.endsWith('/pap-callback-register')) {
         const callback = body.callback as ReturnType<typeof registration>
         return json({ did: reference.did, document_id: 'one', transaction_id: callback.transaction_id, callback_uri: callback.redirect_uri, expires_at: callback.expires_at })

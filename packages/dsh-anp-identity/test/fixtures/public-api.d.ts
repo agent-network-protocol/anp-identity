@@ -1209,7 +1209,7 @@ export interface PreparedClientMaterials {
 /** Installed by a trusted Host, not consumer request input. */
 export interface PublicationBackend {
     readonly origin: string;
-    clientId(documentId: string): string;
+    clientId(documentId: string): string | Promise<string>;
     prepare(documentId: string, input: {
         operation_id: string;
         expected_version: number;
@@ -1218,7 +1218,7 @@ export interface PublicationBackend {
         redirect_uris: string[];
     } | PublicationIntentV2): Promise<PreparedClientMaterials>;
     activate(documentId: string, operationId: string): Promise<PreparedClientMaterials>;
-    readPublic(documentId: string, part: 'client.json' | 'jwks.json'): Promise<string>;
+    readPublic(documentId: string, part: 'client.json' | 'jwks.json', url?: string): Promise<string>;
     /** Drive the existing authorized document-update/reconcile workflow. No unchecked document PUT. */
     publishDocument(reference: IdentityReference, session: ProviderDocumentChangeSession, assertActive: () => Promise<void>): Promise<void>;
 }

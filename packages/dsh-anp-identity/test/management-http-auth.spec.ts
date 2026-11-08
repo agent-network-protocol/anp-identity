@@ -33,7 +33,7 @@ async function fixture() {
       if (request.url.endsWith('/did-auth/rpc')) return Response.json({ result: { did: reference.did,
         checkpoint: { document_version: 1, registry_version: 1, document_hash: 'sha256:' + 'A'.repeat(43) },
         devices: [{ device_id: 'device', signing_key_id: reference.did + '#device', status: 'active', role: 'admin', management_ready: true }] } })
-      return Response.json({ did: reference.did, document_id: 'one', client_id: origin + '/user-service/v1/agent-clients/one/client.json' })
+      return Response.json({ did: reference.did, document_id: 'one', client_id: origin + '/cgw/client.json', jwks_uri: origin + '/keys/current.json' })
     },
   })
   return { driver, sends, signing, setFailure: () => { fail = true }, revokeOnSign: () => { revokeOnSign = true } }

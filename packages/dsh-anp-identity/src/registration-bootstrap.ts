@@ -358,8 +358,8 @@ export function startRegistrationBootstrap(options: {
         backend: backend.backend, documentId: backend.documentId, clientName: config.clientName, capabilities: config.capabilities,
         redirectUris: config.redirectUris, activeKid: current.algorithm === 'ES256' && current.keyId ? current.keyId : reference.did + '#oauth',
       } })
-      const expectedClient = `${config.origin}/user-service/v1/agent-clients/${backend.documentId}/client.json`
-      if (published.state !== 'published' || published.clientId !== expectedClient || published.algorithm !== 'ES256'
+      if (!published.clientId || new URL(exactHttps(published.clientId, true)).origin !== config.origin) throw new Error('bootstrap_publication_failed')
+      if (published.state !== 'published' || published.did !== reference.did || published.algorithm !== 'ES256'
         || JSON.stringify(published.capabilities) !== JSON.stringify(config.capabilities)) throw new Error('bootstrap_publication_failed')
       assertActive(); view.clientId = published.clientId; update('published')
     } finally { await release() }
