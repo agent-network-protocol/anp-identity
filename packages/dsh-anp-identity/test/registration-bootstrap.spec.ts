@@ -290,3 +290,18 @@ it('does not accept an OTP or register when the SMS send has a rejected receipt'
   expect(f.requests).toHaveLength(1); expect(f.register).not.toHaveBeenCalled()
   expect(JSON.stringify(second.status())).not.toContain('private provider detail')
 })
+
+it('treats HTTP 200 upgrade bodies on SMS send as rejection, not a delivered challenge', async () => {
+  const f = await fixture({ phone: true, upgrade: true }); f.approve()
+  const controller = f.start()
+  await vi.waitFor(() => expect(controller.status()).toMatchObject({ phase: 'blocked', reason: 'client_upgrade_required',
+    origin: 'https://identity.example', clientVersion: 'dsh-identity/1106/0.1.6' }))
+  expect(f.requests).toHaveLength(1)
+  expect(f.requests[0]!.url).toBe('https://identity.example/user-service/v1/handle/rpc')
+  expect(f.requests[0]!.headers.get('X-AWiki-Client-Version')).toBe('dsh-identity/1106/0.1.6')
+  const journal = JSON.parse(await readFile(join(await realpath(f.root), 'registration-bootstrap', sha(f.config.id), 'state.json'), 'utf8'))
+  expect(journal.phoneDelivered).toBe(false)
+  expect(journal.registerStarted).toBe(false)
+  expect(f.register).not.toHaveBeenCalled()
+  expect(() => controller.submitOtp('314159')).toThrow('bootstrap_otp_unavailable')
+})

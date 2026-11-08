@@ -16,6 +16,7 @@ import { exactHttps, parsePublicJson, publicationRedirectUri } from './publicati
 import { PublicationCapabilitiesSchema } from './publication-types.js'
 import { PROTOCOL_BOOTSTRAP_CONSUMER } from './protocol-bootstrap.js'
 import { syncDirectory } from './sync-directory.js'
+import { identityClientVersionHeader } from './client-metadata.js'
 
 export const RegistrationBootstrapConfigSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
@@ -54,6 +55,8 @@ export interface RegistrationBootstrapStatus {
   id: string
   requestId: string
   phase: RegistrationBootstrapPhase
+  origin?: string
+  clientVersion?: string
   reason?: RegistrationBootstrapReason
   reference?: IdentityReference
   clientId?: string
@@ -93,10 +96,7 @@ async function responseObject(response: Response, maximum: number, cancelPeer?: 
 }
 
 function clientVersionHeader(): string {
-  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { name?: unknown; version?: unknown }
-  if (manifest.name !== '@agent-network-protocol/dsh-anp-identity' || typeof manifest.version !== 'string'
-    || !/^(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){0,3}$/u.test(manifest.version)) throw new Error('bootstrap_invalid_package_version')
-  return 'dsh-identity/1106/' + manifest.version
+  return identityClientVersionHeader(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')))
 }
 
 /** Install the configured manager-owned flow. Its caller supplies the actual management facade and Context.
@@ -115,7 +115,7 @@ export function startRegistrationBootstrap(options: {
   const header = clientVersionHeader()
   const fingerprint = digest(JSON.stringify(config))
   const startedAt = Date.now()
-  let view: RegistrationBootstrapStatus = { id: config.id, requestId: config.requestId, phase: 'awaiting_approval' }
+  let view: RegistrationBootstrapStatus = { id: config.id, requestId: config.requestId, phase: 'awaiting_approval', origin: config.origin, clientVersion: header }
   let secret: HostManagementSecret | undefined
   let broker: EncryptedManagementCredentialBroker | undefined
   let root: string | undefined

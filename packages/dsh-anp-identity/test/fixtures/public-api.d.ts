@@ -576,6 +576,8 @@ export interface RegistrationBootstrapStatus {
     id: string;
     requestId: string;
     phase: RegistrationBootstrapPhase;
+    origin?: string;
+    clientVersion?: string;
     reason?: RegistrationBootstrapReason;
     reference?: IdentityReference;
     clientId?: string;
