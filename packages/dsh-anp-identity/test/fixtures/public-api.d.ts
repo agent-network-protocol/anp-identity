@@ -118,6 +118,8 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
         deviceId: string;
         state: 'registered';
     }>;
+    /** Private owner storage path, never exposed through a Remote or model tool. */
+    registrationBootstrapRoot(context: Context): string;
     /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
     registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings>;
     configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings): Promise<RegistrationServiceSettings>;
@@ -525,23 +527,36 @@ export declare function bindProtocolIdentityClient(context: Context): ProtocolId
 
 // ===== protocol-bootstrap.d.ts =====
 /** Optional installed consumer that requests user approval before creating a protocol identity. */
-import type { Context } from '@deepseek-ai/cordis';
+import { Service, type Context } from '@deepseek-ai/cordis';
+import type { RequestCreateInput } from './authorization-types.js';
 import z from '@deepseek-ai/schemastery';
 export declare const PROTOCOL_BOOTSTRAP_CONSUMER = "@agent-network-protocol/dsh-anp-identity/protocol-bootstrap";
 export declare const name = "anp-identity-protocol-bootstrap";
 export declare const inject: string[];
 export interface Config {
-    requestId: string;
+    requestId?: string;
     profile: 'e1' | 'web';
     identityOnly: boolean;
-    label: string;
-    domain: string;
-    path: string;
+    label?: string;
+    domain?: string;
+    path?: string;
     /** Canonical full Handle shown in the creation approval. */
-    handle: string;
+    handle?: string;
     providerReadyTimeoutMs: number;
 }
 export declare const Config: z<Config>;
+declare module '@deepseek-ai/cordis' {
+    interface Context {
+        anpIdentityRequester: RegistrationRequester;
+    }
+}
+/** Uses only this real installed ordinary consumer; it cannot approve creation. */
+export declare class RegistrationRequester extends Service {
+    private readonly owner;
+    constructor(ctx: Context);
+    available(manager: Context): boolean;
+    request(manager: Context, input: RequestCreateInput): Promise<import("./authorization-types.js").AuthorizationRequest>;
+}
 /** Submit one stable request from this actual installed Context; this never approves or registers it.
  * @param context - Loader-installed ordinary consumer.
  * @param config - Non-secret local creation request and bounded provider startup wait.
@@ -1250,6 +1265,7 @@ export declare function createPublicationBackend(input: {
 export declare function parsePublicJson(text: string): unknown;
 
 // ===== management-remote.d.ts =====
+import { type RegistrationOnboardingInput } from './registration-onboarding-types.js';
 import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
@@ -1272,7 +1288,34 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     private bootstrap;
     private readonly bootstrapReady;
     private bootstrapError;
+    private readonly onboardingStore;
+    private readonly configuredBootstrap;
+    private onboardingVersion;
+    private onboardingIntent;
+    private startingRegistration;
     constructor(ctx: Context, config?: Config);
+    private ensureCreationRequest;
+    private publicIdentityStatus;
+    registrationOnboardingStatus(): Promise<{
+        available: boolean;
+        version: number;
+        inProgress: boolean;
+        intentId?: string;
+    }>;
+    dismissRegistrationRequest(): null;
+    startIdentityRegistration(raw: RegistrationOnboardingInput): Promise<{
+        status: string;
+        code: string;
+        requestId?: never;
+        phase?: never;
+        origin?: never;
+    } | {
+        status: string;
+        requestId: string;
+        phase: string;
+        origin: string;
+        code?: never;
+    }>;
     registrationBootstrapStatus(): import("./registration-bootstrap.js").RegistrationBootstrapStatus[];
     registrationServiceSettings(): Promise<import("./registration-service-types.js").RegistrationServiceSettings>;
     configureRegistrationService(input: UpdateRegistrationServiceSettings): Promise<import("./registration-service-types.js").RegistrationServiceSettings>;

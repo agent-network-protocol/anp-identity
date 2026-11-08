@@ -106,6 +106,9 @@ function fixture(
   let grants = initialGrants;
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
+    registrationOnboardingStatus: vi.fn(async () => ok<{available:boolean;version:number;inProgress:boolean;intentId?:string}>({available:true,version:0,inProgress:false})),
+    startIdentityRegistration: vi.fn(async (_input: unknown) => ok<{status?:string;code?:string;phase?:string;requestId?:string}>({phase:'awaiting_approval',requestId:'test-request'})),
+    dismissRegistrationRequest: vi.fn(async () => ok(null)),
     registrationServiceSettings: vi.fn(async () => ok(serviceSettings)),
     configureRegistrationService: vi.fn(async input => {
       serviceSettings = { origin: input.origin, version: input.expectedVersion + 1 };
@@ -670,4 +673,65 @@ it('refreshes a conflicting preference and requires an explicit reload before re
   await waitFor(() => expect((screen.getByLabelText('身份服务地址') as HTMLInputElement).value).toBe('https://other.example'));
   expect(f.remote.configureRegistrationService).toHaveBeenCalledTimes(1);
   f.controller.dispose();
+});
+
+it('labels identity management and shows a safe creation example without making a request', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  expect(screen.getByRole('heading',{name:'身份管理'})).toBeTruthy();
+  expect(screen.getByRole('button',{name:'复制示例提示词'})).toBeTruthy();
+  expect(screen.getByText(/帮我创建一个公共身份，用于登录三方服务/)).toBeTruthy();
+  expect(f.remote.startIdentityRegistration).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('opens an owner form for an Agent intent without creating, sending contact data or approving', async () => {
+  const f=fixture();
+  f.remote.registrationOnboardingStatus.mockResolvedValue({ok:true,value:{available:true,version:0,inProgress:false,intentId:'agent-intent'}});
+  f.render();await act(()=>f.controller.refresh());
+  expect(screen.getByRole('dialog',{name:'创建公共身份'})).toBeTruthy();
+  expect((screen.getByLabelText('注册手机号') as HTMLInputElement).value).toBe('');
+  expect(f.remote.startIdentityRegistration).not.toHaveBeenCalled();expect(f.remote.decide).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'稍后'}));await waitFor(()=>expect(f.remote.dismissRegistrationRequest).toHaveBeenCalledOnce());
+  f.controller.dispose();
+});
+it('submits private contact only through the owner Remote and still requires separate creation approval', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  fireEvent.click(screen.getByRole('button',{name:'创建公共身份'}));
+  fireEvent.change(screen.getByLabelText('Handle'),{target:{value:'test-user'}});
+  fireEvent.change(screen.getByLabelText('国家/地区码'),{target:{value:'+1'}});
+  fireEvent.change(screen.getByLabelText('注册手机号'),{target:{value:'5551234567'}});
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  await waitFor(()=>expect(f.remote.startIdentityRegistration).toHaveBeenCalledWith({
+    label:'三方服务公共身份',handle:'test-user',profile:'e1',expectedOrigin:'https://awiki.me',expectedVersion:0,phone:'+15551234567'
+  }));
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  expect(JSON.stringify(f.controller.getSnapshot())).not.toContain('+15551234567');f.controller.dispose();
+});
+
+it('normalizes a local Chinese phone before the owner Remote and explains invalid contacts without submitting', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  fireEvent.click(screen.getByRole('button',{name:'创建公共身份'}));
+  fireEvent.change(screen.getByLabelText('Handle'),{target:{value:'test-user'}});
+  fireEvent.change(screen.getByLabelText('注册手机号'),{target:{value:'not-a-phone'}});
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  expect(screen.getByText(/中国大陆手机号应为/)).toBeTruthy();
+  expect(f.remote.startIdentityRegistration).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('注册手机号'),{target:{value:'13800138000'}});
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  await waitFor(()=>expect(f.remote.startIdentityRegistration).toHaveBeenCalledWith(expect.objectContaining({phone:'+8613800138000'})));
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+
+it('defaults to China and distinguishes a known refusal from a genuinely unconfirmed delivery', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  fireEvent.click(screen.getByRole('button',{name:'创建公共身份'}));
+  expect((screen.getByLabelText('国家/地区码') as HTMLSelectElement).value).toBe('+86');
+  fireEvent.change(screen.getByLabelText('Handle'),{target:{value:'test-user'}});
+  fireEvent.change(screen.getByLabelText('注册手机号'),{target:{value:'13800138000'}});
+  f.remote.startIdentityRegistration.mockResolvedValueOnce({ok:true,value:{status:'rejected',code:'requester_unavailable'}});
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  await screen.findByText('身份创建入口尚未就绪，本次未提交。请刷新或检查插件是否启用。');
+  expect(f.controller.getSnapshot().error).not.toContain('无法确认');
+  f.remote.startIdentityRegistration.mockRejectedValueOnce(new Error('connection_lost'));
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  await screen.findByText('无法确认创建请求是否送达。请刷新身份管理查看当前状态，不要重复提交。');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });

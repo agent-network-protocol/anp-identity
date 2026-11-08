@@ -1,3 +1,4 @@
+import { RegistrationRequester, PROTOCOL_BOOTSTRAP_CONSUMER } from '../src/protocol-bootstrap.js'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -617,6 +618,12 @@ async function userFixture() {
     get first() { return runtime.first },
     get firstContext() { return runtime.firstContext },
     get second() { return runtime.second },
+    async installRequester() {
+      let context: Context | undefined;
+      await runtime.ctx.plugin(Object.assign((ctx: Context) => { context = ctx; new RegistrationRequester(ctx); }, {inject:['anpIdentity']}));
+      runtime.installations.push({options:{name:PROTOCOL_BOOTSTRAP_CONSUMER},fiber:context!.fiber,disabled:false});
+      return runtime.managerContext.get('anpIdentityRequester');
+    },
     async disableFirst() {
       const entry = runtime.installations.find(value => value.options.name === 'user-one')!
       entry.disabled = true
@@ -655,7 +662,7 @@ async function start(root: string, origins = [ORIGIN], hooks?: StartupHooks) {
   // Only installation metadata is a fixture; policy, native keys and storage are real.
   ctx.provide('loader', { *entries() { yield* installations } })
   const config: Config = {
-    stateRoot: root, allowConsumers: ['user-one', 'user-two', 'host-fixture'], userConsumers: ['user-one', 'user-two'],
+    stateRoot: root, allowConsumers: [PROTOCOL_BOOTSTRAP_CONSUMER, 'user-one', 'user-two', 'host-fixture'], userConsumers: ['user-one', 'user-two', PROTOCOL_BOOTSTRAP_CONSUMER],
     allowProviderConsumers: ['host-fixture'],
     httpAllowedOrigins: { 'user-one': origins, 'user-two': origins },
   }
@@ -763,4 +770,25 @@ it('keeps registration preferences at the real manager boundary and persists the
   expect(await f.managerService.acquireManagement(f.managerContext).listIdentities()).toEqual([]);
   await f.restart();
   expect((await f.managerService.registrationServiceSettings(f.managerContext)).origin).toBe('https://service.example');
+});
+
+it('the bundled requester requires the real owner manager and creates no keys before explicit approval', async () => {
+  await using f = await userFixture();
+  const requester = await f.installRequester();
+  if (!requester) throw new Error('Requester not installed');
+  expect(requester.available(f.managerContext)).toBe(true);
+  expect(requester.available(f.firstContext)).toBe(false);
+  const input = {requestId:'owner-only-request',purpose:'Create protocol identity',parameters:{
+    profile:'e1' as const,usage:'protocol' as const,identityOnly:true,label:'Owner-created identity',domain:'awiki.me',path:'/awiki/user/test-user',handle:'test-user.awiki.me'
+  }};
+  await expect(requester.request(f.firstContext,input)).rejects.toThrow();
+  const request = await requester.request(f.managerContext,input) as CreateAuthorizationRequest;
+  expect(request.status).toBe('pending');
+  expect(request.caller.consumer).toBe(PROTOCOL_BOOTSTRAP_CONSUMER);
+  expect(await f.managerService.acquireManagement(f.managerContext).listIdentities()).toEqual([]);
+  const approved = await f.managerService.acquireManagement(f.managerContext).decide({
+    requestId:request.id,expectedVersion:request.version,decision:'approve'
+  }) as CreateAuthorizationRequest;
+  expect(approved.executionStatus).toBe('succeeded');
+  expect(await f.managerService.acquireManagement(f.managerContext).grants(approved.result!.reference)).toEqual([]);
 });

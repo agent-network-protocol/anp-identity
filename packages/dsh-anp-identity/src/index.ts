@@ -974,6 +974,12 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     return result
   }
 
+  /** Private owner storage path, never exposed through a Remote or model tool. */
+  registrationBootstrapRoot(context: Context): string {
+    this.assertManagementContext(context)
+    return join(this.resolvedConfig.stateRoot, 'interactive-registration')
+  }
+
   /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
   registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings> {
     return this.registrationSettings.read(() => this.assertManagementContext(context))

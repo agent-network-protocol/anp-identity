@@ -1,3 +1,4 @@
+import type { RegistrationOnboardingInput, RegistrationOnboardingStatus } from '../registration-onboarding-types.js';
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from '../registration-service-types.js';
 import type { OAuthClientIdentity } from "../publication-types.js";
 import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
@@ -19,12 +20,16 @@ export type ManagementRemote = {
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
 } & {
+  registrationOnboardingStatus?: () => Promise<RemoteResult<RegistrationOnboardingStatus>>;
+  startIdentityRegistration?: (input: RegistrationOnboardingInput) => Promise<RemoteResult<unknown>>;
+  dismissRegistrationRequest?: () => Promise<RemoteResult<null>>;
   registrationServiceSettings?: () => Promise<RemoteResult<RegistrationServiceSettings>>;
   configureRegistrationService?: (input: UpdateRegistrationServiceSettings) => Promise<RemoteResult<RegistrationServiceSettings>>;
   registrationBootstrapStatus?: () => Promise<RemoteResult<RegistrationBootstrapStatus[] | null>>;
   submitRegistrationOtp?: (input: { code: string }) => Promise<RemoteResult<null>>;
 };
 export type ManagerModal =
+  | { readonly kind: "registration" }
   | { readonly kind: "request"; readonly review: RequestReview }
   | { readonly kind: "result"; readonly review: RequestReview }
   | {
@@ -34,6 +39,7 @@ export type ManagerModal =
     }
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
+  readonly onboarding: RegistrationOnboardingStatus | null;
   readonly registrationService: RegistrationServiceSettings | null;
   readonly loading: boolean;
   readonly bootstraps: readonly RegistrationBootstrapStatus[];
@@ -68,6 +74,7 @@ export class IdentityController {
     });
   }
   private view: ManagerView = {
+    onboarding: null,
     registrationService: null,
     loading: true,
     bootstraps: [],
@@ -90,6 +97,7 @@ export class IdentityController {
   private disposed = false;
   private pauseQueue = false;
   private selectionVersion = 0;
+  private openedOnboardingIntent: string | undefined;
   private returnFocus: HTMLElement | null = null;
   getSnapshot = (): ManagerView => this.view;
   subscribe = (listener: () => void): (() => void) => {
@@ -131,12 +139,14 @@ export class IdentityController {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     try {
-      const [identities, requests, bootstrapResult, settingsResult] = await Promise.all([
+      const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
         this.call("listIdentities"),
         this.call("listRequests", false),
         this.remote.registrationBootstrapStatus?.(),
         this.remote.registrationServiceSettings?.(),
+        this.remote.registrationOnboardingStatus?.(),
       ]);
+      if (onboardingResult && !onboardingResult.ok) throw new Error('Unable to read identity onboarding status');
       if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
       if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
       const selectedKey = identities.some(
@@ -150,6 +160,7 @@ export class IdentityController {
       this.patch({
         loading: false,
         registrationService: settingsResult?.ok ? settingsResult.value : null,
+        onboarding: onboardingResult?.ok ? onboardingResult.value : null,
         bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
         requests: requests
@@ -167,6 +178,11 @@ export class IdentityController {
         this.closeStaleRequest();
       }
       await this.loadGrants();
+      const intent = this.view.onboarding?.intentId;
+      if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending) {
+        this.openedOnboardingIntent = intent;
+        this.openRegistration();
+      }
       if (!this.pauseQueue && this.view.modal === null) {
         const next = this.view.requests.find((r) => !r.prompted);
         if (next) await this.openRequest(next.id, true);
@@ -182,6 +198,43 @@ export class IdentityController {
     } finally {
       this.refreshing = false;
     }
+  }
+  openRegistration(): void {
+    if (this.view.pending || this.view.modal || !this.view.onboarding?.available || this.view.onboarding.inProgress) return;
+    this.captureFocus();
+    this.patch({ modal: { kind: "registration" }, error: null });
+  }
+  async startIdentityRegistration(input: RegistrationOnboardingInput): Promise<void> {
+    if (this.view.pending || !this.remote.startIdentityRegistration) return;
+    this.patch({ pending: true, error: null });
+    try {
+      const result = await this.remote.startIdentityRegistration(input);
+      if (!result.ok) {
+        const error = result.error as {code?:string;message?:string};
+        if (error.code === 'gateway/input-invalid' || error.message?.includes('input-invalid')) {
+          this.patch({error:"表单格式校验未通过，本次未提交。请检查 Handle、国家码、手机号或邮箱。"}); return;
+        }
+        throw new Error("transport_unconfirmed");
+      }
+      const value = result.value as {status?:string;code?:string;phase?:string;requestId?:string};
+      if (value?.status === "rejected") {
+        const messages: Record<string,string> = {
+          invalid_parameters:"表单格式校验未通过，本次未提交。请检查 Handle 和验证资料。",
+          origin_changed:"注册服务地址已改变，本次未提交。请关闭表单、重新确认服务地址。",
+          configuration_changed:"注册状态已在其他页面更新，请刷新后继续现有流程，不要另建。",
+          registration_in_progress:"已有注册正在进行，请在身份管理中继续当前流程。",
+          requester_unavailable:"身份创建入口尚未就绪，本次未提交。请刷新或检查插件是否启用。",
+          save_unavailable:"无法保存注册资料，本次尚未申请创建。请检查服务状态后重试。",
+        };
+        this.patch({error:value.code && Object.hasOwn(messages,value.code) ? messages[value.code]! : "请求被拒绝，本次未提交。请刷新状态后检查表单。"}); return;
+      }
+      if (value?.status === "uncertain" || value?.phase !== "awaiting_approval" || typeof value.requestId !== "string") throw new Error("creation_unconfirmed");
+      this.patch({ pending: false });
+      this.closeModal(false);
+      await this.refresh();
+    } catch {
+      this.patch({ error: "无法确认创建请求是否送达。请刷新身份管理查看当前状态，不要重复提交。" });
+    } finally { this.patch({ pending: false }); }
   }
   async configureRegistrationService(origin: string, expectedVersion: number): Promise<boolean> {
     if (this.view.pending || !this.remote.configureRegistrationService) return false;
@@ -281,6 +334,9 @@ export class IdentityController {
   }
   closeModal(later = true): void {
     if (this.view.pending) return;
+    if (later && this.view.modal?.kind === "registration") {
+      void this.remote.dismissRegistrationRequest?.().catch(() => {});
+    }
     if (later) this.pauseQueue = true;
     this.patch({ modal: null, error: null });
     const focus = this.returnFocus;
