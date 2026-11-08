@@ -154,6 +154,8 @@ profiles and encrypted custody must retain their original matching keys.
 The older credential-package references above describe earlier integration
 candidates; this release uses the `0.2.2-rc.1` peers declared by its manifest.
 
+## Registration-service preferences
+
 Registration-service preferences are manager-only, generation/CAS-protected,
 atomically persisted non-secret settings. They default to https://awiki.me and
 are configurable in Settings → Identity. The preference is only used when a
@@ -162,3 +164,18 @@ preference update from redirecting an in-progress factor or publication. The UI
 does not create identities or request codes when saving the URL. Creation
 parameters, contact method and protocol policies still require their existing
 Host configuration and approvals.
+
+## Server-owned publication URLs
+
+User Service alone allocates `client_id` and `jwks_uri`. The current server
+format is `https://id.awiki.info/{handle}/client.json` with a parallel
+`/{handle}/jwks.json`. The plugin obtains the client URL from the authenticated
+resolve/status response and the key URL from the returned metadata. It stores
+and uses these exact values; it never derives public paths from a document UUID,
+Handle, or filename substitution. Management API paths remain versioned and are
+not client identifiers.
+
+Address transparency retains HTTPS, exact-origin, no-redirect, metadata-ID,
+public-key and DID-binding checks. Public readback fetches the exact server
+URLs and compares the bytes with the signed publication. Old UUID public routes
+are not supported and no existing catalog/data migration is supplied.

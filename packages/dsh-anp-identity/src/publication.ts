@@ -37,7 +37,7 @@ export class PublicationCoordinator {
     if (!record) return { state: 'local', did: reference.did }
     if (record.state === 'published') await this.requirePublished(reference)
     return { state: record.state, did: reference.did, clientId: record.clientId,
-      jwksUri: record.clientId.replace(/client\.json$/u, 'jwks.json'),
+      ...(record.metadata ? { jwksUri: (parsePublicJson(record.metadata) as { jwks_uri: string }).jwks_uri } : {}),
       keyId: record.key.kid, algorithm: record.key.alg, version: record.version, signerMode: 'local',
       ...(record.config.capabilities ? { capabilities: record.config.capabilities } : {}) }
   }
@@ -62,8 +62,8 @@ export class PublicationCoordinator {
     exactHttps(backend.origin)
     config.redirectUris.forEach(uri => publicationRedirectUri(uri, config.capabilities))
     if (new Set(config.redirectUris).size !== config.redirectUris.length) throw pluginError('invalid_request')
-    const clientId = exactHttps(backend.clientId(config.documentId), true)
-    if (clientId !== `${backend.origin}/user-service/v1/agent-clients/${config.documentId}/client.json`) throw pluginError('invalid_request')
+    const clientId = exactHttps(await backend.clientId(config.documentId), true)
+    if (new URL(clientId).origin !== backend.origin) throw pluginError('invalid_request')
     const lockRoot = join(this.store.stateRoot, 'journal', 'publication', sha(JSON.stringify(reference)))
     await mkdir(lockRoot, { recursive: true, mode: 0o700 })
     const release = await lockfile.lock(lockRoot, { realpath: false, stale: 60000, update: 10000,
@@ -172,7 +172,7 @@ export class PublicationCoordinator {
       || result.capabilities.pap_session !== record.config.capabilities.papSession || result.capabilities.pap_account !== record.config.capabilities.papAccount)) throw pluginError('provider_incompatible')
     const metadata = parsePublicJson(result.metadata) as Record<string, unknown>
     const jwks = parsePublicJson(result.jwks) as { keys?: unknown[] }
-    if (metadata.client_id !== record.clientId || metadata.jwks_uri !== record.clientId.replace(/client\.json$/u, 'jwks.json')
+    if (metadata.client_id !== record.clientId || typeof metadata.jwks_uri !== 'string' || new URL(exactHttps(metadata.jwks_uri, true)).origin !== new URL(record.clientId).origin
       || metadata.token_endpoint_auth_method !== 'private_key_jwt' || metadata.token_endpoint_auth_signing_alg !== record.key.alg
       || metadata.client_name !== record.config.clientName || JSON.stringify(metadata.redirect_uris) !== JSON.stringify(record.config.redirectUris)
       || JSON.stringify(metadata.grant_types) !== JSON.stringify(record.config.capabilities ? [
@@ -187,7 +187,8 @@ export class PublicationCoordinator {
 
   private async readBack(backend: PublicationBackend, record: PublicationRecord): Promise<void> {
     const [metadata, jwks] = await Promise.all([
-      backend.readPublic(record.config.documentId, 'client.json'), backend.readPublic(record.config.documentId, 'jwks.json'),
+      backend.readPublic(record.config.documentId, 'client.json', record.clientId),
+      backend.readPublic(record.config.documentId, 'jwks.json', (parsePublicJson(record.metadata!) as { jwks_uri: string }).jwks_uri),
     ])
     if (metadata !== record.metadata || jwks !== record.jwks || sha(metadata) !== record.metadataSha256) throw pluginError('provider_incompatible')
   }
