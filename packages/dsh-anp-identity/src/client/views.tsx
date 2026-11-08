@@ -252,7 +252,7 @@ export function IdentitySettings({
       {view.bootstraps.map(bootstrap => <div key={bootstrap.id}>
         {view.modal?.kind === 'registration-progress' && view.modal.requestId === bootstrap.requestId ? null :
           <RegistrationProgress controller={controller} bootstrap={bootstrap} />}
-        {bootstrap.phase !== 'awaiting_approval' && <Button disabled={view.pending || view.modal !== null}
+        {['awaiting_email_verification', 'awaiting_phone_verification', 'registering', 'publishing', 'registration_uncertain', 'blocked'].includes(bootstrap.phase) && <Button disabled={view.pending || view.modal !== null}
           onClick={() => controller.openRegistrationProgress(bootstrap.requestId)}>继续注册</Button>}
       </div>)}
       <div className="anpi-tabs" role="tablist" aria-label="身份管理">
@@ -659,13 +659,17 @@ function IdentityModal({
     title = "创建公共身份";
     content = <RegistrationForm controller={controller} />;
   } else if (modal.kind === "registration-progress") {
-    title = "完成身份注册";
     const bootstrap = view.bootstraps.find(flow => flow.requestId === modal.requestId);
+    const completed = bootstrap?.phase === 'published';
+    const stopped = bootstrap?.phase === 'disposed';
+    title = completed ? "注册完成" : stopped ? "注册流程已停止" : "完成身份注册";
     content = <>
       {bootstrap ? <RegistrationProgress controller={controller} bootstrap={bootstrap} approvalCompleted /> :
         <p role="status">正在读取注册状态，请稍候…</p>}
-      <p className="anpi-small">创建身份、验证联系方式和发布是不同步骤。你可以稍后继续，不会丢失当前流程。</p>
-      <Button disabled={view.pending} onClick={() => controller.closeModal()}>稍后继续</Button>
+      <p className="anpi-small">{completed ? '身份注册与发布已完成，无需再次注册。连接第三方服务属于独立的授权配置。'
+        : stopped ? '此注册流程已停止。'
+        : '创建身份、验证联系方式和发布是不同步骤。你可以稍后继续，不会丢失当前流程。'}</p>
+      <Button disabled={view.pending} onClick={() => controller.closeModal()}>{completed ? '完成' : stopped ? '关闭' : '稍后继续'}</Button>
     </>;
   } else if (modal.kind === "result") {
     title = "请求结果";

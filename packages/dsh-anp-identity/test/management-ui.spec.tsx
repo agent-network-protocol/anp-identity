@@ -831,3 +831,44 @@ it('shows published registration fields in Handle, DID, CIMD, local reference or
   expect(fields[1]).toContain('DID');expect(fields[2]).toContain('CIMD');expect(fields[3]).toContain('本地身份引用');
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });
+
+it.each([
+  ['awaiting_approval',false], ['awaiting_email_verification',true],
+  ['awaiting_phone_verification',true], ['registering',true], ['publishing',true],
+  ['registration_uncertain',true], ['blocked',true], ['published',false], ['disposed',false],
+] as const)('shows registration continuation only for unfinished state %s', async (phase, visible) => {
+  const f=fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{
+    id:'flow',requestId:'created',phase,reference:identity.reference,
+  }]});
+  f.render();await act(()=>f.controller.refresh());
+  expect(Boolean(screen.queryByRole('button',{name:'继续注册'}))).toBe(visible);
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('removes registration continuation as soon as verification transitions to published', async () => {
+  const f=fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'created',phase:'awaiting_phone_verification'}]});
+  f.render();await act(()=>f.controller.refresh());
+  expect(screen.getByRole('button',{name:'继续注册'})).toBeTruthy();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'created',phase:'published',reference:identity.reference,clientId:'https://example.com/work/client.json'}]});
+  await act(()=>f.controller.refresh());
+  expect(screen.queryByRole('button',{name:'继续注册'})).toBeNull();
+  expect(screen.queryByLabelText('短信验证码')).toBeNull();
+  expect(screen.getByText(/注册与发布已完成/)).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+
+it('turns an open registration dialog into completion, not another continuation, after publication', async () => {
+  const f=fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'created',phase:'awaiting_phone_verification'}]});
+  f.render();await act(()=>f.controller.refresh());act(()=>f.controller.openRegistrationProgress('created'));
+  expect(await screen.findByRole('dialog',{name:'完成身份注册'})).toBeTruthy();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'created',phase:'published',reference:identity.reference,clientId:'https://example.com/work/client.json'}]});
+  await act(()=>f.controller.refresh());
+  const dialog=await screen.findByRole('dialog',{name:'注册完成'});
+  expect(within(dialog).queryByRole('button',{name:'稍后继续'})).toBeNull();
+  expect(within(dialog).getByText(/身份注册与发布已完成，无需再次注册/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button',{name:'完成'}));
+  expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('button',{name:'继续注册'})).toBeNull();
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
