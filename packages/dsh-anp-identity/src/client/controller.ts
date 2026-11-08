@@ -94,6 +94,7 @@ export class IdentityController {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
+  private requestReviewEpoch = 0;
   private disposed = false;
   private pauseQueue = false;
   private selectionVersion = 0;
@@ -138,6 +139,7 @@ export class IdentityController {
   async refresh(): Promise<void> {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
+    const reviewEpoch = this.requestReviewEpoch;
     try {
       const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
         this.call("listIdentities"),
@@ -146,6 +148,7 @@ export class IdentityController {
         this.remote.registrationServiceSettings?.(),
         this.remote.registrationOnboardingStatus?.(),
       ]);
+      if (reviewEpoch !== this.requestReviewEpoch) return;
       if (onboardingResult && !onboardingResult.ok) throw new Error('Unable to read identity onboarding status');
       if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
       if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
@@ -178,6 +181,7 @@ export class IdentityController {
         this.closeStaleRequest();
       }
       await this.loadGrants();
+      if (reviewEpoch !== this.requestReviewEpoch) return;
       const intent = this.view.onboarding?.intentId;
       if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending) {
         this.openedOnboardingIntent = intent;
@@ -188,6 +192,7 @@ export class IdentityController {
         if (next) await this.openRequest(next.id, true);
       }
     } catch (error) {
+      if (reviewEpoch !== this.requestReviewEpoch) return;
       this.patch({
         loading: false,
         error:
@@ -230,7 +235,10 @@ export class IdentityController {
       }
       if (value?.status === "uncertain" || value?.phase !== "awaiting_approval" || typeof value.requestId !== "string") throw new Error("creation_unconfirmed");
       this.patch({ pending: false });
+      this.pauseQueue = false;
       this.closeModal(false);
+      // Resume this exact owner-submitted flow; a background refresh may be busy.
+      await this.openRequest(value.requestId);
       await this.refresh();
     } catch {
       this.patch({ error: "无法确认创建请求是否送达。请刷新身份管理查看当前状态，不要重复提交。" });
@@ -307,6 +315,7 @@ export class IdentityController {
   }
   async openRequest(id: string, automatic = false): Promise<void> {
     if (this.view.modal !== null || this.view.pending) return;
+    this.requestReviewEpoch++;
     this.captureFocus();
     this.patch({ pending: true, error: null });
     try {
