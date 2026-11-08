@@ -85,8 +85,8 @@ async function fixture(options: { missingCredentials?: boolean; uncertainRegistr
     configureManagedPublicationBackend: vi.fn(async () => ({ backend: 'bootstrap-stable', documentId: 'document', dispose: backendDispose,
       callbackManagement: { execute: async () => { throw new Error('callback is outside this unit') } } })),
   } as unknown as AnpIdentityService
-  const start = () => {
-    const controller = startRegistrationBootstrap({ context, config, service, manager, fetch: send })
+  const start = (retryPhoneChallenge = false) => {
+    const controller = startRegistrationBootstrap({ context, config, service, manager, fetch: send, retryPhoneChallenge })
     cleanups.push(() => controller.dispose()); return controller
   }
   const approve = () => { request = { ...request, status: 'approved', executionStatus: 'succeeded', result: { reference, label: 'Agent' } } }
@@ -308,3 +308,33 @@ it('treats HTTP 200 upgrade bodies on SMS send as rejection, not a delivered cha
   expect(f.register).not.toHaveBeenCalled()
   expect(() => controller.submitOtp('314159')).toThrow('bootstrap_otp_unavailable')
 })
+
+it('retries only the failed phone challenge after explicit owner action, reusing the approved identity', async () => {
+  const options = {phone:true,phoneRejected:true}; const f = await fixture(options); f.approve();
+  const first = f.start();
+  await vi.waitFor(() => expect(first.status()).toMatchObject({phase:'blocked',reason:'phone_unavailable'}));
+  await first.dispose(); options.phoneRejected = false;
+  const second = f.start(true);
+  await vi.waitFor(() => expect(second.status().phase).toBe('awaiting_phone_verification'));
+  expect(second.status().reference).toEqual(f.reference);
+  expect(f.requests).toHaveLength(2); expect(f.register).not.toHaveBeenCalled();
+  second.submitOtp('314159');
+  await vi.waitFor(() => expect(second.status().phase).toBe('published'));
+  expect(f.register).toHaveBeenCalledOnce();
+  await second.dispose();
+  const third = f.start(true);
+  await vi.waitFor(() => expect(third.status().phase).toBe('blocked'));
+  expect(f.requests).toHaveLength(2); expect(f.register).toHaveBeenCalledOnce();
+});
+
+it('never resends or replays registration after an uncertain verification result', async () => {
+  const f = await fixture({phone:true,uncertainRegistration:true}); f.approve();
+  const first = f.start();
+  await vi.waitFor(() => expect(first.status().phase).toBe('awaiting_phone_verification'));
+  first.submitOtp('314159');
+  await vi.waitFor(() => expect(first.status().phase).toBe('registration_uncertain'));
+  await first.dispose();
+  const second = f.start(true);
+  await vi.waitFor(() => expect(second.status().phase).toBe('blocked'));
+  expect(f.requests).toHaveLength(1); expect(f.register).toHaveBeenCalledOnce();
+});

@@ -194,7 +194,7 @@ export class ProtocolIdentityAuthority {
   /** Bind the exact installed PAP plugin; publication and callback data never replace its Host policy. */
   bindPapHost(context: Context, callbackAuthority: (identity: IdentityReference, backend: string) => Promise<PapCallbackHostAuthority>): PapHostConsumer {
     const caller = this.host.resolveCaller(context)
-    if (caller.consumer !== '@agentconnect/dsh-pap/plugin') throw pluginError('consumer_forbidden')
+    if (!['@awiki/dsh-pap/plugin', '@agentconnect/dsh-pap/plugin'].includes(caller.consumer)) throw pluginError('consumer_forbidden')
     const generation = this.host.providerGeneration()
     const selectedPolicies = new Set<ProtocolUsePolicy>()
     let disposed = false

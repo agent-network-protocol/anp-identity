@@ -44,6 +44,7 @@ it('normalizes mainland mobile input but never guesses the country for other loc
 
 it('combines the selected dialing code without assuming China for other countries', () => {
   expect(composeRegistrationPhone('+86','13800138000')).toBe('+8613800138000');
+  expect(composeRegistrationPhone('+86','10000000001')).toBe('+8610000000001');
   expect(composeRegistrationPhone('+1','5551234567')).toBe('+15551234567');
   expect(composeRegistrationPhone('+86','+8613800138000')).toBeUndefined();
   expect(composeRegistrationPhone('86','13800138000')).toBeUndefined();

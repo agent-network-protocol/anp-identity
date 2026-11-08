@@ -773,3 +773,46 @@ it('shows a persistent Continue approval action before SMS verification is avail
   await waitFor(()=>expect(f.controller.getSnapshot().modal?.kind).toBe('request'));
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });
+
+for (const phase of ['awaiting_phone_verification', 'blocked'] as const) {
+  it(`keeps registration visible after approval and shows ${phase} without another create request`, async () => {
+    const pending = request('create', 'approved-registration');
+    const f = fixture([pending]);
+    let decided = false;
+    f.remote.registrationBootstrapStatus.mockImplementation(async () => ({ok:true,value:[{
+      id:'flow', requestId:pending.id, phase:decided ? phase : 'awaiting_approval', origin:'https://identity.example',
+      ...(decided && phase === 'blocked' ? {reason:'client_upgrade_required' as const} : {}),
+    }]}));
+    const decide = f.remote.decide.getMockImplementation()!;
+    f.remote.decide.mockImplementation(async input => { const result = await decide(input); decided = true; return result; });
+    f.render(); await act(() => f.controller.refresh());
+    await screen.findByRole('button', {name:'允许创建'});
+    fireEvent.click(screen.getByRole('button', {name:'允许创建'}));
+    const dialog = await screen.findByRole('dialog', {name:'完成身份注册'});
+    if (phase === 'awaiting_phone_verification') expect(await within(dialog).findByLabelText('短信验证码')).toBeTruthy();
+    else {
+      expect(await within(dialog).findByText(/短信未发送：注册服务拒绝了当前客户端版本/)).toBeTruthy();
+      expect(within(dialog).queryByLabelText('短信验证码')).toBeNull();
+    }
+    expect(f.remote.decide).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(dialog).getByRole('button', {name:'稍后继续'}));
+    fireEvent.click(screen.getByRole('button', {name:'继续注册'}));
+    expect(await screen.findByRole('dialog', {name:'完成身份注册'})).toBeTruthy();
+    expect(f.remote.decide).toHaveBeenCalledTimes(1);
+    f.controller.dispose();
+  });
+}
+
+it('offers an explicit SMS retry for a blocked challenge, never for an uncertain registration', async () => {
+  const f=fixture(); const retry=vi.fn(async()=>({ok:true as const,value:null}));
+  Object.assign(f.remote,{retryRegistrationSms:retry});
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'request',phase:'blocked',reason:'phone_unavailable'}]});
+  f.render(); await act(()=>f.controller.refresh());
+  expect(retry).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'重试发送验证码'}));
+  await waitFor(()=>expect(retry).toHaveBeenCalledOnce());
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'request',phase:'registration_uncertain'}]});
+  await act(()=>f.controller.refresh());
+  expect(screen.queryByRole('button',{name:'重试发送验证码'})).toBeNull();
+  f.controller.dispose();
+});

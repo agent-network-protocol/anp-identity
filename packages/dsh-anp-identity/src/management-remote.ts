@@ -178,6 +178,25 @@ export class IdentityManagerRemote extends TypertRemoteService {
     this.bootstrap.submitOtp(input.code);
     return null;
   }
+  /** Owner-only retry; an uncertain registration must never be replayed. */
+  @Remote async retryRegistrationSms() {
+    await this.bootstrapReady;
+    const status = this.bootstrap?.status();
+    if (this.startingRegistration || this.configuredBootstrap || !this.onboardingStore || !status
+      || status.phase !== 'blocked' || !['phone_unavailable','client_upgrade_required'].includes(status.reason ?? '')) {
+      throw new Error('bootstrap_phone_retry_unavailable');
+    }
+    this.startingRegistration = true;
+    try {
+      const service = this.managerContext.anpIdentity as AnpIdentityService;
+      const saved = await this.onboardingStore.read(() => { service.acquireManagement(this.managerContext); });
+      if (!saved?.config.phone || saved.config.requestId !== status.requestId) throw new Error('bootstrap_phone_retry_unavailable');
+      await this.bootstrap!.dispose();
+      this.bootstrap = startRegistrationBootstrap({context:this.managerContext, service, manager:this.manager,
+        config:saved.config, retryPhoneChallenge:true});
+      return null;
+    } finally { this.startingRegistration = false; }
+  }
   @Remote listIdentities() {
     return this.manager.listIdentities();
   }

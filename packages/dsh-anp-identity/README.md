@@ -317,3 +317,15 @@ or blindly retried. The Agent-facing status and intent outputs expose only publi
 references/status, not phone/email, credentials, storage paths or signing objects.
 ANP/MCP/PAP guides give discovery order, actual available registry names, exact
 parameter conventions, approval handling and no-replay rules for uncertain writes.
+
+After creation approval, the owner dialog stays open through verification and
+publication. It displays a blocked SMS admission error instead of disappearing
+or claiming that a code was sent. **Continue registration** reopens that same
+flow. After fixing a failed SMS send/admission, **Retry sending code** is an
+explicit owner action that reuses the approved identity; it never retries an
+uncertain registration or an already accepted challenge automatically.
+
+The PAP Host accepts the published `@awiki/dsh-pap/plugin` consumer (and the
+legacy package name for existing explicit policies). Protocol consumers must
+also be in `userConsumers`, and still require an exact identity/target/profile
+policy; ANP additionally requires the Host HTTP-origin scope and user approval.

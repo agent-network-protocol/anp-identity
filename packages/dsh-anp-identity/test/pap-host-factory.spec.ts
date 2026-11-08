@@ -17,10 +17,10 @@ const redirect = 'https://identity.example/user-service/v1/pap-callback'
 const issuer = 'https://company.example'
 const resource = 'https://company.example/api'
 
-function fixture(account = true) {
+function fixture(account = true, selectedConsumer = consumer) {
   const context = new Context(), other = new Context()
   let generation = Symbol('provider'), managerActive = true
-  const policy: ProtocolUsePolicy = { id: 'pap-policy', version: 1, consumer, owner: '@agent-network-protocol/dsh-anp-identity',
+  const policy: ProtocolUsePolicy = { id: 'pap-policy', version: 1, consumer: selectedConsumer, owner: '@agent-network-protocol/dsh-anp-identity',
     identity: reference, profiles: ['pap_session', 'pap_account'], issuers: [issuer, 'https://other.example'],
     resources: [resource, 'https://other.example/api'], publicTargets: false, scopes: ['read', 'write'], expiresAt: Date.now() + 3600000 }
   const record: PublicationRecord = { operationId: 'publication', expectedVersion: 0, state: 'published', clientId, version: 1,
@@ -33,7 +33,7 @@ function fixture(account = true) {
     health: 'ready', backendAvailable: true })), publicIdentity: vi.fn(async () => ({ reference, document: { id: reference.did } })) } as unknown as ProviderLease
   const host = { resolveCaller: (caller: Context) => {
     if (caller !== context && caller !== other) throw new Error('consumer_forbidden')
-    return { consumer, displayName: consumer }
+    return { consumer: selectedConsumer, displayName: selectedConsumer }
   }, assertCaller: () => {}, providerGeneration: () => generation, withNative: async <T>(operation: (provider: ProviderLease) => Promise<T>) => operation(native) }
   const authority = new ProtocolIdentityAuthority([policy], host, publications)
   const receipts = new Map<string, Record<string, unknown>>()
@@ -133,3 +133,9 @@ it('does not return an in-flight private claim after publication rotation and re
   f.rotateProvider()
   await expect(f.top.assertActive()).rejects.toMatchObject({ code: 'provider_disposed' })
 })
+
+it('binds the published awiki PAP package without accepting an unrelated consumer', async () => {
+  const current = fixture(false, '@awiki/dsh-pap/plugin');
+  expect(current.top).toBeTruthy();
+  expect(() => fixture(false, '@example/dsh-pap/plugin')).toThrow();
+});
