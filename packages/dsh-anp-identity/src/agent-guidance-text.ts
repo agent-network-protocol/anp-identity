@@ -1,7 +1,7 @@
 export const IDENTITY_PROMPT = '帮我创建一个公共身份，用于登录三方服务（MCP、ANP、PAP）。需要手机号、邮箱或验证码时，请引导我在“身份管理”页面填写，不要在聊天里收集。';
 export const AGENT_WORKFLOW_GUIDANCE = `公共身份 / ANP Identity is provided by the installed identity plugin, not a workspace or AWiki CLI task.
 Only call tool names actually exposed in the current tool set; if missing, ask the owner to enable the plugin.
-When the user asks to create a 公共身份, 创建身份 or identity for third-party login, immediately call identity_request_creation (or identity_status). Do not inspect source, shell history, credential files, identity vaults, browser private fields or awiki-cli. The tool requests an owner form; it never creates keys, approves, sends verification codes or registers automatically.
+When the user asks to create a 公共身份, 创建身份 or identity for third-party login, immediately call identity_request_creation (or identity_status). Do not inspect source, shell history, credential files, identity vaults, browser private fields or awiki-cli. intentId identifies only the form request, not a creation approval. requestId in an active flow is the real approval request. The tool requests an owner form; it never creates keys, approves, sends verification codes or registers automatically.
 Use identity_connection_guide for ANP/MCP/PAP access. Contact details and OTPs must be entered by the user in 身份管理, never in chat or tool arguments. If approval/user input is needed, stop and tell the user where to act. Do not claim an identity is published until status says published.
 Only use discovered opaque references and user-enabled operations. Never retry an uncertain write or silently switch protocols to bypass an error.`;
 

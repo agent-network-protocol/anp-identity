@@ -55,11 +55,17 @@ export class IdentityManagerRemote extends TypertRemoteService {
       await this.bootstrapReady;
       if (this.onboardingVersion > 0 && !this.bootstrap) return { status: 'recovery_required', action: '打开身份管理完成或恢复当前注册；不要重复创建。' };
       const phase = this.bootstrap?.status().phase;
-      if (phase && !['published','disposed'].includes(phase)) return { status: phase, action: '打开 设置 → 身份管理 完成当前流程，不要重复创建。' };
+      if (phase && !['published','disposed'].includes(phase)) {
+        const requestId = this.bootstrap!.status().requestId;
+        const pending = phase === 'awaiting_approval' && (await this.manager.getRequest(requestId)).request.status === 'pending';
+        return { status: phase, requestId, action: pending ? '打开 设置 → 身份管理 → 继续创建审批。审批前不会发送验证码，不要重复创建。'
+          : phase === 'awaiting_approval' ? '创建正在处理或结果待核对，请在身份管理刷新状态，不要重复创建。'
+          : '打开 设置 → 身份管理 完成当前流程，不要重复创建。' };
+      }
       if (!this.onboardingStore || this.configuredBootstrap || !ctx.get('anpIdentityRequester')?.available(ctx))
         return { status: 'not_configured', action: '身份创建请求器未就绪，请用户启用身份插件的内置创建入口。不要查源码、密钥目录或其他 CLI。' };
       this.onboardingIntent ??= randomUUID();
-      return { status: 'awaiting_user_input', requestId: this.onboardingIntent,
+      return { status: 'awaiting_user_input', intentId: this.onboardingIntent,
         action: '已请求打开 设置 → 身份管理 → 创建公共身份。请用户在页面填写 Handle 和手机号/邮箱，并确认审批。不要在聊天收集验证码，不要运行 CLI 或搜索文件。' };
     } });
     let disposed = false;
@@ -123,6 +129,7 @@ export class IdentityManagerRemote extends TypertRemoteService {
     }));
     return { registrationService: settings.origin, identities: publicIdentities,
       registrationPhase: this.bootstrap?.status().phase ?? 'not_started',
+      ...(this.bootstrap ? { registrationRequestId: this.bootstrap.status().requestId } : {}),
       action: '创建公共身份请用 identity_request_creation；协议访问请用 identity_connection_guide。不要搜索源码、凭据或其他 CLI。' };
   }
   @Remote async registrationOnboardingStatus() {

@@ -215,6 +215,12 @@ export function IdentitySettings({
         {bootstrap.clientVersion && <p className="anpi-small">客户端版本头：{bootstrap.clientVersion}</p>}
         <p>{({ awaiting_approval: '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
           publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
+        {bootstrap.phase === 'awaiting_approval' && <div>
+          {view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
+            <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>
+            <Button disabled={view.pending || view.modal !== null} onClick={() => { void controller.openRequest(bootstrap.requestId); }}>继续创建审批</Button>
+          </> : <p className="anpi-small">创建正在处理或结果待核对，请刷新查看当前状态，不要重复创建。</p>}
+        </div>}
         {bootstrap.phase === 'published' && <p className="anpi-small">注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。</p>}
         {bootstrap.reason === 'client_upgrade_required' && <p className="anpi-small">服务端返回 client.upgrade_required，不能将 HTTP 200 视为成功。请核对上方注册服务和客户端版本，完成准入配置或升级。</p>}
         {bootstrap.reason === 'phone_unavailable' && <p className="anpi-small">短信验证码请求未确认成功，请检查服务端手机号注册配置。不会自动重发或绕过验证。</p>}

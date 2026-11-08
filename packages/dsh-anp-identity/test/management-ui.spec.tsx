@@ -107,7 +107,10 @@ function fixture(
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
     registrationOnboardingStatus: vi.fn(async () => ok<{available:boolean;version:number;inProgress:boolean;intentId?:string}>({available:true,version:0,inProgress:false})),
-    startIdentityRegistration: vi.fn(async (_input: unknown) => ok<{status?:string;code?:string;phase?:string;requestId?:string}>({phase:'awaiting_approval',requestId:'test-request'})),
+    startIdentityRegistration: vi.fn(async (_input: unknown) => {
+      requests.push(request("create","test-request"));
+      return ok<{status?:string;code?:string;phase?:string;requestId?:string}>({phase:'awaiting_approval',requestId:'test-request'});
+    }),
     dismissRegistrationRequest: vi.fn(async () => ok(null)),
     registrationServiceSettings: vi.fn(async () => ok(serviceSettings)),
     configureRegistrationService: vi.fn(async input => {
@@ -733,5 +736,40 @@ it('defaults to China and distinguishes a known refusal from a genuinely unconfi
   f.remote.startIdentityRegistration.mockRejectedValueOnce(new Error('connection_lost'));
   fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
   await screen.findByText('无法确认创建请求是否送达。请刷新身份管理查看当前状态，不要重复提交。');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+
+it('opens the exact creation approval immediately after submitting a form previously closed with Later', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  act(()=>f.controller.openRegistration());act(()=>f.controller.closeModal());
+  act(()=>f.controller.openRegistration());
+  await act(()=>f.controller.startIdentityRegistration({label:'Example',handle:'test-user',phone:'+15551234567',profile:'e1',expectedOrigin:'https://awiki.me',expectedVersion:0}));
+  const modal=f.controller.getSnapshot().modal;
+  expect(modal?.kind).toBe('request');
+  if(modal?.kind!=='request')throw new Error('Expected approval');
+  expect(modal.review.request.id).toBe('test-request');
+  expect(f.remote.getRequest).toHaveBeenCalledWith('test-request');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('keeps the submitted approval open when an older polling result arrives late', async () => {
+  const f=fixture();await act(()=>f.controller.refresh());
+  let resolve: (value: {ok:true;value:AuthorizationRequest[]})=>void=()=>{};
+  f.remote.listRequests.mockImplementationOnce(()=>new Promise(r=>{resolve=r;}));
+  const polling=f.controller.refresh();
+  act(()=>f.controller.openRegistration());
+  await act(()=>f.controller.startIdentityRegistration({label:'Example',handle:'test-user',phone:'+15551234567',profile:'e1',expectedOrigin:'https://awiki.me',expectedVersion:0}));
+  expect(f.controller.getSnapshot().modal?.kind).toBe('request');
+  await act(async()=>{resolve({ok:true,value:[]});await polling;});
+  expect(f.controller.getSnapshot().modal?.kind).toBe('request');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('shows a persistent Continue approval action before SMS verification is available', async () => {
+  const pending=request('create','continue-create');
+  const f=fixture([pending]);
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:pending.id,phase:'awaiting_approval',origin:'https://awiki.me'}]});
+  f.render();await act(()=>f.controller.refresh());act(()=>f.controller.closeModal());
+  expect(screen.queryByLabelText('短信验证码')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'继续创建审批'}));
+  await waitFor(()=>expect(f.controller.getSnapshot().modal?.kind).toBe('request'));
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });
