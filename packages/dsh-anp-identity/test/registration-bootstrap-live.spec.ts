@@ -8,7 +8,8 @@ import { createProductHostFixture } from './helpers/product-host-fixture.js'
 
 const source = process.env.DSH_IDENTITY_USER_SERVICE_SOURCE
 const python = process.env.DSH_IDENTITY_PYTHON
-const HEADER = { 'X-AWiki-Client-Version': 'dsh-identity/1106/0.1.6' }
+const installedVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version as string
+const HEADER = { 'X-AWiki-Client-Version': 'dsh-identity/1106/' + installedVersion }
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 const results: Array<Record<string, unknown>> = []
 let initialSource: Record<string, string> | undefined

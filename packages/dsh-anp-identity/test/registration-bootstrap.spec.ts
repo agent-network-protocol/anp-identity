@@ -13,6 +13,9 @@ import type { CreateAuthorizationRequest } from '../src/authorization-types.js'
 import { RegistrationBootstrapConfigSchema, startRegistrationBootstrap } from '../src/registration-bootstrap.js'
 import { PROTOCOL_BOOTSTRAP_CONSUMER } from '../src/protocol-bootstrap.js'
 
+const installedVersion = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version as string
+const expectedClientVersion = 'dsh-identity/1106/' + installedVersion
+
 const roots: string[] = []
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -105,7 +108,7 @@ it('sends no mail or registration before approval and persists one mail attempt 
   f.verify()
   await vi.waitFor(() => expect(second.status().phase).toBe('published'))
   expect(f.register).toHaveBeenCalledOnce()
-  expect(f.requests.every(request => request.headers.get('X-AWiki-Client-Version') === 'dsh-identity/1106/0.1.6')).toBe(true)
+  expect(f.requests.every(request => request.headers.get('X-AWiki-Client-Version') === expectedClientVersion)).toBe(true)
   expect(JSON.stringify(second.status())).not.toMatch(/unit-private-device-token|agent@example.com|ciphertext|key/u)
 })
 
@@ -295,10 +298,10 @@ it('treats HTTP 200 upgrade bodies on SMS send as rejection, not a delivered cha
   const f = await fixture({ phone: true, upgrade: true }); f.approve()
   const controller = f.start()
   await vi.waitFor(() => expect(controller.status()).toMatchObject({ phase: 'blocked', reason: 'client_upgrade_required',
-    origin: 'https://identity.example', clientVersion: 'dsh-identity/1106/0.1.6' }))
+    origin: 'https://identity.example', clientVersion: expectedClientVersion }))
   expect(f.requests).toHaveLength(1)
   expect(f.requests[0]!.url).toBe('https://identity.example/user-service/v1/handle/rpc')
-  expect(f.requests[0]!.headers.get('X-AWiki-Client-Version')).toBe('dsh-identity/1106/0.1.6')
+  expect(f.requests[0]!.headers.get('X-AWiki-Client-Version')).toBe(expectedClientVersion)
   const journal = JSON.parse(await readFile(join(await realpath(f.root), 'registration-bootstrap', sha(f.config.id), 'state.json'), 'utf8'))
   expect(journal.phoneDelivered).toBe(false)
   expect(journal.registerStarted).toBe(false)
