@@ -13,7 +13,7 @@ it('saves an owner-only stable registration intent for safe restart, without OTP
   const store = new RegistrationOnboardingStore(root);
   expect(await store.read(active)).toBeUndefined();
   const result = await store.create(input,'https://awiki.me',active);
-  expect(result.parameters).toMatchObject({usage:'protocol',identityOnly:true,domain:'awiki.me',handle:'test-user.awiki.me',path:'/awiki/user/test-user'});
+  expect(result.parameters).toMatchObject({usage:'protocol',identityOnly:true,domain:'awiki.me',handle:'test-user.awiki.me',path:'/user/test-user'});
   expect(result.config.capabilities).toEqual({mcpMachine:true,papSession:true,papAccount:false});
   expect(result.config.redirectUris).toEqual([]);
   expect(await new RegistrationOnboardingStore(root).read(active)).toEqual(result);
@@ -49,4 +49,18 @@ it('combines the selected dialing code without assuming China for other countrie
   expect(composeRegistrationPhone('+86','+8613800138000')).toBeUndefined();
   expect(composeRegistrationPhone('86','13800138000')).toBeUndefined();
   expect(composeRegistrationPhone('+86','1234')).toBeUndefined();
+});
+
+it('keeps an existing saved E1 namespace and leaves the Web branch unchanged', async () => {
+  const root = await mkdtemp(join(tmpdir(),'onboarding-')); roots.push(root);
+  const store = new RegistrationOnboardingStore(root);
+  const created = await store.create(input,'https://awiki.me',active);
+  const file = join(root,'owner-registration.json');
+  const old = JSON.parse(await readFile(file,'utf8')); old.parameters.path='/awiki/user/test-user';
+  await import('node:fs/promises').then(fs=>fs.writeFile(file,JSON.stringify(old)));
+  expect((await new RegistrationOnboardingStore(root).read(active))?.parameters.path).toBe('/awiki/user/test-user');
+  const webRoot = await mkdtemp(join(tmpdir(),'onboarding-web-')); roots.push(webRoot);
+  const web = await new RegistrationOnboardingStore(webRoot).create({...input,profile:'web'},'https://awiki.me',active);
+  expect(web.parameters.path).toBe('/awiki/user/test-user');
+  expect(created.parameters.handle).toBe(web.parameters.handle);
 });

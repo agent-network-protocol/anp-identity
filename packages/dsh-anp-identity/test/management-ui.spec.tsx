@@ -816,3 +816,18 @@ it('offers an explicit SMS retry for a blocked challenge, never for an uncertain
   expect(screen.queryByRole('button',{name:'重试发送验证码'})).toBeNull();
   f.controller.dispose();
 });
+
+it('shows published registration fields in Handle, DID, CIMD, local reference order without deriving a new handle', async () => {
+  const f=fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{
+    id:'published',requestId:'created',phase:'published',reference:identity.reference,
+    clientId:'https://example.com/work/client.json',
+  }]});
+  f.render();await act(()=>f.controller.refresh());
+  const section=screen.getByRole('heading',{name:'协议身份注册'}).closest('[role="status"]')!;
+  const fields=[...section.querySelectorAll('.anpi-copy')].map(row=>row.textContent);
+  expect(fields).toHaveLength(4);
+  expect(fields[0]).toContain('Handle'); expect(fields[0]).toContain(identity.handle);
+  expect(fields[1]).toContain('DID');expect(fields[2]).toContain('CIMD');expect(fields[3]).toContain('本地身份引用');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});

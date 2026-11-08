@@ -329,3 +329,10 @@ The PAP Host accepts the published `@awiki/dsh-pap/plugin` consumer (and the
 legacy package name for existing explicit policies). Protocol consumers must
 also be in `userConsumers`, and still require an exact identity/target/profile
 policy; ANP additionally requires the Host HTTP-origin scope and user approval.
+
+New E1 identities created by the owner form use `/user/<local-part>` as the
+SDK path prefix, producing `did:wba:<domain>:user:<local-part>:e1_<fingerprint>`.
+Existing saved registrations and published identities keep their original DID
+and path; neither Handle mappings nor keys are rewritten. This change does not
+modify the Web profile branch or its server-side hosting requirements.
+Registration fields are displayed as Handle, DID, CIMD, then local reference.
