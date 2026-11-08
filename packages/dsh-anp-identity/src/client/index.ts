@@ -33,7 +33,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           {
             name: "settings.section",
             id: "anp-identity",
-            label: "身份",
+            label: "身份管理",
             order: 40,
             inject: () => ({ controller: active }),
           },

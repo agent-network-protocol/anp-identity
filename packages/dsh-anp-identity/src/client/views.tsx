@@ -1,3 +1,5 @@
+import { composeRegistrationPhone } from '../registration-onboarding-types.js';
+import { IDENTITY_PROMPT } from '../agent-guidance-text.js';
 import type { RegistrationServiceSettings } from '../registration-service-types.js';
 import {
   useEffect,
@@ -92,6 +94,62 @@ function Scope({
   );
 }
 
+function RegistrationForm({ controller }: { controller: IdentityController }): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const [label, setLabel] = useState("三方服务公共身份");
+  const [handle, setHandle] = useState("");
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const [contact, setContact] = useState("");
+  const [dialingCode, setDialingCode] = useState("+86");
+  const [customCode, setCustomCode] = useState("+");
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<"e1" | "web">("e1");
+  const [origin] = useState(view.registrationService?.origin ?? "https://awiki.me");
+  return <form onSubmit={event => {
+    event.preventDefault();
+    const code = dialingCode === "other" ? customCode : dialingCode;
+    const phone = method === "phone" ? composeRegistrationPhone(code, contact) : undefined;
+    if (method === "phone" && !phone) {
+      setContactError(!/^\+[1-9][0-9]{0,3}$/u.test(code) ? "国家码格式不正确，请填写 +国家码，例如 +86。"
+        : code === "+86" ? "中国大陆手机号应为有效的11位数字。国家码已在左侧选择，手机号框不要重复填写 +86。"
+        : "手机号格式不正确，请只填写号码，不含国家码；国家码请在左侧选择。");
+      return;
+    }
+    if (!/^[a-z][a-z0-9-]{2,39}$/u.test(handle)) { setContactError("Handle 请使用3–40位小写字母、数字或连字符，并以字母开头。"); return; }
+    setContactError(null);
+    void controller.startIdentityRegistration({ label, handle, profile, expectedOrigin: origin,
+      expectedVersion: view.onboarding?.version ?? 0, ...(method === "phone" ? { phone: phone! } : { email: contact.trim() }) });
+  }}>
+    <p>注册服务：{origin}</p>
+    <label>身份名称<input aria-label="身份名称" required maxLength={128} value={label} onChange={event => setLabel(event.target.value)} /></label>
+    <label>Handle<input aria-label="Handle" required minLength={3} maxLength={40} value={handle} onChange={event => setHandle(event.target.value)} placeholder="your-name" /></label>
+    <p className="anpi-small">3–40 位小写字母、数字和连字符，以字母开头，不含域名。创建的是新的公共身份，不是导入已有私钥。</p>
+    <label>验证方式<select aria-label="验证方式" value={method} onChange={event => { setMethod(event.target.value as "phone" | "email"); setContact(""); setContactError(null); }}>
+      <option value="phone">手机号</option><option value="email">邮箱</option></select></label>
+    {method === "phone" ? <div style={{display:"grid",gridTemplateColumns:"minmax(125px,35%) minmax(0,1fr)",gap:12}}>
+      <label>国家/地区码<select aria-label="国家/地区码" value={dialingCode} onChange={event=>{setDialingCode(event.target.value);setContactError(null);}}>
+        <option value="+86">中国大陆 +86</option><option value="+852">中国香港 +852</option>
+        <option value="+853">中国澳门 +853</option><option value="+886">中国台湾 +886</option>
+        <option value="+1">美国/加拿大 +1</option><option value="+65">新加坡 +65</option>
+        <option value="+81">日本 +81</option><option value="+44">英国 +44</option>
+        <option value="+49">德国 +49</option><option value="+33">法国 +33</option>
+        <option value="+61">澳大利亚 +61</option><option value="+91">印度 +91</option>
+        <option value="other">其他国家/地区</option>
+      </select>{dialingCode==="other"&&<input aria-label="自定义国家码" value={customCode} onChange={event=>{setCustomCode(event.target.value);setContactError(null);}} placeholder="+国家码" />}</label>
+      <label>手机号<input aria-label="注册手机号" type="tel" inputMode="numeric" autoComplete="off" required value={contact}
+        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder={dialingCode==="+86"?"11位手机号，不含国家码":"号码，不含国家码"} /></label>
+    </div> : <label>邮箱<input aria-label="注册邮箱" type="email" autoComplete="off" required value={contact}
+        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder="you@example.com" /></label>}
+    {method==="phone"&&<p className="anpi-small">默认中国大陆 +86。国家码与手机号分开填写，提交时会合并为国际格式。</p>}
+    {contactError && <p role="alert">{contactError}</p>}
+    <details><summary>高级：身份类型</summary><select aria-label="身份类型" value={profile} onChange={event => setProfile(event.target.value as "e1" | "web")}><option value="e1">E1（默认）</option><option value="web">Web（无根控制）</option></select></details>
+    <p className="anpi-small">本次用途为 MCP / ANP / PAP 登录，不包含消息能力或账户回调授权。提交只申请创建；你还需在下一步批准，随后才发送验证码并验证、发布。不会自动授权第三方访问。</p>
+    <p className="anpi-small">手机号、邮箱和验证码不提供给 Agent；不要把验证码发到聊天中。</p>
+    <div className="anpi-footer"><Button type="button" disabled={view.pending} onClick={() => controller.closeModal()}>稍后</Button>
+      <Button type="submit" disabled={view.pending || origin !== view.registrationService?.origin || !label.trim() || !handle.trim() || !contact.trim()}>申请创建并注册</Button></div>
+  </form>;
+}
+
 function RegistrationServiceForm({ controller, settings, pending }: {
   controller: IdentityController; settings: RegistrationServiceSettings; pending: boolean;
 }): ReactNode {
@@ -141,8 +199,15 @@ export function IdentitySettings({
       : "");
   return (
     <section className="anpi">
-      <h2>身份</h2>
+      <div className="anpi-row"><h2>身份管理</h2>
+        <Button disabled={view.pending || !view.onboarding?.available || view.onboarding.inProgress}
+          onClick={() => controller.openRegistration()}>创建公共身份</Button></div>
       <p className="anpi-muted">管理此 DSH 中保存的身份</p>
+      <div className="anpi-section"><h3>让 Agent 帮你创建</h3>
+        <p className="anpi-small">{IDENTITY_PROMPT}</p>
+        <Button onClick={() => { void controller.copy(IDENTITY_PROMPT); }}>复制示例提示词</Button>
+        <p className="anpi-small">Agent 会打开创建入口；Handle、手机号/邮箱和验证码只在本页面填写。创建、验证、发布及第三方使用授权是不同步骤。</p>
+      </div>
       {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
       {view.bootstraps.map(bootstrap => <div className="anpi-section" role="status" key={bootstrap.id}>
         <h3>协议身份注册</h3>
@@ -540,7 +605,7 @@ export function IdentityOverlay({
   );
   if (!view.modal) return null;
   const modal = view.modal;
-  const key =
+  const key = modal.kind === "registration" ? "registration" :
     modal.kind === "request" || modal.kind === "result"
       ? `${modal.review.request.id}:${modal.review.request.version}`
       : modal.kind === "permissions" || modal.kind === "revoke"
@@ -564,7 +629,10 @@ function IdentityModal({
   if (!modal) return null;
   let title: string;
   let content: ReactNode;
-  if (modal.kind === "result") {
+  if (modal.kind === "registration") {
+    title = "创建公共身份";
+    content = <RegistrationForm controller={controller} />;
+  } else if (modal.kind === "result") {
     title = "请求结果";
     const request = modal.review.request;
     const grant = modal.review.grant;

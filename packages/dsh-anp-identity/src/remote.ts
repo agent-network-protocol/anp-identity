@@ -1,3 +1,4 @@
+import { registrationInputSchema } from './registration-onboarding-types.js';
 import { PublicationConfigSchema } from './publication-types.js';
 /** Explicit browser-safe Typert method contract for the optional manager. */
 import { z } from "zod";
@@ -37,6 +38,9 @@ const decision = version
   .strict();
 const methods = [
   ["registrationBootstrapStatus", undefined],
+  ["registrationOnboardingStatus", undefined],
+  ["dismissRegistrationRequest", undefined],
+  ["startIdentityRegistration", registrationInputSchema],
   ["registrationServiceSettings", undefined],
   ["configureRegistrationService", z.object({ origin: z.string().min(1).max(2048), expectedVersion: z.number().int().nonnegative() }).strict()],
   ["submitRegistrationOtp", z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict()],

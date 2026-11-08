@@ -1,0 +1,39 @@
+import { Context } from '@deepseek-ai/cordis';
+import { expect, it, vi } from 'vitest';
+import { registerIdentityGuidance, AGENT_WORKFLOW_GUIDANCE, connectionGuide } from '../src/agent-guidance.js';
+
+it('makes identity creation and all protocol guides discoverable without shell, filesystem or identity side effects', async () => {
+  const ctx = new Context(), tools = new Map<string, any>(), contexts: any[] = [];
+  const status = vi.fn(async () => ({ identities: [], registrationPhase: 'not_started' }));
+  const request = vi.fn(async () => ({ status: 'awaiting_user_input', action: '设置 → 身份管理' }));
+  ctx.provide('tools', { register(value: any) { tools.set(value.name, value); }, definitions() { return [...tools.values(), {name:'pap_status'}]; } });
+  ctx.provide('systemPrompt', { context(value: any) { contexts.push(value); } });
+  registerIdentityGuidance(ctx, { status, request });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect([...tools.keys()]).toEqual(['identity_status','identity_request_creation','identity_connection_guide']);
+  expect(tools.get('identity_request_creation').description).toContain('公共身份');
+  expect(contexts[0]).toMatchObject({ required: true, interpolate: false });
+  expect(AGENT_WORKFLOW_GUIDANCE).toContain('Do not inspect source');
+  expect(AGENT_WORKFLOW_GUIDANCE).toContain('identity_request_creation');
+  expect(await tools.get('identity_request_creation').execute({}, {agent:{}})).toMatchObject({ok:true,value:{status:'awaiting_user_input'}});
+  expect(request).toHaveBeenCalledOnce();
+  expect(status).not.toHaveBeenCalled();
+  expect(await tools.get('identity_request_creation').execute({phone:'+15551234567'}, {agent:{}})).toEqual({ok:false,error:'invalid_parameters'});
+  expect(request).toHaveBeenCalledOnce();
+  const guide = await tools.get('identity_connection_guide').execute({protocol:'pap'}, {agent:{}});
+  expect(guide.value.guides.pap.order.join(' ')).toContain('page:"1"');
+  expect(guide.value.registeredTools).toContain('pap_status');
+  const cached = tools.get('identity_request_creation');
+  await ctx.fiber.dispose();
+  expect(await cached.execute({}, {agent:{}})).toEqual({ok:false,error:'identity_guidance_unavailable'});
+  expect(request).toHaveBeenCalledOnce();
+});
+it('guides MCP through actual resource discovery and separates no_as PAP from account login', () => {
+  const guide = connectionGuide('all', []);
+  expect(guide.guides).toHaveProperty('mcp');
+  expect(JSON.stringify(guide)).toContain('cimd-client-credentials');
+  expect(JSON.stringify(guide)).toContain('mcp__<configuredServer>');
+  expect(JSON.stringify(guide)).toContain('no_as');
+  expect(JSON.stringify(guide)).toContain('anp_describe');
+  expect(JSON.stringify(guide)).toContain('uncertain POST');
+});

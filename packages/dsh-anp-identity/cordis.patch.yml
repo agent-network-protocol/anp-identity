@@ -7,8 +7,8 @@
       name: '@agent-network-protocol/dsh-anp-identity'
       config:
         stateRoot: !!js process.env.DSH_ANP_IDENTITY_STATE_ROOT
-        allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '["@awiki/dsh-plugin"]')
-        userConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_USER_CONSUMERS ?? '[]')
+        allowConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_CONSUMERS ?? '["@awiki/dsh-plugin","@agent-network-protocol/dsh-anp-identity/protocol-bootstrap"]')
+        userConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_USER_CONSUMERS ?? '["@agent-network-protocol/dsh-anp-identity/protocol-bootstrap"]')
         protocolPolicies: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_PROTOCOL_POLICIES ?? '[]')
         allowProviderConsumers: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_ALLOW_PROVIDER_CONSUMERS ?? '["@awiki/dsh-plugin"]')
         httpAllowedOrigins: !!js JSON.parse(process.env.DSH_ANP_IDENTITY_HTTP_ALLOWED_ORIGINS ?? '{}')
@@ -30,5 +30,4 @@
 
     - id: anp-identity-protocol-bootstrap
       name: '@agent-network-protocol/dsh-anp-identity/protocol-bootstrap'
-      disabled: !!js process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP === undefined
       config: !!js 'process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP === undefined ? {} : JSON.parse(process.env.DSH_ANP_IDENTITY_PROTOCOL_BOOTSTRAP)'

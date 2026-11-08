@@ -286,3 +286,34 @@ restarting the Host cannot redirect an existing verification or publication flow
 Use a new identity and new flow IDs when moving between services, and configure
 the matching DID domain/Handle in the creation request. Existing `id.awiki.info`
 identities and their MCP/PAP bindings remain unchanged.
+
+## Public identity onboarding and protocol guidance
+
+The Identity settings page is **身份管理**. Use its **创建公共身份** button or ask
+the Agent: “帮我创建一个公共身份，用于登录三方服务。”
+The always-installed tools `identity_status`, `identity_request_creation` and
+`identity_connection_guide` are visible even before a protocol connection exists.
+A required runtime context routes identity requests to these tools instead of
+workspace searches, vault inspection or an unrelated AWiki CLI.
+
+The Agent request opens an owner form only. The user enters a Handle, label and
+phone/email in that form; country code and national phone number are separate,
+defaulting to China +86. A second explicit approval creates an identity-only
+E1/Web protocol identity. Only after that approval may the existing verified
+registration flow send a code and publish DID/CIMD materials. OTPs are entered in
+the owner page, never passed through model tools. No third-party grant, account
+callback or messaging capability is created automatically.
+
+The built-in `./protocol-bootstrap` entry now also provides the owner-only
+creation requester when no static request is configured. It must remain enabled
+and listed in both allowConsumers and userConsumers. Explicit Host lists are
+still authoritative; do not grant legacy Provider access to this requester.
+Static Host bootstrap configurations continue using their original flow and are
+not silently replaced by the form.
+
+Owner registration inputs are stored under protected Host storage for restart;
+OTP values are never persisted. An uncertain/unfinished flow cannot be replaced
+or blindly retried. The Agent-facing status and intent outputs expose only public
+references/status, not phone/email, credentials, storage paths or signing objects.
+ANP/MCP/PAP guides give discovery order, actual available registry names, exact
+parameter conventions, approval handling and no-replay rules for uncertain writes.

@@ -179,3 +179,16 @@ Address transparency retains HTTPS, exact-origin, no-redirect, metadata-ID,
 public-key and DID-binding checks. Public readback fetches the exact server
 URLs and compares the bytes with the signed publication. Old UUID public routes
 are not supported and no existing catalog/data migration is supplied.
+
+## Interactive owner registration boundary
+
+The Agent-facing identity creation tool only sets a deduplicated user-input
+intent. It has no contact/OTP arguments and cannot approve, create a key, send
+verification or invoke manager operations. The owner-only form submits a strict
+request, pins the reviewed service origin and persists stable flow IDs with CAS.
+The actual creation request is sent by the real Loader-installed protocol-bootstrap
+consumer, with the original owner manager Context checked; arbitrary Caller
+strings or direct non-manager Contexts cannot borrow it. Existing creation approval,
+identityOnly policy, verification, publication and lifecycle fences remain in use.
+Known validation/refusal responses are distinguished from genuinely uncertain
+delivery; an unknown outcome never invites a blind duplicate registration.
