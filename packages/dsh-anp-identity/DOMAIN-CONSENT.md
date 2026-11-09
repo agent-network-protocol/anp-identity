@@ -11,3 +11,13 @@ The owner dialog shows a redacted bounded parameter preview and the SHA-256 of t
 MCP extra-scope discovery and the eventual business call are separate once confirmations. A temporary machine signer is restricted to the consented resource/scopes and live execution, then disposed. The matching MCP adapter also checks the physical tools/call name and canonical arguments before sending, never reuses an elevated session for another operation, and retains encrypted credential history while revocation may remain unconfirmed. PAP consent does not synthesize account OAuth credentials or widen an account token's scopes.
 
 Before downgrading, cancel pending requests created by the new flow and revoke/archive grants using these snapshot profiles. Older readers reject the new grant snapshot, but old pending-request readers do not understand the new exact-operation marker. The matching Harness MCP connector is a separate Host update, not code shipped inside the Identity/PAP/ANP npm packages.
+
+## PAP retry composition regression
+
+A bound domain-operation facade owns the requests it creates. Adapters must retain that facade across pending-request retries; rebinding and querying an earlier request must continue to fail closed. `test/pap-retry-native.spec.ts` composes the actual Host authorization authority, native key custody and the built PAP adapter, with isolated simulated remote HTTP. Run it from this package after building PAP:
+
+```sh
+DSH_SHARED_PRODUCT_F_SOURCE=/absolute/path/to/dsh-pap npx vitest run test/pap-retry-native.spec.ts
+```
+
+The test skips when the explicit cross-repository source path is absent; ordinary package test runs therefore do not establish this composition evidence. It verifies one pending request survives retries, zero business sends precede approval and one send follows the owner decision. This is not live public-service or product UI acceptance.
