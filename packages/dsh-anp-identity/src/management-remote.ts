@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { registerIdentityGuidance } from './agent-guidance.js';
+import { registerConfigurationTools } from './configuration-tools.js';
 import { RegistrationOnboardingStore, type SavedRegistrationOnboarding } from './registration-onboarding.js';
 import { registrationInputSchema, type RegistrationOnboardingInput } from './registration-onboarding-types.js';
 import { createHash } from 'node:crypto';
 import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
+import type { UpdateProtocolPolicy } from './protocol-policy-types.js';
+import type { UpdateDefaultIdentity } from './default-identity-types.js';
 import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
@@ -49,6 +52,20 @@ export class IdentityManagerRemote extends TypertRemoteService {
     this.manager = manager;
     this.configuredBootstrap = config.registrationBootstrap !== undefined;
     const identityService = ctx.anpIdentity as AnpIdentityService;
+    registerConfigurationTools(ctx, {
+      assertOwner: () => { (ctx.anpIdentity as AnpIdentityService).acquireManagement(ctx); },
+      protocols: () => (ctx.anpIdentity as AnpIdentityService).protocolManagement(ctx),
+      setProtocols: (input, check) => (ctx.anpIdentity as AnpIdentityService).configureProtocolPolicy(ctx, input, check),
+      identity: async () => {
+        const [defaultIdentity, registrationService, status] = await Promise.all([
+          (ctx.anpIdentity as AnpIdentityService).defaultIdentity(ctx),
+          (ctx.anpIdentity as AnpIdentityService).registrationServiceSettings(ctx), this.publicIdentityStatus(),
+        ]);
+        return { defaultIdentity, registrationService, identities: status.identities };
+      },
+      setDefault: (input, check) => (ctx.anpIdentity as AnpIdentityService).configureDefaultIdentity(ctx, input, check),
+      setRegistration: (input, check) => (ctx.anpIdentity as AnpIdentityService).configureRegistrationService(ctx, input, check),
+    });
     this.onboardingStore = typeof identityService.registrationBootstrapRoot === 'function'
       ? new RegistrationOnboardingStore(identityService.registrationBootstrapRoot(ctx)) : undefined;
     registerIdentityGuidance(ctx, { status: () => this.publicIdentityStatus(), request: async () => {
@@ -139,6 +156,18 @@ export class IdentityManagerRemote extends TypertRemoteService {
       version: this.onboardingVersion, inProgress: Boolean(this.onboardingVersion > 0 && !this.bootstrap || this.bootstrap && !['published','disposed'].includes(this.bootstrap.status().phase)) };
   }
   @Remote dismissRegistrationRequest() { this.onboardingIntent = undefined; return null; }
+  @Remote protocolManagement() {
+    return (this.managerContext.anpIdentity as AnpIdentityService).protocolManagement(this.managerContext);
+  }
+  @Remote configureProtocolPolicy(input: UpdateProtocolPolicy) {
+    return (this.managerContext.anpIdentity as AnpIdentityService).configureProtocolPolicy(this.managerContext, input);
+  }
+  @Remote defaultIdentity() {
+    return (this.managerContext.anpIdentity as AnpIdentityService).defaultIdentity(this.managerContext);
+  }
+  @Remote configureDefaultIdentity(input: UpdateDefaultIdentity) {
+    return (this.managerContext.anpIdentity as AnpIdentityService).configureDefaultIdentity(this.managerContext, input);
+  }
   @Remote async startIdentityRegistration(raw: RegistrationOnboardingInput) {
     if (!this.onboardingStore || this.configuredBootstrap) return { status:'rejected', code:'requester_unavailable' };
     if (this.startingRegistration) return { status:'rejected', code:'registration_in_progress' };

@@ -104,7 +104,7 @@ export async function createNativeProtocolFixture(options: {
     return { get publicMaterials() { return { metadata: row!.metadata!, jwks: row!.jwks! } },
       getConsumer(name: string) { const installed = installedConsumers.get(name); if (!installed) throw new Error('fixture_unknown_consumer'); return installed },
       async publicDocument() { const read = provider.acquireLease({ consumer: 'fixture-public-read', capabilities: ['IDENTITY_READ'], ttlSeconds: 60 }); try { return (await read.publicIdentity(identity.reference)).document } finally { read.dispose() } },
-      root, service, client, reference: identity.reference, policyRef: 'fixture-policy', provider, context: consumerContext,
+      root, rootContext: ctx, service, client, reference: identity.reference, policyRef: 'fixture-policy', provider, context: consumerContext, managerContext,
       management: managerService.acquireManagement(managerContext),
       async dispose() { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) } }
   } catch (error) {

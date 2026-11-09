@@ -8,7 +8,7 @@ export type DomainProfile = 'anp' | 'pap_session' | 'mcp_machine'
 export interface DomainAccessConfig {
   enabled: boolean
   identity?: IdentityReference
-  /** Global OAuth scope ceiling. Empty means MCP needs an owner policy update. */
+  /** Legacy persistent-read scope set. Additional discovered scopes require the shared owner policy or exact consent. */
   scopes: string[]
   secretStore?: 'keyring' | 'local-file'
   expiresAt?: number
@@ -34,7 +34,8 @@ export class DomainAccessError extends Error {
 export class DomainAccessResolver {
   constructor(private readonly config: DomainAccessConfig | undefined, private readonly root: string,
     private readonly candidates: (profile: DomainProfile) => Promise<IdentityReference[]>,
-    private readonly install: (policy: ProtocolUsePolicy) => void) {
+    private readonly install: (policy: ProtocolUsePolicy) => void,
+    private readonly selection?: () => Promise<{ identity: IdentityReference | null; version: number }>) {
     if (config && (config.secretStore !== undefined && !['keyring', 'local-file'].includes(config.secretStore)
       || typeof config.enabled !== 'boolean' || !Array.isArray(config.scopes)
       || config.scopes.length > 64 || config.scopes.some(scope => !/^[\x21\x23-\x5b\x5d-\x7e]{1,128}$/u.test(scope))
@@ -49,18 +50,22 @@ export class DomainAccessResolver {
     if (!config?.enabled) throw new DomainAccessError('domain_access_disabled')
     const expiresAt = config.expiresAt ?? Number.MAX_SAFE_INTEGER
     if (Date.now() >= expiresAt) throw new DomainAccessError('domain_access_expired')
+    const selection = await this.selection?.()
+    const selected = selection ? selection.identity : config.identity
     const available = await this.candidates(profile)
-    const eligible = config.identity ? available.filter(identity => same(identity, config.identity!)) : available
+    const eligible = selected ? available.filter(identity => same(identity, selected)) : available
     if (!eligible.length) throw new DomainAccessError('published_identity_required')
     if (eligible.length !== 1) throw new DomainAccessError('default_identity_required')
     const identityRef = structuredClone(eligible[0]!)
+    if (selection && JSON.stringify(await this.selection!()) !== JSON.stringify(selection)) throw new DomainAccessError('default_identity_changed')
     const targetConsumer = consumer
     const scopes = profile === 'mcp_machine' ? [...new Set(config.scopes)].sort() : []
-    if (profile === 'mcp_machine' && !scopes.length) throw new DomainAccessError('scope_authorization_required')
-    const digest = createHash('sha256').update(JSON.stringify([identityRef, targetConsumer, profile, scopes, expiresAt])).digest('hex')
+    const policyFields: unknown[] = [identityRef, targetConsumer, profile, scopes, expiresAt]
+    if (selection?.version) policyFields.push(selection.version)
+    const digest = createHash('sha256').update(JSON.stringify(policyFields)).digest('hex')
     const policyRef = `domain-${digest}`
     const storage = createHash('sha256').update(JSON.stringify([identityRef, targetConsumer, profile])).digest('hex')
-    if (profile !== 'anp') this.install({ id: policyRef, version: 1, consumer: targetConsumer, identity: identityRef,
+    if (profile !== 'anp' && (profile !== 'mcp_machine' || scopes.length)) this.install({ id: policyRef, version: 1, consumer: targetConsumer, identity: identityRef,
       owner: '@agent-network-protocol/dsh-anp-identity', profiles: [profile], issuers: [], resources: [], publicTargets: true, scopes, expiresAt })
     return { identityRef, policyRef, scopes, secretStore: config.secretStore ?? 'keyring', stateRoot: join(this.root, 'domain-access', storage, 'state'), secretsRoot: join(this.root, 'domain-access', storage, 'secrets') }
   }

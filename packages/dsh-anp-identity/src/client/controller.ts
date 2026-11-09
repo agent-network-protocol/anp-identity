@@ -1,5 +1,7 @@
 import type { RegistrationOnboardingInput, RegistrationOnboardingStatus } from '../registration-onboarding-types.js';
+import type { ProtocolManagementState, ProtocolPolicy, UpdateProtocolPolicy } from '../protocol-policy-types.js';
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from '../registration-service-types.js';
+import type { DefaultIdentitySettings, UpdateDefaultIdentity } from '../default-identity-types.js';
 import type { OAuthClientIdentity } from "../publication-types.js";
 import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
@@ -20,6 +22,10 @@ export type ManagementRemote = {
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
 } & {
+  protocolManagement?: () => Promise<RemoteResult<ProtocolManagementState>>;
+  configureProtocolPolicy?: (input: UpdateProtocolPolicy) => Promise<RemoteResult<ProtocolPolicy>>;
+  defaultIdentity?: () => Promise<RemoteResult<DefaultIdentitySettings>>;
+  configureDefaultIdentity?: (input: UpdateDefaultIdentity) => Promise<RemoteResult<DefaultIdentitySettings>>;
   registrationOnboardingStatus?: () => Promise<RemoteResult<RegistrationOnboardingStatus>>;
   startIdentityRegistration?: (input: RegistrationOnboardingInput) => Promise<RemoteResult<unknown>>;
   dismissRegistrationRequest?: () => Promise<RemoteResult<null>>;
@@ -41,6 +47,13 @@ export type ManagerModal =
     }
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
+  readonly defaultIdentity: DefaultIdentitySettings | null;
+  readonly defaultIdentityError: string | null;
+  readonly defaultIdentitySaving: boolean;
+  readonly protocolManagement: ProtocolManagementState | null;
+  readonly protocolError: string | null;
+  readonly protocolSaveError: string | null;
+  readonly protocolSaving: boolean;
   readonly onboarding: RegistrationOnboardingStatus | null;
   readonly registrationService: RegistrationServiceSettings | null;
   readonly loading: boolean;
@@ -84,6 +97,13 @@ export class IdentityController {
     });
   }
   private view: ManagerView = {
+    defaultIdentity: null,
+    defaultIdentityError: null,
+    defaultIdentitySaving: false,
+    protocolManagement: null,
+    protocolError: null,
+    protocolSaveError: null,
+    protocolSaving: false,
     onboarding: null,
     registrationService: null,
     loading: true,
@@ -104,6 +124,8 @@ export class IdentityController {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
+  private protocolRefreshing = false;
+  private defaultIdentityRefreshing = false;
   private requestReviewEpoch = 0;
   private disposed = false;
   private readonly deferredRequests = new Set<string>();
@@ -160,6 +182,9 @@ export class IdentityController {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     const reviewEpoch = this.requestReviewEpoch;
+    // Protocol preferences must not block identity approval delivery if their query fails.
+    if (this.remote.protocolManagement) void this.refreshProtocols();
+    if (this.remote.defaultIdentity) void this.refreshDefaultIdentity();
     try {
       const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
         this.call("listIdentities"),
@@ -237,6 +262,33 @@ export class IdentityController {
       this.refreshing = false;
     }
   }
+  private async refreshProtocols(): Promise<void> {
+    if (this.disposed || this.protocolRefreshing) return;
+    this.protocolRefreshing = true;
+    try {
+      const result = await this.remote.protocolManagement!();
+      if (!result.ok) throw new Error('protocol_policy_unavailable');
+      const current = this.view.protocolManagement;
+      if (!current || result.value.policy.version >= current.policy.version) this.patch({ protocolManagement: result.value, protocolError: null });
+    } catch { this.patch({ protocolError: '无法读取协议权限，请重试；不会使用临时默认值覆盖已有配置' }); }
+    finally { this.protocolRefreshing = false; }
+  }
+  async configureProtocolPolicy(input: UpdateProtocolPolicy): Promise<boolean> {
+    if (this.view.protocolSaving || !this.remote.configureProtocolPolicy || this.disposed) return false;
+    this.patch({ protocolSaving: true, protocolSaveError: null });
+    try {
+      const result = await this.remote.configureProtocolPolicy(input);
+      if (!result.ok) throw new Error('protocol_policy_update_failed');
+      const current = this.view.protocolManagement;
+      if (current && result.value.version >= current.policy.version) this.patch({ protocolManagement: { ...current, policy: result.value } });
+      return true;
+    } catch {
+      await this.refreshProtocols();
+      this.patch({ protocolSaveError: '保存失败或配置已被其他页面修改，请重新加载并核对后再保存' });
+      return false;
+    } finally { this.patch({ protocolSaving: false }); }
+  }
+  dismissProtocolSaveError(): void { this.patch({ protocolSaveError: null }); }
   openRegistration(): void {
     if (this.view.pending || this.view.modal || !this.view.onboarding?.available || this.view.onboarding.inProgress) return;
     this.captureFocus();
@@ -307,6 +359,35 @@ export class IdentityController {
     } catch (error) {
       this.fail(error);
     }
+  }
+  async refreshDefaultIdentity(): Promise<void> {
+    if (this.defaultIdentityRefreshing || this.disposed || !this.remote.defaultIdentity) return;
+    this.defaultIdentityRefreshing = true;
+    try {
+      const result = await this.remote.defaultIdentity();
+      if (!result.ok) throw new Error('default_identity_unavailable');
+      if (this.disposed) return;
+      if (!this.view.defaultIdentity || result.value.version >= this.view.defaultIdentity.version)
+        this.patch({ defaultIdentity: result.value, defaultIdentityError: null });
+    } catch { if (!this.disposed) this.patch({ defaultIdentityError: '无法读取默认身份配置；不会自动选择其他身份。' }); }
+    finally { this.defaultIdentityRefreshing = false; }
+  }
+  async configureDefaultIdentity(input: UpdateDefaultIdentity): Promise<boolean> {
+    if (this.view.defaultIdentitySaving || this.disposed || !this.remote.configureDefaultIdentity) return false;
+    this.patch({ defaultIdentitySaving: true, defaultIdentityError: null });
+    try {
+      const result = await this.remote.configureDefaultIdentity(input);
+      if (!result.ok) throw new Error(result.error.message);
+      if (this.disposed) return false;
+      if (!this.view.defaultIdentity || result.value.version >= this.view.defaultIdentity.version)
+        this.patch({ defaultIdentity: result.value, notice: '默认身份已保存。后续连接使用新默认身份；旧请求不会自动换身份重试，请重新发现并连接。' });
+      return true;
+    } catch (error) {
+      await this.refreshDefaultIdentity();
+      if (!this.disposed) this.patch({ defaultIdentityError: error instanceof Error && error.message === 'default_identity_conflict'
+        ? '默认身份已在其他页面或由 Agent 修改，请刷新后重新确认。' : '保存默认身份失败；请选择本机已发布身份，或恢复自动选择。' });
+      return false;
+    } finally { if (!this.disposed) this.patch({ defaultIdentitySaving: false }); }
   }
   selected(): ManagedIdentitySummary | undefined {
     return this.view.identities.find(

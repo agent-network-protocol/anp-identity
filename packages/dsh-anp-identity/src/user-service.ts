@@ -31,6 +31,16 @@ export class UserIdentityService {
   readonly ready: Promise<void>
   private readonly previews = new Map<string, NonNullable<RequestReview['operationPreview']>>()
   operationPreview(requestId: string): RequestReview['operationPreview'] { return this.previews.get(requestId) }
+  /** Host policy admission cannot erase either exact-operation or legacy consumer-wide refusals. */
+  async assertOperationNotDenied(context: Context, identity: IdentityReference, request: Request): Promise<void> {
+    await this.ready
+    await this.host.ensureReady()
+    const source = this.host.resolveCaller(context)
+    await this.host.validateCaller(source)
+    const normalized = await normalizeOperation({action:'http',request})
+    await this.engine.assertNotDenied(source, identity, normalized.frozen)
+    await this.host.validateCaller(source)
+  }
 
   constructor(stateRoot: string, readonly host: UserServiceHost, readonly publications?: PublicationCoordinator) {
     this.engine = new AuthorizationEngine(stateRoot, host)

@@ -233,10 +233,14 @@ references/status, not phone/email, credentials, storage paths or signing object
 ANP/MCP/PAP guides give discovery order, actual available registry names, exact
 parameter conventions, approval handling and no-replay rules for uncertain writes.
 
-## 域名自动接入
+## 域名自动接入与统一协议管理
 
-Host 一次性设置 `domainAccess: { enabled: true, scopes: ['protocol.read'], secretStore: 'local-file' }`，并启用 PAP/ANP 的 `autoConnect` 及 MCP domain 连接器后，Agent 只需调用 `pap_connect({domain})`、`mcp_connect({domain})` 或 `anp_discover({domain})`。不再要求逐域名添加连接。默认选择唯一符合协议能力的已发布身份；多个身份必须通过 Host 的 `domainAccess.identity` 明确选定。`scopes` 是 MCP 的全局权限上限，不会随网站元数据扩大；PAP 只自动启用读取，不启用账户权限或写操作。未指定 `secretStore` 时使用 keyring，不静默回退。ANP 的签名仍需用户审批，已有永久授权可跨重启复用，但不扩大原域名范围。关闭权限或改变默认身份通过正常 Host 配置重载生效。当前 MCP 域名接入支持域名级发现元数据和 CIMD/ES256 客户端凭证认证；不兼容的站点返回明确错误。
+Host 一次性启用 `domainAccess`、允许实际安装的适配器，并开启 PAP/ANP 的 `autoConnect` 或官方 MCP 域名连接器。Agent 只提供域名即可发现和连接，无需逐站配置。默认使用唯一符合条件的已发布身份；多个身份需要明确默认身份。密钥托管、身份发布与远端账户授权仍各自独立，秘密后端不静默回退。
 
-## 只读自动与单次操作确认
+当前开发候选增加共享的“协议管理”页面，读写各自选择全部允许、白名单、每次确认或禁止。白名单按域名精确匹配，可选适用协议。允许直接执行，询问自动弹窗，禁止不发送业务请求；未知效果、明确声明的支付和额外权限仍单独确认。已有身份拒绝记录和操作禁用不会被规则静默清除。页面不授予通用签名、密钥访问或账户 token，也没有聊天开启全量权限的工具。
 
-本版保留“已发现只读自动访问、写入及额外权限仅本次确认”的模式，不包含聊天切换全量写权限。授权在前台全局弹窗中完成，无需进入设置寻找请求；拒绝、取消或卸载不发送操作，不自动重放不确定写入。参数预览脱敏且仅保存在 Host 内存，重启后不能凭丢失的旧预览批准请求。PAP、ANP 需要本次身份插件；MCP 的单次操作能力还依赖配套 Harness 更新，三个 npm 插件本身不包含 Harness 的 MCP 客户端源码。降级前须清理新流程的 pending 请求并撤销或归档新 profile 的授权，详见 [Domain consent](DOMAIN-CONSENT.md)。
+持久化格式、CAS、操作分类、兼容边界及验收进度见 [统一协议管理](PROTOCOL-MANAGEMENT.md)。单次授权说明见 [Domain consent](DOMAIN-CONSENT.md)。MCP 还需要配套 Harness 更新，源码不包含在三个 npm 插件中。MCP 域名适配及两站三协议真实读写已在本地候选验证；这不等于 npm 发布，安装代码以候选 integrity 和摘要辨认。
+
+## 智能体配置接口
+
+第三批候选通过所有者管理器提供 `protocol_permissions` 和 `identity_settings`。先查询当前配置和版本，再按用户明确指令修改协议读写／精确域名白名单、默认已发布身份或未来注册使用的服务地址。持久修改会在当前会话展示精确差异并确认一次，不需要去设置页面寻找请求；随后业务调用按已保存规则执行，不重复询问同一持续权限。页面与工具复用 CAS 配置后端，正常 DSH 会话保留审批及修改结果记录。默认身份与页面当前查看的选中行不同。接口不接受验证码、token、私钥、通用签名或身份生命周期审批。完整工具契约、持久格式与待完成的真实 Agent／安装包验收见 [共享协议管理](PROTOCOL-MANAGEMENT.md#agent-configuration-tools-third-batch-candidate)。

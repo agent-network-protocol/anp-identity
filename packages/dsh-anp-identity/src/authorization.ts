@@ -162,6 +162,20 @@ export class AuthorizationEngine {
     })
   }
 
+  /** Preserve existing owner refusals even when a separate persistent protocol rule allows the operation. */
+  async assertNotDenied(verifiedCaller: VerifiedCaller, identity: IdentityReference, requestedOperation: ControlledOperation): Promise<void> {
+    const source = caller(verifiedCaller), target = reference(identity), actual = operation(requestedOperation)
+    await this.#snapshotTransaction(async state => {
+      await this.options.validateCaller(source)
+      this.#identityAvailable(state, target)
+      const current = snapshot(await this.options.resolveSnapshot(source, target))
+      if (!permits(current, actual)) fail('operation_not_permitted')
+      if (state.suppressions.some(block => block.consumer === source.consumer && block.kind === 'access'
+        && (block.identity === undefined || equalIdentity(block.identity, target))
+        && (block.operationFingerprint === undefined || block.operationFingerprint === actual.fingerprint))) fail('request_previously_denied')
+    })
+  }
+
   /** Find an existing permanent grant without creating, widening or consuming authorization. */
   async findPermanentGrant(verifiedCaller: VerifiedCaller, identity: IdentityReference, requestedOperation: ControlledOperation): Promise<string | undefined> {
     const source = caller(verifiedCaller), target = reference(identity), actual = operation(requestedOperation)

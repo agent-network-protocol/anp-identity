@@ -36,7 +36,9 @@ it('does not replace missing Host permission, scope permission, or expired permi
   }
   await expect(new DomainAccessResolver({ enabled: true, scopes: [], expiresAt: 1 }, '/isolated', candidates, vi.fn()).resolve(consumer, 'pap_session')).rejects.toMatchObject({ code: 'domain_access_expired' })
   expect(candidates).not.toHaveBeenCalled()
-  await expect(new DomainAccessResolver({ enabled: true, scopes: [] }, '/isolated', candidates, vi.fn()).resolve('@deepseek-ai/dsh-mcp-client/domain', 'mcp_machine')).rejects.toMatchObject({ code: 'scope_authorization_required' })
+  const install=vi.fn()
+  expect(await new DomainAccessResolver({ enabled: true, scopes: [] }, '/isolated', candidates, install).resolve('@deepseek-ai/dsh-mcp-client/domain', 'mcp_machine')).toMatchObject({scopes:[]})
+  expect(install).not.toHaveBeenCalled() // Discovery may request a policy-bounded temporary signer, not a permanent scope expansion.
 })
 it('rejects private, mapped and special network destinations in domain mode', () => {
   for (const address of ['127.0.0.1', '10.0.0.1', '169.254.169.254', '192.168.1.1', '::1', '::ffff:8.8.8.8', '2001:db8::1', '2002::1']) expect(isPublicDomainAddress(address)).toBe(false)

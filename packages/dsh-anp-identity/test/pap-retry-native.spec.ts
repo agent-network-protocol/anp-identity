@@ -3,13 +3,14 @@ import {expect,it} from 'vitest'
 import {pathToFileURL} from 'node:url'
 import {join} from 'node:path'
 import type {Context} from '@deepseek-ai/cordis'
+import type AnpIdentityService from '../src/index.js'
 import {createNativeProtocolFixture} from './helpers/native-protocol-fixture.js'
 
 const papSource=process.env.DSH_SHARED_PRODUCT_F_SOURCE
 interface Result {ok:boolean;value?:unknown;error?:{code:string}}
 interface PapFacade {stop():void;acquireTools(context:Context):{connect(domain:string):Promise<Result>;operations():Promise<Result>;request(args:unknown):Promise<Result>}}
 
-it.skipIf(!papSource)('PAP retains the real Host consent facade across timeout and retries, then sends once after owner approval',async()=>{
+it.skipIf(!papSource)('PAP retains real Host consent across retries and applies shared policy at business dispatch',async()=>{
   // This explicit cross-repository component consumes the PAP build, not a second application launcher.
   const {PapService}=await import(/* @vite-ignore */ pathToFileURL(join(papSource!,'lib/plugin.js')).href) as {PapService:new(context:Context,config:object)=>PapFacade}
   const f=await createNativeProtocolFixture({consumer:'@awiki/dsh-pap/plugin',additionalConsumers:[{consumer:'@awiki/dsh-pap/tools'}],domainAccess:{enabled:true,scopes:['protocol.read'],secretStore:'local-file'}})
@@ -43,6 +44,18 @@ it.skipIf(!papSource)('PAP retains the real Host consent facade across timeout a
     expect(await tools.request(args)).toMatchObject({ok:true,value:{status:200,body:{created:true}}})
     expect(businessRequests).toBe(1)
     expect((await f.management.listRequests(true)).filter(request=>request.status==='approved')).toHaveLength(1)
+    const manager=f.managerContext.anpIdentity as AnpIdentityService
+    const state=await manager.protocolManagement(f.managerContext)
+    const {schema:_schema,version,...policy}=state.policy
+    policy.write.mode='allow_all'
+    const changed=await manager.configureProtocolPolicy(f.managerContext,{expectedVersion:version,policy})
+    expect(await tools.request({operationRef:operation.operationRef,body:{content:'Allowed by persistent owner policy'}})).toMatchObject({ok:true,value:{status:200}})
+    expect(businessRequests).toBe(2)
+    expect(await f.management.listRequests(true)).toHaveLength(1)
+    policy.write.mode='deny'
+    await manager.configureProtocolPolicy(f.managerContext,{expectedVersion:changed.version,policy})
+    expect(await tools.request({operationRef:operation.operationRef,body:{content:'Blocked by owner policy'}})).toMatchObject({ok:false,error:{code:'protocol_permission_denied',businessRequest:'not_sent'}})
+    expect(businessRequests).toBe(2)
   }finally{try{pap?.stop()}finally{await f.dispose()}}
 // Native publication and disk-backed consent are integration setup, not a five-second latency assertion.
 },30000)

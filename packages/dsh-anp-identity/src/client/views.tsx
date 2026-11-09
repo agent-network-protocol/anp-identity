@@ -182,6 +182,38 @@ function RegistrationServiceForm({ controller, settings, pending }: {
   </div>;
 }
 
+function DefaultIdentityForm({ controller }: { controller: IdentityController }): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const settings = view.defaultIdentity;
+  const selected = settings?.identity ? identityKey(settings.identity) : 'automatic';
+  const [draft, setDraft] = useState(selected);
+  const [version, setVersion] = useState(settings?.version ?? 0);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (settings && !dirty) { setDraft(selected); setVersion(settings.version); } }, [selected, settings?.version, dirty]);
+  const candidates = view.identities.filter(identity => identity.state === 'active' && identity.catalogState === 'active');
+  const missing = draft !== 'automatic' && !candidates.some(identity => identityKey(identity.reference) === draft);
+  return <div className="anpi-section"><h3>默认公共身份</h3>
+    <p className="anpi-small">ANP、PAP、MCP 的域名访问共用此默认身份。下面身份列表的选中行仅用于查看，不会改变默认身份。只能保存本机已发布的身份；自动选择遇到多个候选时会要求明确选择。</p>
+    {view.defaultIdentityError && <p role="alert">{view.defaultIdentityError}</p>}
+    {settings && <form onSubmit={event => {
+      event.preventDefault();
+      const reference = candidates.find(identity => identityKey(identity.reference) === draft)?.reference;
+      if (draft !== 'automatic' && !reference) return;
+      void controller.configureDefaultIdentity({ identity: reference ?? null, expectedVersion: version }).then(saved => { if (saved) setDirty(false); });
+    }}>
+      <label>默认身份<select aria-label="默认身份" value={draft} disabled={view.defaultIdentitySaving}
+        onChange={event => { setDraft(event.target.value); setDirty(true); }}>
+        <option value="automatic">自动选择唯一的已发布身份</option>
+        {missing && <option value={draft}>已保存的身份不可用（不会自动替换）</option>}
+        {candidates.map(identity => <option key={identityKey(identity.reference)} value={identityKey(identity.reference)}>{identityLabel(identity)}</option>)}
+      </select></label>
+      {dirty && version !== settings.version && <p role="alert">配置已由其他页面或 Agent 修改。草稿已保留，请刷新配置后重新选择。</p>}
+      <div className="anpi-actions"><Button type="submit" disabled={!dirty || missing || view.defaultIdentitySaving || version !== settings.version}>保存默认身份</Button>
+        <Button type="button" disabled={view.defaultIdentitySaving} onClick={() => { setDirty(false); void controller.refreshDefaultIdentity(); }}>刷新默认身份</Button></div>
+    </form>}
+  </div>;
+}
+
 /** Shared owner-only registration progress for settings and the approval continuation. */
 function RegistrationProgress({ controller, bootstrap, approvalCompleted = false }: {
   controller: IdentityController; bootstrap: RegistrationBootstrapStatus; approvalCompleted?: boolean;
@@ -252,6 +284,7 @@ export function IdentitySettings({
         <p className="anpi-small">Agent 会打开创建入口；Handle、手机号/邮箱和验证码只在本页面填写。创建、验证、发布及第三方使用授权是不同步骤。</p>
       </div>
       {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
+      {(view.defaultIdentity || view.defaultIdentityError) && <DefaultIdentityForm controller={controller} />}
       {view.bootstraps.map(bootstrap => <div key={bootstrap.id}>
         {view.modal?.kind === 'registration-progress' && view.modal.requestId === bootstrap.requestId ? null :
           <RegistrationProgress controller={controller} bootstrap={bootstrap} />}
