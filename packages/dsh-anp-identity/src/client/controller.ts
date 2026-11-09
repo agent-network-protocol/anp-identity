@@ -1,5 +1,7 @@
 import type { RegistrationOnboardingInput, RegistrationOnboardingStatus } from '../registration-onboarding-types.js';
+import type { ProtocolManagementState, ProtocolPolicy, UpdateProtocolPolicy } from '../protocol-policy-types.js';
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from '../registration-service-types.js';
+import type { DefaultIdentitySettings, UpdateDefaultIdentity } from '../default-identity-types.js';
 import type { OAuthClientIdentity } from "../publication-types.js";
 import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import type { RemoteResult } from "@deepseek-ai/dsh-typert-protocol";
@@ -20,6 +22,10 @@ export type ManagementRemote = {
     ...args: Parameters<IdentityManagement[K]>
   ) => Promise<RemoteResult<Awaited<ReturnType<IdentityManagement[K]>> | null>>;
 } & {
+  protocolManagement?: () => Promise<RemoteResult<ProtocolManagementState>>;
+  configureProtocolPolicy?: (input: UpdateProtocolPolicy) => Promise<RemoteResult<ProtocolPolicy>>;
+  defaultIdentity?: () => Promise<RemoteResult<DefaultIdentitySettings>>;
+  configureDefaultIdentity?: (input: UpdateDefaultIdentity) => Promise<RemoteResult<DefaultIdentitySettings>>;
   registrationOnboardingStatus?: () => Promise<RemoteResult<RegistrationOnboardingStatus>>;
   startIdentityRegistration?: (input: RegistrationOnboardingInput) => Promise<RemoteResult<unknown>>;
   dismissRegistrationRequest?: () => Promise<RemoteResult<null>>;
@@ -41,6 +47,13 @@ export type ManagerModal =
     }
   | { readonly kind: "delete"; readonly identity: ManagedIdentitySummary };
 export interface ManagerView {
+  readonly defaultIdentity: DefaultIdentitySettings | null;
+  readonly defaultIdentityError: string | null;
+  readonly defaultIdentitySaving: boolean;
+  readonly protocolManagement: ProtocolManagementState | null;
+  readonly protocolError: string | null;
+  readonly protocolSaveError: string | null;
+  readonly protocolSaving: boolean;
   readonly onboarding: RegistrationOnboardingStatus | null;
   readonly registrationService: RegistrationServiceSettings | null;
   readonly loading: boolean;
@@ -84,6 +97,13 @@ export class IdentityController {
     });
   }
   private view: ManagerView = {
+    defaultIdentity: null,
+    defaultIdentityError: null,
+    defaultIdentitySaving: false,
+    protocolManagement: null,
+    protocolError: null,
+    protocolSaveError: null,
+    protocolSaving: false,
     onboarding: null,
     registrationService: null,
     loading: true,
@@ -104,9 +124,16 @@ export class IdentityController {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
+  private protocolRefreshing = false;
+  private defaultIdentityRefreshing = false;
   private requestReviewEpoch = 0;
   private disposed = false;
-  private pauseQueue = false;
+  private readonly deferredRequests = new Set<string>();
+  private readonly staleRequestIds = new Set<string>();
+  private readonly presentedRequests = new Set<string>();
+  private readonly inheritedPromptedRequests = new Set<string>();
+  private requestsInitialized = false;
+  private readonly onForeground = () => { void this.refresh(); };
   private selectionVersion = 0;
   private openedOnboardingIntent: string | undefined;
   private returnFocus: HTMLElement | null = null;
@@ -136,6 +163,9 @@ export class IdentityController {
     return result.value as Awaited<ReturnType<IdentityManagement[K]>>;
   }
   start(): void {
+    if (this.timer || this.disposed) return;
+    if (typeof window !== 'undefined') window.addEventListener('focus', this.onForeground);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onForeground);
     void this.refresh();
     this.timer = setInterval(() => {
       void this.refresh();
@@ -144,12 +174,17 @@ export class IdentityController {
   dispose(): void {
     this.disposed = true;
     clearInterval(this.timer);
+    if (typeof window !== 'undefined') window.removeEventListener('focus', this.onForeground);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onForeground);
     this.listeners.clear();
   }
   async refresh(): Promise<void> {
     if (this.refreshing || this.disposed) return;
     this.refreshing = true;
     const reviewEpoch = this.requestReviewEpoch;
+    // Protocol preferences must not block identity approval delivery if their query fails.
+    if (this.remote.protocolManagement) void this.refreshProtocols();
+    if (this.remote.defaultIdentity) void this.refreshDefaultIdentity();
     try {
       const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
         this.call("listIdentities"),
@@ -162,6 +197,17 @@ export class IdentityController {
       if (onboardingResult && !onboardingResult.ok) throw new Error('Unable to read identity onboarding status');
       if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
       if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
+      const pendingRequests = requests.filter(request => request.status === 'pending');
+      const pendingKeys = new Set(pendingRequests.map(request => `${request.id}:${request.version}`));
+      const pendingIds = new Set(pendingRequests.map(request => request.id));
+      for (const entries of [this.deferredRequests, this.presentedRequests, this.inheritedPromptedRequests]) {
+        for (const key of entries) if (!pendingKeys.has(key)) entries.delete(key);
+      }
+      for (const id of this.staleRequestIds) if (!pendingIds.has(id)) this.staleRequestIds.delete(id);
+      if (!this.requestsInitialized) {
+        for (const request of pendingRequests) if (request.prompted) this.inheritedPromptedRequests.add(`${request.id}:${request.version}`);
+        this.requestsInitialized = true;
+      }
       const selectedKey = identities.some(
         (i) => identityKey(identityReference(i)) === this.view.selectedKey,
       )
@@ -176,9 +222,7 @@ export class IdentityController {
         onboarding: onboardingResult?.ok ? onboardingResult.value : null,
         bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
-        requests: requests
-          .filter((r) => r.status === "pending")
-          .sort((a, b) => b.createdAt - a.createdAt),
+        requests: pendingRequests.sort((a, b) => b.createdAt - a.createdAt),
         selectedKey,
         ...(changed ? { publication: null, grants: [], document: null, documentOpen: false } : {}),
       });
@@ -197,8 +241,12 @@ export class IdentityController {
         this.openedOnboardingIntent = intent;
         this.openRegistration();
       }
-      if (!this.pauseQueue && this.view.modal === null) {
-        const next = this.view.requests.find((r) => !r.prompted);
+      if (this.view.modal === null && this.isForeground()) {
+        const next = this.view.requests.find((r) => {
+          const key = `${r.id}:${r.version}`;
+          return (!r.prompted || !this.inheritedPromptedRequests.has(key)) && !this.presentedRequests.has(key)
+            && !this.staleRequestIds.has(r.id) && !this.deferredRequests.has(key);
+        });
         if (next) await this.openRequest(next.id, true);
       }
     } catch (error) {
@@ -214,6 +262,33 @@ export class IdentityController {
       this.refreshing = false;
     }
   }
+  private async refreshProtocols(): Promise<void> {
+    if (this.disposed || this.protocolRefreshing) return;
+    this.protocolRefreshing = true;
+    try {
+      const result = await this.remote.protocolManagement!();
+      if (!result.ok) throw new Error('protocol_policy_unavailable');
+      const current = this.view.protocolManagement;
+      if (!current || result.value.policy.version >= current.policy.version) this.patch({ protocolManagement: result.value, protocolError: null });
+    } catch { this.patch({ protocolError: '无法读取协议权限，请重试；不会使用临时默认值覆盖已有配置' }); }
+    finally { this.protocolRefreshing = false; }
+  }
+  async configureProtocolPolicy(input: UpdateProtocolPolicy): Promise<boolean> {
+    if (this.view.protocolSaving || !this.remote.configureProtocolPolicy || this.disposed) return false;
+    this.patch({ protocolSaving: true, protocolSaveError: null });
+    try {
+      const result = await this.remote.configureProtocolPolicy(input);
+      if (!result.ok) throw new Error('protocol_policy_update_failed');
+      const current = this.view.protocolManagement;
+      if (current && result.value.version >= current.policy.version) this.patch({ protocolManagement: { ...current, policy: result.value } });
+      return true;
+    } catch {
+      await this.refreshProtocols();
+      this.patch({ protocolSaveError: '保存失败或配置已被其他页面修改，请重新加载并核对后再保存' });
+      return false;
+    } finally { this.patch({ protocolSaving: false }); }
+  }
+  dismissProtocolSaveError(): void { this.patch({ protocolSaveError: null }); }
   openRegistration(): void {
     if (this.view.pending || this.view.modal || !this.view.onboarding?.available || this.view.onboarding.inProgress) return;
     this.captureFocus();
@@ -245,7 +320,7 @@ export class IdentityController {
       }
       if (value?.status === "uncertain" || value?.phase !== "awaiting_approval" || typeof value.requestId !== "string") throw new Error("creation_unconfirmed");
       this.patch({ pending: false });
-      this.pauseQueue = false;
+      this.deferredRequests.clear();
       this.closeModal(false);
       // Resume this exact owner-submitted flow; a background refresh may be busy.
       await this.openRequest(value.requestId);
@@ -285,6 +360,35 @@ export class IdentityController {
       this.fail(error);
     }
   }
+  async refreshDefaultIdentity(): Promise<void> {
+    if (this.defaultIdentityRefreshing || this.disposed || !this.remote.defaultIdentity) return;
+    this.defaultIdentityRefreshing = true;
+    try {
+      const result = await this.remote.defaultIdentity();
+      if (!result.ok) throw new Error('default_identity_unavailable');
+      if (this.disposed) return;
+      if (!this.view.defaultIdentity || result.value.version >= this.view.defaultIdentity.version)
+        this.patch({ defaultIdentity: result.value, defaultIdentityError: null });
+    } catch { if (!this.disposed) this.patch({ defaultIdentityError: '无法读取默认身份配置；不会自动选择其他身份。' }); }
+    finally { this.defaultIdentityRefreshing = false; }
+  }
+  async configureDefaultIdentity(input: UpdateDefaultIdentity): Promise<boolean> {
+    if (this.view.defaultIdentitySaving || this.disposed || !this.remote.configureDefaultIdentity) return false;
+    this.patch({ defaultIdentitySaving: true, defaultIdentityError: null });
+    try {
+      const result = await this.remote.configureDefaultIdentity(input);
+      if (!result.ok) throw new Error(result.error.message);
+      if (this.disposed) return false;
+      if (!this.view.defaultIdentity || result.value.version >= this.view.defaultIdentity.version)
+        this.patch({ defaultIdentity: result.value, notice: '默认身份已保存。后续连接使用新默认身份；旧请求不会自动换身份重试，请重新发现并连接。' });
+      return true;
+    } catch (error) {
+      await this.refreshDefaultIdentity();
+      if (!this.disposed) this.patch({ defaultIdentityError: error instanceof Error && error.message === 'default_identity_conflict'
+        ? '默认身份已在其他页面或由 Agent 修改，请刷新后重新确认。' : '保存默认身份失败；请选择本机已发布身份，或恢复自动选择。' });
+      return false;
+    } finally { if (!this.disposed) this.patch({ defaultIdentitySaving: false }); }
+  }
   selected(): ManagedIdentitySummary | undefined {
     return this.view.identities.find(
       (i) => identityKey(identityReference(i)) === this.view.selectedKey,
@@ -316,6 +420,9 @@ export class IdentityController {
       }
     }
   }
+  private isForeground(): boolean {
+    return typeof document === 'undefined' || document.visibilityState !== 'hidden' && document.hasFocus();
+  }
   private captureFocus(): void {
     if (typeof document !== "undefined")
       this.returnFocus =
@@ -324,7 +431,7 @@ export class IdentityController {
           : null;
   }
   async openRequest(id: string, automatic = false): Promise<void> {
-    if (this.view.modal !== null || this.view.pending) return;
+    if (this.disposed || this.view.modal !== null || this.view.pending || automatic && !this.isForeground()) return;
     this.requestReviewEpoch++;
     this.captureFocus();
     this.patch({ pending: true, error: null });
@@ -334,17 +441,20 @@ export class IdentityController {
         await this.refresh();
         return;
       }
+      if (this.disposed || automatic && !this.isForeground()) return;
       await this.call("markPrompted", {
         requestId: id,
         expectedVersion: review.request.version,
       });
+      if (this.disposed || automatic && !this.isForeground()) return;
+      this.presentedRequests.add(`${id}:${review.request.version}`);
       this.patch({
         modal: { kind: "request", review },
         requests: this.view.requests.map((r) =>
           r.id === id ? { ...r, prompted: true } : r,
         ),
       });
-      if (!automatic) this.pauseQueue = false;
+      if (!automatic) { this.deferredRequests.clear(); this.staleRequestIds.delete(id); }
     } catch (error) {
       this.fail(error);
     } finally {
@@ -362,7 +472,7 @@ export class IdentityController {
     if (later && this.view.modal?.kind === "registration") {
       void this.remote.dismissRegistrationRequest?.().catch(() => {});
     }
-    if (later) this.pauseQueue = true;
+    if (later) for (const request of this.view.requests) this.deferredRequests.add(`${request.id}:${request.version}`);
     this.patch({ modal: null, error: null });
     const focus = this.returnFocus;
     queueMicrotask(() => {
@@ -370,8 +480,9 @@ export class IdentityController {
     });
   }
   private closeStaleRequest(): void {
+    if (this.view.modal?.kind === "request") this.staleRequestIds.add(this.view.modal.review.request.id);
     this.patch({ pending: false });
-    this.closeModal();
+    this.closeModal(false);
     this.patch({ notice: "此授权请求已处理、已过期或已变更，旧弹窗已关闭。请查看授权请求的最新状态；不会自动重复授权。" });
   }
   async decide(

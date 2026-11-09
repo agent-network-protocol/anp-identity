@@ -1,7 +1,13 @@
 // ===== index.d.ts =====
+import { type DefaultIdentitySettings, type UpdateDefaultIdentity } from './default-identity-types.js';
+import { type ProtocolPolicyClient } from './protocol-policy.js';
+import { type ManagedProtocol, type UpdateProtocolPolicy, type ProtocolManagementState } from './protocol-policy-types.js';
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PapCallbackManagementOperations } from './pap-callback.js';
 import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
+import { type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js';
+import { type AnpDomainReadClient } from './anp-domain.js';
+import { type DomainOperationClient } from './domain-consent.js';
 import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
 import type { PublicationBackend } from './publication-types.js';
 import { Service, type Context } from '@deepseek-ai/cordis';
@@ -12,6 +18,11 @@ import type { IdentityManagement } from './management-types.js';
 import { type AnpIdentityService as AnpIdentityServiceContract, type HostProviderLease, type ProviderRequest } from './provider-api.js';
 import type { AnpIdentityHealth, ClientRequest, IdentityClientLease } from './types.js';
 export type * from './types.js';
+export type { DomainAccessConfig, DomainProfile, DomainBinding } from './domain-access.js';
+export type { AnpReadEvidence, AnpDomainReadClient } from './anp-domain.js';
+export type { DomainOperationClient, DomainConsentCapabilities, DomainMachineIdentity } from './domain-consent.js';
+export type { ProtocolPolicyClient, ProtocolTarget, ProtocolAdmission, ProtocolTargetEvidence, ProtocolOperationEvidence } from './protocol-policy.js';
+export type { ManagedProtocol, ProtocolEffect, ProtocolDecision, ProtocolPolicy, ProtocolPolicyInput, UpdateProtocolPolicy, ProtocolManagementState, ProtocolClassification, HttpEffectEvidence } from './protocol-policy-types.js';
 export { AnpIdentityPluginError } from './errors.js';
 export type { AnpIdentityPluginErrorCode } from './errors.js';
 export { ANP_IDENTITY_HTTP_MAX_BODY_BYTES, } from './http-auth.js';
@@ -38,6 +49,8 @@ export interface Config {
     readonly oauthAllowedAudiences?: Record<string, string[]>;
     readonly userConsumers?: string[];
     readonly protocolPolicies?: ProtocolUsePolicy[];
+    /** Explicit global domain-access opt-in; no per-domain policies are created by the model. */
+    readonly domainAccess?: DomainAccessConfig;
 }
 export declare const Config: z<Config>;
 /** One multi-DID ANP Identity service with a replaceable native Provider. */
@@ -45,12 +58,19 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     static Config: z<Config>;
     private readonly resolvedConfig;
     private readonly registrationSettings;
+    private readonly protocolSettings;
+    private readonly defaultIdentitySettings;
+    private readonly protocolAdapters;
     private readonly catalogStore;
     private providerSlot;
     private readonly publications;
     private readonly publicationBackends;
     private readonly papCallbackAuthorities;
     private readonly protocols;
+    private readonly domains;
+    private readonly anpReads;
+    private readonly anpDomainMode;
+    private readonly domainOperations;
     private readonly users;
     private readonly hostContext;
     private readonly disabledFences;
@@ -85,6 +105,23 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     /** Host-bound ordinary facade; request inputs never select a caller. */
     bindUserConsumer(context: Context): UserIdentityClient;
     bindProtocolConsumer(context: Context): ProtocolIdentityClient;
+    /** Bind the installed ANP adapter to exact discovered reads under global Host permission. */
+    bindAnpDomainConsumer(context: Context): AnpDomainReadClient;
+    /** Bind exact, once-only owner confirmation for the installed PAP/MCP domain adapters. */
+    bindDomainOperationConsumer(context: Context): DomainOperationClient;
+    /** Installed adapters classify discovered operations; ordinary tools cannot bind or edit owner settings. */
+    bindProtocolPolicy(context: Context, protocol: ManagedProtocol): ProtocolPolicyClient;
+    /** Resolve a Host-approved default identity and global policy for an installed domain adapter.
+     * @param context - Actual Loader-owned adapter context.
+     * @param profile - Protocol to connect; PAP account access is intentionally excluded.
+     * @returns Non-secret identity, policy and local storage references.
+     */
+    resolveDomainAccess(context: Context, profile: DomainProfile): Promise<DomainBinding>;
+    /** Public discovery never signs or obtains a user identity.
+     * @param request - Public HTTPS request, pinned against private DNS destinations.
+     * @returns Unauthenticated response without redirect following.
+     */
+    publicDiscovery(request: Request): Promise<Response>;
     /** Bind the actual installed PAP Host. Private callback access additionally requires its current opaque target.
      * @param context - Original Loader-installed PAP plugin Context.
      * @returns Public identity selection and target-bound, closed callback operations.
@@ -122,7 +159,13 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     registrationBootstrapRoot(context: Context): string;
     /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
     registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings>;
-    configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings): Promise<RegistrationServiceSettings>;
+    configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings, additionalCheck?: () => void): Promise<RegistrationServiceSettings>;
+    /** The saved default is shared by all domain adapters, not the manager's selected display row. */
+    defaultIdentity(context: Context): Promise<DefaultIdentitySettings>;
+    configureDefaultIdentity(context: Context, raw: UpdateDefaultIdentity, additionalCheck?: () => void): Promise<DefaultIdentitySettings>;
+    /** Owner-only settings. Binding a policy client never grants access to this mutation surface. */
+    protocolManagement(context: Context): Promise<ProtocolManagementState>;
+    configureProtocolPolicy(context: Context, input: UpdateProtocolPolicy, additionalCheck?: () => void): Promise<import('./protocol-policy-types.js').ProtocolPolicy>;
     resolveRegistrationServiceOrigin(context: Context, key: string, fingerprint: string): Promise<string>;
     /** Pin the actual ready provider for an approved local identity and the original manager Context.
      * @param context - Original root-installed manager Context.
@@ -162,6 +205,148 @@ export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegis
 export type { PapHostConsumer } from './protocol-client.js';
 export { PapCallbackManagementError } from './pap-callback.js';
 export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult, PapCallbackRegisterOperation, PapCallbackClaimOperation, PapCallbackManagementOperations, PapCallbackManagementErrorCode } from './pap-callback.js';
+
+// ===== domain-access.d.ts =====
+import type { IdentityReference } from './types.js';
+import type { ProtocolUsePolicy } from './protocol-client.js';
+export type DomainProfile = 'anp' | 'pap_session' | 'mcp_machine';
+export interface DomainAccessConfig {
+    enabled: boolean;
+    identity?: IdentityReference;
+    /** Legacy persistent-read scope set. Additional discovered scopes require the shared owner policy or exact consent. */
+    scopes: string[];
+    secretStore?: 'keyring' | 'local-file';
+    expiresAt?: number;
+}
+export interface DomainBinding {
+    identityRef: IdentityReference;
+    policyRef: string;
+    stateRoot: string;
+    secretsRoot: string;
+    secretStore: 'keyring' | 'local-file';
+    scopes: string[];
+}
+export declare class DomainAccessError extends Error {
+    readonly code: string;
+    constructor(code: string);
+}
+/** Resolve only locally published identities and install a Host-owned global policy. */
+export declare class DomainAccessResolver {
+    private readonly config;
+    private readonly root;
+    private readonly candidates;
+    private readonly install;
+    private readonly selection?;
+    constructor(config: DomainAccessConfig | undefined, root: string, candidates: (profile: DomainProfile) => Promise<IdentityReference[]>, install: (policy: ProtocolUsePolicy) => void, selection?: (() => Promise<{
+        identity: IdentityReference | null;
+        version: number;
+    }>) | undefined);
+    resolve(consumer: string, profile: DomainProfile): Promise<DomainBinding>;
+}
+
+// ===== anp-domain.d.ts =====
+/** Exact HTTP reads under the Host's global domain-access policy. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider';
+import type { DomainBinding } from './domain-access.js';
+import type { ProtocolPolicyClient } from './protocol-policy.js';
+import { type HttpEffectEvidence, type ProtocolDecision } from './protocol-policy-types.js';
+/** Produced only by the installed discovery adapter, never by model arguments. */
+export interface AnpReadEvidence {
+    profile: 'anp-discovered/1';
+    kind: 'agent' | 'information' | 'interface' | 'operation';
+    source: string;
+    url: string;
+    requiresApproval: boolean;
+    discoveryOrigin?: string;
+    policyEvidence?: Omit<HttpEffectEvidence, 'method'>;
+}
+export interface AnpOperationAdmission {
+    decision: ProtocolDecision;
+    version: number;
+}
+export interface AnpDomainReadClient {
+    dispatchRead(request: Request, evidence: AnpReadEvidence): Promise<Response>;
+    prepareOperation(request: Request, evidence: AnpReadEvidence): Promise<AnpOperationAdmission>;
+    dispatchOperation(request: Request, evidence: AnpReadEvidence, admission: {
+        policyVersion: number;
+        grantId?: string;
+    }): Promise<Response>;
+}
+export interface AnpDomainReadHost {
+    assertCaller(context: Context): void;
+    generation(): unknown;
+    resolve(context: Context): Promise<DomainBinding>;
+    withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
+    dispatch(request: Request, assertBeforeSend: () => Promise<void>): Promise<Response>;
+    policy(context: Context): ProtocolPolicyClient;
+    runApproved<T>(context: Context, grantId: string, request: Request, identity: DomainBinding['identityRef'], effect: (check: () => Promise<void>) => Promise<T>): Promise<T>;
+}
+/** No raw signature, generic write permission, or caller-provided transport is exposed. */
+export declare class AnpDomainReadAuthority {
+    private readonly host;
+    constructor(host: AnpDomainReadHost);
+    bind(context: Context): AnpDomainReadClient;
+}
+
+// ===== domain-consent.d.ts =====
+/** One owner-approved effect, distinct from global protocol read permission. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { AccessAuthorizationRequest } from './authorization-types.js';
+import type { DomainBinding } from './domain-access.js';
+import type { UserIdentityClient } from './user-client.js';
+import type { ProtocolIdentityClient, ProtocolSignerLease, ProtocolUsePolicy } from './protocol-client.js';
+import type { ProtocolPolicyClient, ProtocolTarget } from './protocol-policy.js';
+export declare class DomainConsentError extends Error {
+    readonly code: string;
+    constructor(code: string);
+}
+export interface DomainMachineSigner {
+    readonly targetRef: object;
+    readonly policyGeneration: number;
+    assertActive(): Promise<void>;
+    getOAuthClientIdentity(): ReturnType<ProtocolSignerLease['getOAuthClientIdentity']>;
+    signOAuthClientAssertion(targetRef: object): Promise<string>;
+    dispose(): void;
+}
+export interface DomainMachineIdentity {
+    registerValidatedTarget(input: Parameters<ProtocolIdentityClient['registerValidatedTarget']>[0]): Promise<DomainMachineSigner>;
+}
+export interface DomainConsentCapabilities {
+    machineIdentity?: DomainMachineIdentity;
+}
+export interface DomainOperationClient {
+    request(input: {
+        requestId: string;
+        purpose: string;
+        request: Request;
+    }): Promise<AccessAuthorizationRequest>;
+    status(id: string): Promise<AccessAuthorizationRequest>;
+    cancel(id: string, version: number): Promise<AccessAuthorizationRequest>;
+    execute<T>(grantId: string, request: Request, effect: (assertActive: () => Promise<void>, capabilities: DomainConsentCapabilities) => Promise<T>): Promise<T>;
+    executeAllowed<T>(request: Request, authorization: {
+        target: ProtocolTarget;
+        policyVersion: number;
+        annotations?: unknown;
+        metadataOnly: boolean;
+    }, effect: (assertActive: () => Promise<void>, capabilities: DomainConsentCapabilities) => Promise<T>): Promise<T>;
+}
+export interface DomainConsentHost {
+    assertCaller(context: Context): string;
+    resolve(context: Context): Promise<DomainBinding>;
+    user(context: Context): UserIdentityClient;
+    run<T>(context: Context, grantId: string, request: Request, identity: DomainBinding['identityRef'], effect: (assertActive: () => Promise<void>) => Promise<T>): Promise<T>;
+    protocol(context: Context): ProtocolIdentityClient;
+    install(policy: ProtocolUsePolicy): void;
+    retire(id: string): void;
+    policy(context: Context): ProtocolPolicyClient;
+}
+/** Only the installed adapters may bind this facade; model tools never receive it. */
+export declare class DomainOperationAuthority {
+    private readonly host;
+    constructor(host: DomainConsentHost);
+    bind(context: Context): DomainOperationClient;
+}
 
 // ===== provider.d.ts =====
 /** Native ANP Identity Provider registration for the Host-only DSH service. */
@@ -374,6 +559,11 @@ export interface AuthorizedIdentity {
     };
 }
 export interface UserIdentityClient {
+    /** Reuse only an active permanent grant already covering this exact caller, identity and operation. */
+    findAccessGrant?(input: {
+        identity: IdentityReference;
+        operation: UserOperation;
+    }): Promise<string | undefined>;
     requestCreateIdentity(input: RequestCreateInput): Promise<AuthorizationRequest>;
     getCreateRequest(requestId: string): Promise<AuthorizationRequest>;
     cancelCreateRequest(requestId: string, expectedVersion: number): Promise<AuthorizationRequest>;
@@ -629,13 +819,15 @@ import type { IdentityReference } from '@agent-network-protocol/anp-identity';
 import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider';
 import type { VerifiedCaller } from './authorization-types.js';
 import type { PublicationCoordinator } from './publication.js';
-import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
+import type { ProtocolUsePolicy, ProtocolIdentityClient, ValidatedTargetEvidence, PapHostConsumer } from './protocol-client.js';
 import type { PapCallbackManagementOperations } from './pap-callback.js';
 export interface ProtocolAuthorityHost {
     resolveCaller(context: Context): VerifiedCaller;
     assertCaller(caller: VerifiedCaller): void;
     providerGeneration(): unknown;
     withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
+    /** Recheck durable default selection for Host-installed domain policies, including retained native leases. */
+    assertDomainPolicy?(context: Context, policy: ProtocolUsePolicy, profile: ValidatedTargetEvidence['profile']): Promise<void>;
 }
 /** Private manager-owned driver and encrypted public transaction bindings. No credential value is returned. */
 export interface PapCallbackHostAuthority {
@@ -650,6 +842,12 @@ export declare class ProtocolIdentityAuthority {
     private readonly host;
     private readonly publications;
     private readonly targets;
+    private readonly domainPolicies;
+    /** Called only by the Host's explicitly enabled domain resolver, never by a consumer facade. */
+    installDomainPolicy(policy: ProtocolUsePolicy): void;
+    /** Retire a Host-owned temporary policy after its exact operation finishes. */
+    removeDomainPolicy(id: string): void;
+    private allPolicies;
     constructor(policies: readonly ProtocolUsePolicy[], host: ProtocolAuthorityHost, publications: PublicationCoordinator);
     bind(context: Context): ProtocolIdentityClient;
     /** Bind the exact installed PAP plugin; publication and callback data never replace its Host policy. */
@@ -930,6 +1128,7 @@ export interface CreateAuthorizationRequest extends RequestBase {
     readonly result?: CreateResult;
 }
 export interface AccessAuthorizationRequest extends RequestBase {
+    readonly approvalProfile?: 'exact-operation/1';
     readonly kind: 'access';
     readonly identity?: IdentityReference;
     readonly operation?: ControlledOperation;
@@ -983,6 +1182,7 @@ export interface AuthorizationState {
         kind: 'create' | 'access';
         identity?: IdentityReference;
         requestId: string;
+        operationFingerprint?: string;
     }[];
 }
 export interface RequestCreateInput {
@@ -995,6 +1195,7 @@ export interface RequestAccessInput {
     readonly purpose: string;
     readonly identity?: IdentityReference;
     readonly operation?: ControlledOperation;
+    readonly approvalProfile?: 'exact-operation/1';
 }
 export interface AuthorizationDecision {
     readonly requestId: string;
@@ -1041,6 +1242,13 @@ export interface ManagedIdentitySummary extends IdentityDescriptor {
     readonly deleteBlockedReason?: string;
 }
 export interface RequestReview {
+    /** Redacted owner-only preview, retained in Host memory rather than the authorization ledger. */
+    readonly operationPreview?: {
+        readonly method: string;
+        readonly target: string;
+        readonly parameters?: unknown;
+        readonly bodyDigest: string;
+    };
     readonly request: AuthorizationRequest;
     readonly grant?: AuthorizationGrant;
     readonly identities: readonly ManagedIdentitySummary[];
@@ -1167,10 +1375,10 @@ export declare const PublicationRecordSchema: z.ZodObject<{
     operationId: z.ZodString;
     expectedVersion: z.ZodNumber;
     state: z.ZodEnum<{
-        failed: "failed";
         awaiting_configuration: "awaiting_configuration";
         publishing: "publishing";
         published: "published";
+        failed: "failed";
     }>;
     clientId: z.ZodString;
     version: z.ZodNumber;
@@ -1269,6 +1477,8 @@ export declare function parsePublicJson(text: string): unknown;
 // ===== management-remote.d.ts =====
 import { type RegistrationOnboardingInput } from './registration-onboarding-types.js';
 import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
+import type { UpdateProtocolPolicy } from './protocol-policy-types.js';
+import type { UpdateDefaultIdentity } from './default-identity-types.js';
 import type { PublicationConfig } from './publication-types.js';
 /** Optional Host manager boundary. Never expose this service to consumer leases. */
 import type { Context } from "@deepseek-ai/cordis";
@@ -1305,6 +1515,45 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
         intentId?: string;
     }>;
     dismissRegistrationRequest(): null;
+    protocolManagement(): Promise<import("./protocol-policy-types.js").ProtocolManagementState>;
+    configureProtocolPolicy(input: UpdateProtocolPolicy): Promise<{
+        read: {
+            mode: "deny" | "ask" | "allow_all" | "whitelist";
+            outside: "deny" | "ask";
+            domains: {
+                domain: string;
+                protocols: ("anp" | "pap" | "mcp")[];
+            }[];
+        };
+        write: {
+            mode: "deny" | "ask" | "allow_all" | "whitelist";
+            outside: "deny" | "ask";
+            domains: {
+                domain: string;
+                protocols: ("anp" | "pap" | "mcp")[];
+            }[];
+        };
+        schema: 1;
+        version: number;
+    }>;
+    defaultIdentity(): Promise<{
+        schema: 1;
+        version: number;
+        identity: {
+            storeId: string;
+            identityId: string;
+            did: string;
+        } | null;
+    }>;
+    configureDefaultIdentity(input: UpdateDefaultIdentity): Promise<{
+        schema: 1;
+        version: number;
+        identity: {
+            storeId: string;
+            identityId: string;
+            did: string;
+        } | null;
+    }>;
     startIdentityRegistration(raw: RegistrationOnboardingInput): Promise<{
         status: string;
         code: string;
@@ -1358,3 +1607,303 @@ import { IdentityOverlay, IdentitySettings } from "./views.js";
 export declare const inject: string[];
 export declare function apply(ctx: ClientContext): Promise<() => Promise<void>>;
 export { IdentityController, IdentitySettings, IdentityOverlay };
+
+// ===== protocol-policy-types.d.ts =====
+/** Browser-safe protocol permission settings. Service directories never grant permission. */
+import { z } from 'zod';
+export declare const protocolNames: readonly ["anp", "pap", "mcp"];
+export type ManagedProtocol = typeof protocolNames[number];
+export type ProtocolEffect = 'read' | 'write' | 'unknown' | 'payment';
+export type ProtocolDecision = 'allow' | 'ask' | 'deny';
+export interface ProtocolClassification {
+    effect: ProtocolEffect;
+    extraPermissions: boolean;
+}
+export interface HttpEffectEvidence {
+    method: string;
+    hasRequestBody: boolean;
+    security?: unknown;
+    declaredEffect?: unknown;
+    annotations?: unknown;
+}
+/** HTTP safety alone is insufficient: body, explicit semantics and authorization declarations all participate. */
+export declare function classifyHttpEffect(input: HttpEffectEvidence): ProtocolClassification;
+/** MCP uses semantic tool hints, not its POST transport or the tool's name. */
+export declare function classifyMcpEffect(raw: unknown): ProtocolClassification;
+/** Scope suffixes select credential privilege, never the semantic effect of a business tool. Unknown scopes always ask. */
+export declare function classifyMcpScopes(scopes: readonly string[]): ProtocolClassification;
+export declare class ProtocolPolicyError extends Error {
+    readonly code: string;
+    constructor(code: string);
+}
+/** Exact IDNA hostname, not a URL, suffix pattern, port, or implicit subdomain rule. */
+export declare function protocolDomain(input: string): string;
+export declare const protocolPolicyInputSchema: z.ZodObject<{
+    read: z.ZodObject<{
+        mode: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+            allow_all: "allow_all";
+            whitelist: "whitelist";
+        }>;
+        outside: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+        }>;
+        domains: z.ZodArray<z.ZodObject<{
+            domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+            protocols: z.ZodArray<z.ZodEnum<{
+                anp: "anp";
+                pap: "pap";
+                mcp: "mcp";
+            }>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>;
+    write: z.ZodObject<{
+        mode: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+            allow_all: "allow_all";
+            whitelist: "whitelist";
+        }>;
+        outside: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+        }>;
+        domains: z.ZodArray<z.ZodObject<{
+            domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+            protocols: z.ZodArray<z.ZodEnum<{
+                anp: "anp";
+                pap: "pap";
+                mcp: "mcp";
+            }>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>;
+}, z.core.$strict>;
+export type ProtocolPolicyInput = z.infer<typeof protocolPolicyInputSchema>;
+export declare const protocolPolicySchema: z.ZodObject<{
+    read: z.ZodObject<{
+        mode: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+            allow_all: "allow_all";
+            whitelist: "whitelist";
+        }>;
+        outside: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+        }>;
+        domains: z.ZodArray<z.ZodObject<{
+            domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+            protocols: z.ZodArray<z.ZodEnum<{
+                anp: "anp";
+                pap: "pap";
+                mcp: "mcp";
+            }>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>;
+    write: z.ZodObject<{
+        mode: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+            allow_all: "allow_all";
+            whitelist: "whitelist";
+        }>;
+        outside: z.ZodEnum<{
+            deny: "deny";
+            ask: "ask";
+        }>;
+        domains: z.ZodArray<z.ZodObject<{
+            domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+            protocols: z.ZodArray<z.ZodEnum<{
+                anp: "anp";
+                pap: "pap";
+                mcp: "mcp";
+            }>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>;
+    schema: z.ZodLiteral<1>;
+    version: z.ZodNumber;
+}, z.core.$strict>;
+export type ProtocolPolicy = z.infer<typeof protocolPolicySchema>;
+export declare const updateProtocolPolicySchema: z.ZodObject<{
+    expectedVersion: z.ZodNumber;
+    policy: z.ZodObject<{
+        read: z.ZodObject<{
+            mode: z.ZodEnum<{
+                deny: "deny";
+                ask: "ask";
+                allow_all: "allow_all";
+                whitelist: "whitelist";
+            }>;
+            outside: z.ZodEnum<{
+                deny: "deny";
+                ask: "ask";
+            }>;
+            domains: z.ZodArray<z.ZodObject<{
+                domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+                protocols: z.ZodArray<z.ZodEnum<{
+                    anp: "anp";
+                    pap: "pap";
+                    mcp: "mcp";
+                }>>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>;
+        write: z.ZodObject<{
+            mode: z.ZodEnum<{
+                deny: "deny";
+                ask: "ask";
+                allow_all: "allow_all";
+                whitelist: "whitelist";
+            }>;
+            outside: z.ZodEnum<{
+                deny: "deny";
+                ask: "ask";
+            }>;
+            domains: z.ZodArray<z.ZodObject<{
+                domain: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+                protocols: z.ZodArray<z.ZodEnum<{
+                    anp: "anp";
+                    pap: "pap";
+                    mcp: "mcp";
+                }>>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>;
+    }, z.core.$strict>;
+}, z.core.$strict>;
+export type UpdateProtocolPolicy = z.infer<typeof updateProtocolPolicySchema>;
+export interface ProtocolManagementState {
+    policy: ProtocolPolicy;
+    domainAccessEnabled: boolean;
+    protocols: {
+        protocol: ManagedProtocol;
+        installed: boolean;
+        enabled: boolean;
+        ready: boolean;
+        managedAdapters: number;
+        unmanagedAdapters: number;
+    }[];
+}
+export declare function initialProtocolPolicy(): ProtocolPolicy;
+/** Effects are classified by installed adapters, never by model-provided labels. */
+export declare function protocolDecision(policy: ProtocolPolicy, protocol: ManagedProtocol, domain: string, effect: ProtocolEffect, extraPermissions?: boolean): ProtocolDecision;
+
+// ===== protocol-policy.d.ts =====
+import { type HttpEffectEvidence, type ProtocolClassification, type ProtocolPolicy, type UpdateProtocolPolicy, type ManagedProtocol, type ProtocolEffect, type ProtocolDecision } from './protocol-policy-types.js';
+/** Additive settings file; no identity, key, grant, credential, or legacy connection is migrated. */
+export declare class ProtocolPolicyStore {
+    private readonly root;
+    constructor(stateRoot: string);
+    private safe;
+    private transaction;
+    read(assertActive: () => void): Promise<ProtocolPolicy>;
+    update(raw: UpdateProtocolPolicy, assertActive: () => void): Promise<ProtocolPolicy>;
+}
+/** Created only after an adapter validates its discovery graph. This is not a model tool API. */
+export interface ProtocolTargetEvidence {
+    discoveryOrigin: string;
+    destinations: readonly string[];
+}
+export interface ProtocolOperationEvidence {
+    url: string;
+    effect: ProtocolEffect;
+    extraPermissions?: boolean;
+}
+/** An opaque per-adapter handle; neither URLs nor caller identity can be supplied at use time. */
+export interface ProtocolTarget {
+    readonly protocolTarget: true;
+}
+export interface ProtocolAdmission {
+    readonly decision: ProtocolDecision;
+    readonly version: number;
+    /** Run after all DNS/token/body awaits and immediately before sending. Any policy edit invalidates this admission. */
+    assertActive(): Promise<void>;
+}
+export interface ProtocolPolicyClient {
+    /** Check existing identity-ledger refusals without creating or consuming a grant. */
+    assertNoDenial(request: Request): Promise<void>;
+    classifyHttp(input: HttpEffectEvidence): ProtocolClassification;
+    classifyMcp(annotations: unknown): ProtocolClassification;
+    classifyScopes(scopes: readonly string[]): ProtocolClassification;
+    register(evidence: ProtocolTargetEvidence): ProtocolTarget;
+    forget(target: ProtocolTarget): void;
+    evaluate(target: ProtocolTarget, input: ProtocolOperationEvidence): Promise<ProtocolAdmission>;
+}
+/** Permission never replaces existing destination, identity, consumer, account or credential guards. */
+export declare class ProtocolPolicyAuthority implements Omit<ProtocolPolicyClient, 'assertNoDenial'> {
+    private readonly store;
+    private readonly protocol;
+    private readonly assertCaller;
+    private readonly targets;
+    constructor(store: ProtocolPolicyStore, protocol: ManagedProtocol, assertCaller: () => void);
+    classifyHttp(input: HttpEffectEvidence): ProtocolClassification;
+    classifyMcp(annotations: unknown): ProtocolClassification;
+    classifyScopes(scopes: readonly string[]): ProtocolClassification;
+    register(evidence: ProtocolTargetEvidence): ProtocolTarget;
+    forget(target: ProtocolTarget): void;
+    evaluate(target: ProtocolTarget, input: ProtocolOperationEvidence): Promise<ProtocolAdmission>;
+}
+
+// ===== default-identity-types.d.ts =====
+/** Browser-safe preferences; selecting a row in the manager is not a default change. */
+import { z } from 'zod';
+export declare const identityReferenceSchema: z.ZodObject<{
+    storeId: z.ZodString;
+    identityId: z.ZodString;
+    did: z.ZodString;
+}, z.core.$strict>;
+export declare const defaultIdentitySettingsSchema: z.ZodObject<{
+    schema: z.ZodLiteral<1>;
+    version: z.ZodNumber;
+    identity: z.ZodNullable<z.ZodObject<{
+        storeId: z.ZodString;
+        identityId: z.ZodString;
+        did: z.ZodString;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
+export declare const updateDefaultIdentitySchema: z.ZodObject<{
+    expectedVersion: z.ZodNumber;
+    identity: z.ZodNullable<z.ZodObject<{
+        storeId: z.ZodString;
+        identityId: z.ZodString;
+        did: z.ZodString;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
+export type DefaultIdentitySettings = z.infer<typeof defaultIdentitySettingsSchema>;
+export type UpdateDefaultIdentity = z.infer<typeof updateDefaultIdentitySchema>;
+
+// ===== default-identity-settings.d.ts =====
+import { type DefaultIdentitySettings, type UpdateDefaultIdentity } from './default-identity-types.js';
+export declare class DefaultIdentitySettingsStore {
+    private readonly initialIdentity;
+    private readonly root;
+    constructor(stateRoot: string, initialIdentity?: DefaultIdentitySettings['identity']);
+    private transaction;
+    read(assertActive: () => void): Promise<DefaultIdentitySettings>;
+    update(raw: UpdateDefaultIdentity, assertActive: () => void): Promise<DefaultIdentitySettings>;
+}
+
+// ===== configuration-tools.d.ts =====
+/** Purpose-specific Agent settings tools; no manager, signing or lifecycle capability escapes. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { IdentityReference } from '@agent-network-protocol/anp-identity';
+import { type ProtocolManagementState, type UpdateProtocolPolicy, type ProtocolPolicy } from './protocol-policy-types.js';
+import type { DefaultIdentitySettings, UpdateDefaultIdentity } from './default-identity-types.js';
+import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js';
+export interface ConfigurationHandlers {
+    assertOwner(): void;
+    protocols(): Promise<ProtocolManagementState>;
+    setProtocols(input: UpdateProtocolPolicy, check: () => void): Promise<ProtocolPolicy>;
+    identity(): Promise<{
+        defaultIdentity: DefaultIdentitySettings;
+        registrationService: RegistrationServiceSettings;
+        identities: {
+            reference: IdentityReference;
+            state: string;
+        }[];
+    }>;
+    setDefault(input: UpdateDefaultIdentity, check: () => void): Promise<DefaultIdentitySettings>;
+    setRegistration(input: UpdateRegistrationServiceSettings, check: () => void): Promise<RegistrationServiceSettings>;
+}
+/** Only the actual installed owner manager registers these definitions. Mutations always ask the owner in-session. */
+export declare function registerConfigurationTools(ctx: Context, handlers: ConfigurationHandlers): void;

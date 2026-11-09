@@ -1,9 +1,17 @@
 import { RegistrationServiceSettingsStore } from './registration-service-settings.js'
+import { DefaultIdentitySettingsStore } from './default-identity-settings.js'
+import { updateDefaultIdentitySchema, type DefaultIdentitySettings, type UpdateDefaultIdentity } from './default-identity-types.js'
+import { ProtocolPolicyStore, ProtocolPolicyAuthority, type ProtocolPolicyClient } from './protocol-policy.js'
+import { protocolNames, type ManagedProtocol, type UpdateProtocolPolicy, type ProtocolManagementState } from './protocol-policy-types.js'
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js'
 import type { PapCallbackManagementOperations } from './pap-callback.js'
 import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
 import { installedConsumerEntries, resolveInstalledConsumer } from './installed-consumer.js'
 import { ProtocolIdentityAuthority } from './target-policy.js'
+import { DomainAccessResolver, type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js'
+import { publicHttps } from './public-http.js'
+import { AnpDomainReadAuthority, type AnpDomainReadClient } from './anp-domain.js'
+import { DomainOperationAuthority, type DomainOperationClient } from './domain-consent.js'
 import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js'
 import type { PapCallbackHostAuthority } from './target-policy.js'
 import { PapCallbackManagementError } from './pap-callback.js'
@@ -71,6 +79,11 @@ import type {
 } from './types.js'
 
 export type * from './types.js'
+export type { DomainAccessConfig, DomainProfile, DomainBinding } from './domain-access.js'
+export type { AnpReadEvidence, AnpDomainReadClient } from './anp-domain.js'
+export type { DomainOperationClient, DomainConsentCapabilities, DomainMachineIdentity } from './domain-consent.js'
+export type { ProtocolPolicyClient, ProtocolTarget, ProtocolAdmission, ProtocolTargetEvidence, ProtocolOperationEvidence } from './protocol-policy.js'
+export type { ManagedProtocol, ProtocolEffect, ProtocolDecision, ProtocolPolicy, ProtocolPolicyInput, UpdateProtocolPolicy, ProtocolManagementState, ProtocolClassification, HttpEffectEvidence } from './protocol-policy-types.js'
 export { AnpIdentityPluginError } from './errors.js'
 export type { AnpIdentityPluginErrorCode } from './errors.js'
 export {
@@ -108,11 +121,14 @@ export interface Config {
   readonly oauthAllowedAudiences?: Record<string, string[]>
   readonly userConsumers?: string[]
   readonly protocolPolicies?: ProtocolUsePolicy[]
+  /** Explicit global domain-access opt-in; no per-domain policies are created by the model. */
+  readonly domainAccess?: DomainAccessConfig
 }
 
 export const Config: z<Config> = z.object({
   signerMode: z.const('local').default('local'),
   protocolPolicies: z.array(z.any()).default([]),
+  domainAccess: z.any(),
   stateRoot: z.string(),
   allowConsumers: z.array(z.string()).default([]),
   allowProviderConsumers: z.array(z.string()).default([]),
@@ -223,12 +239,19 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   private readonly resolvedConfig: ResolvedConfig
   private readonly registrationSettings: RegistrationServiceSettingsStore
+  private readonly protocolSettings: ProtocolPolicyStore
+  private readonly defaultIdentitySettings: DefaultIdentitySettingsStore
+  private readonly protocolAdapters = new Map<Context, { protocol: ManagedProtocol; client: ProtocolPolicyClient }>()
   private readonly catalogStore: CatalogStore
   private providerSlot: ProviderSlot | undefined
   private readonly publications: PublicationCoordinator
   private readonly publicationBackends = new Map<string, PublicationBackend>()
   private readonly papCallbackAuthorities = new Map<string, { reference: IdentityReference; generation: symbol; authority: PapCallbackHostAuthority }>()
   private readonly protocols: ProtocolIdentityAuthority
+  private readonly domains: DomainAccessResolver
+  private readonly anpReads: AnpDomainReadAuthority
+  private readonly anpDomainMode: boolean
+  private readonly domainOperations: DomainOperationAuthority
   private readonly users: UserIdentityService
   private readonly hostContext: Context
   private readonly disabledFences = new Set<string>()
@@ -236,8 +259,11 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   public constructor(ctx: Context, config: Config) {
     super(ctx, 'anpIdentity')
+    this.anpDomainMode = config.domainAccess?.enabled === true
     this.resolvedConfig = resolveConfig(config)
     this.registrationSettings = new RegistrationServiceSettingsStore(this.resolvedConfig.stateRoot)
+    this.protocolSettings = new ProtocolPolicyStore(this.resolvedConfig.stateRoot)
+    this.defaultIdentitySettings = new DefaultIdentitySettingsStore(this.resolvedConfig.stateRoot, config.domainAccess?.identity ?? null)
     this.catalogStore = new CatalogStore(this.resolvedConfig.stateRoot)
     this.hostContext = ctx
     this.publications = new PublicationCoordinator(this.catalogStore, { withNative: operation => this.withPublicationNative(operation) })
@@ -246,14 +272,69 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       resolveCaller: context => this.resolveInstalledCaller(context),
       validateCaller: async caller => { this.assertInstalledCaller(caller) },
       resolveSnapshot: (caller, reference) => this.userSnapshot(caller, reference),
+      exactOperationCaller: caller => this.anpDomainMode && ['@agent-network-protocol/dsh-anp/plugin','@awiki/dsh-pap/plugin','@deepseek-ai/dsh-mcp-client/domain'].includes(caller.consumer),
       createIdentity: (id, caller, parameters) => this.createConfirmed(id, caller, parameters),
       reconcileCreation: (id, caller, parameters) => this.reconcileConfirmed(id, caller, parameters),
       withNative: operation => this.withUserNative(operation),
+      ...(config.domainAccess?.enabled ? { httpTransport: (request: Request, caller: VerifiedCaller, _assertActive: () => Promise<void>) => {
+        // Managed protocols must use their policy-aware execution boundary, never an old generic HTTP lease.
+        if(['@agent-network-protocol/dsh-anp/plugin','@awiki/dsh-pap/plugin','@deepseek-ai/dsh-mcp-client/domain'].includes(caller.consumer))throw pluginError('capability_forbidden')
+        return fetch(request)
+      } } : {}),
     }, this.publications)
     this.protocols = new ProtocolIdentityAuthority(structuredClone(config.protocolPolicies ?? []), {
       resolveCaller: context => this.resolveInstalledCaller(context), assertCaller: caller => this.assertInstalledCaller(caller),
       providerGeneration: () => this.requireSlot().id, withNative: operation => this.withProtocolNative(operation),
+      assertDomainPolicy: async (context, policy, profile) => {
+        if (!/^domain-[a-f0-9]{64}$/u.test(policy.id)) return
+        if (profile === 'pap_account') throw pluginError('capability_forbidden')
+        const caller = this.resolveInstalledCaller(context)
+        const current = await this.domains.resolve(caller.consumer, profile)
+        this.resolveInstalledCaller(context)
+        if (current.policyRef !== policy.id || current.identityRef.storeId !== policy.identity.storeId
+          || current.identityRef.identityId !== policy.identity.identityId || current.identityRef.did !== policy.identity.did) throw pluginError('capability_forbidden')
+      },
     }, this.publications)
+    this.domains = new DomainAccessResolver(config.domainAccess, this.resolvedConfig.stateRoot, async profile => {
+      const catalog = await this.loadCatalog(this.requireSlot())
+      const candidates: IdentityReference[] = []
+      for (const entry of catalog.entries) {
+        if (entry.state !== 'active' || entry.publication?.state !== 'published') continue
+        const caps = entry.publication.config.capabilities
+        if (profile === 'mcp_machine' && !caps?.mcpMachine || profile === 'pap_session' && !caps?.papSession) continue
+        const reference = entryReference(entry)
+        candidates.push(reference)
+      }
+      return candidates
+    }, policy => this.protocols.installDomainPolicy(policy), () => this.defaultIdentitySettings.read(() => { this.requireSlot() }))
+    this.anpReads = new AnpDomainReadAuthority({
+      assertCaller: context => {
+        const caller = this.resolveInstalledCaller(context)
+        if (caller.consumer !== '@agent-network-protocol/dsh-anp/plugin' || !this.anpDomainMode) throw pluginError('consumer_forbidden')
+        this.assertInstalledCaller(caller)
+      },
+      generation: () => this.requireSlot().id,
+      resolve: context => this.resolveDomainAccess(context, 'anp'),
+      withNative: operation => this.withUserNative(operation),
+      dispatch: publicHttps,
+      policy: context => this.bindProtocolPolicy(context,'anp'),
+      runApproved: (context,grantId,request,identity,effect)=>this.users.executeApprovedOperation(context,grantId,request,identity,effect),
+    })
+    this.domainOperations = new DomainOperationAuthority({
+      assertCaller: context => {
+        const caller = this.resolveInstalledCaller(context)
+        if (!this.anpDomainMode || !['@awiki/dsh-pap/plugin','@deepseek-ai/dsh-mcp-client/domain'].includes(caller.consumer)) throw pluginError('consumer_forbidden')
+        this.assertInstalledCaller(caller)
+        return caller.consumer
+      },
+      resolve: context => this.resolveDomainAccess(context,this.resolveInstalledCaller(context).consumer === '@awiki/dsh-pap/plugin' ? 'pap_session' : 'mcp_machine'),
+      user: context => this.users.bind(context),
+      run: (context,grantId,request,identity,effect) => this.users.executeApprovedOperation(context,grantId,request,identity,effect),
+      protocol: context => this.protocols.bind(context),
+      install: policy => this.protocols.installDomainPolicy(policy),
+      retire: id => this.protocols.removeDomainPolicy(id),
+      policy: context => this.bindProtocolPolicy(context,'mcp'),
+    })
     const observe = ctx.on.bind(ctx) as (name: string, listener: (...values: unknown[]) => void) => () => void
     observe('loader/partial-dispose', (rawEntry, rawPrevious, active) => {
       if (ctx.fiber.state > 2) return
@@ -883,6 +964,68 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
 
   bindProtocolConsumer(context: Context): ProtocolIdentityClient { return this.protocols.bind(context) }
 
+  /** Bind the installed ANP adapter to exact discovered reads under global Host permission. */
+  bindAnpDomainConsumer(context: Context): AnpDomainReadClient { return this.anpReads.bind(context) }
+
+  /** Bind exact, once-only owner confirmation for the installed PAP/MCP domain adapters. */
+  bindDomainOperationConsumer(context: Context): DomainOperationClient { return this.domainOperations.bind(context) }
+
+  /** Installed adapters classify discovered operations; ordinary tools cannot bind or edit owner settings. */
+  bindProtocolPolicy(context: Context, protocol: ManagedProtocol): ProtocolPolicyClient {
+    const allowed: Record<ManagedProtocol, readonly string[]> = {
+      anp: ['@agent-network-protocol/dsh-anp/plugin'], pap: ['@awiki/dsh-pap/plugin'],
+      mcp: ['@deepseek-ai/dsh-mcp-client/domain', '@deepseek-ai/dsh-mcp-client'],
+    }
+    const check = () => {
+      const caller = this.resolveInstalledCaller(context)
+      this.assertInstalledCaller(caller)
+      if (!this.anpDomainMode || !Object.hasOwn(allowed, protocol) || !allowed[protocol].includes(caller.consumer)) throw pluginError('consumer_forbidden')
+    }
+    check()
+    const previous = this.protocolAdapters.get(context)
+    if (previous) {
+      if (previous.protocol !== protocol) throw pluginError('consumer_forbidden')
+      return previous.client
+    }
+    const authority = new ProtocolPolicyAuthority(this.protocolSettings, protocol, check)
+    const client: ProtocolPolicyClient = Object.freeze({ register: authority.register.bind(authority), forget: authority.forget.bind(authority), evaluate: authority.evaluate.bind(authority),
+      classifyHttp: authority.classifyHttp.bind(authority), classifyMcp: authority.classifyMcp.bind(authority), classifyScopes: authority.classifyScopes.bind(authority),
+      assertNoDenial: async (request: Request) => {
+        check()
+        const profile = protocol === 'pap' ? 'pap_session' : protocol === 'mcp' ? 'mcp_machine' : 'anp'
+        const binding = await this.resolveDomainAccess(context, profile)
+        await this.users.assertOperationNotDenied(context, binding.identityRef, request)
+        check()
+      } })
+    this.protocolAdapters.set(context, { protocol, client })
+    context.effect(() => () => { this.protocolAdapters.delete(context) })
+    return client
+  }
+
+  /** Resolve a Host-approved default identity and global policy for an installed domain adapter.
+   * @param context - Actual Loader-owned adapter context.
+   * @param profile - Protocol to connect; PAP account access is intentionally excluded.
+   * @returns Non-secret identity, policy and local storage references.
+   */
+  async resolveDomainAccess(context: Context, profile: DomainProfile): Promise<DomainBinding> {
+    const caller = this.resolveInstalledCaller(context)
+    const generation = this.requireSlot().id
+    const binding = await this.domains.resolve(caller.consumer, profile)
+    await this.publications.requirePublished(binding.identityRef)
+    this.resolveInstalledCaller(context)
+    if (generation !== this.requireSlot().id) throw pluginError('provider_disposed')
+    return binding
+  }
+
+  /** Public discovery never signs or obtains a user identity.
+   * @param request - Public HTTPS request, pinned against private DNS destinations.
+   * @returns Unauthenticated response without redirect following.
+   */
+  publicDiscovery(request: Request): Promise<Response> {
+    if (request.method !== 'GET' || request.body || ['authorization', 'cookie', 'signature', 'signature-input'].some(header => request.headers.has(header))) throw pluginError('invalid_request')
+    return publicHttps(request)
+  }
+
   /** Bind the actual installed PAP Host. Private callback access additionally requires its current opaque target.
    * @param context - Original Loader-installed PAP plugin Context.
    * @returns Public identity selection and target-bound, closed callback operations.
@@ -984,8 +1127,52 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   registrationServiceSettings(context: Context): Promise<RegistrationServiceSettings> {
     return this.registrationSettings.read(() => this.assertManagementContext(context))
   }
-  configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings): Promise<RegistrationServiceSettings> {
-    return this.registrationSettings.update(input, () => this.assertManagementContext(context))
+  configureRegistrationService(context: Context, input: UpdateRegistrationServiceSettings, additionalCheck?: () => void): Promise<RegistrationServiceSettings> {
+    return this.registrationSettings.update(input, () => { additionalCheck?.(); this.assertManagementContext(context) })
+  }
+  /** The saved default is shared by all domain adapters, not the manager's selected display row. */
+  defaultIdentity(context: Context): Promise<DefaultIdentitySettings> {
+    return this.defaultIdentitySettings.read(() => this.assertManagementContext(context))
+  }
+  async configureDefaultIdentity(context: Context, raw: UpdateDefaultIdentity, additionalCheck?: () => void): Promise<DefaultIdentitySettings> {
+    const input = updateDefaultIdentitySchema.parse(raw)
+    const check = () => { additionalCheck?.(); this.assertManagementContext(context) }
+    check()
+    if (input.identity) {
+      const assertIdentity = await this.pinManagementContext(context, input.identity, check)
+      await this.publications.requirePublished(input.identity)
+      assertIdentity()
+      const identities = await this.acquireManagement(context, assertIdentity).listIdentities()
+      if (!identities.some(identity => identity.state === 'active' && identity.catalogState === 'active'
+        && identity.reference.storeId === input.identity!.storeId && identity.reference.identityId === input.identity!.identityId
+        && identity.reference.did === input.identity!.did)) throw new Error('published_identity_required')
+      assertIdentity()
+      return this.defaultIdentitySettings.update(input, assertIdentity)
+    }
+    return this.defaultIdentitySettings.update(input, check)
+  }
+  /** Owner-only settings. Binding a policy client never grants access to this mutation surface. */
+  async protocolManagement(context: Context): Promise<ProtocolManagementState> {
+    const check = () => this.assertManagementContext(context)
+    const policy = await this.protocolSettings.read(check)
+    const names: Record<ManagedProtocol, readonly string[]> = {
+      anp: ['@agent-network-protocol/dsh-anp/plugin'], pap: ['@awiki/dsh-pap/plugin'],
+      mcp: ['@deepseek-ai/dsh-mcp-client/domain', '@deepseek-ai/dsh-mcp-client'],
+    }
+    const entries = installedConsumerEntries(this.hostContext)
+    const protocols = protocolNames.map(protocol => {
+      const installed = entries.filter(entry => names[protocol].includes(entry.options.name))
+      const enabled = installed.filter(entry => !entry.disabled && entry.fiber && [1, 2].includes(entry.fiber.state))
+      const managedAdapters = enabled.filter(entry => [...this.protocolAdapters].some(([adapter, binding]) => binding.protocol === protocol && sameFiber(adapter.fiber, entry.fiber))).length
+      return { protocol, installed: installed.length > 0, enabled: enabled.length > 0,
+        ready: enabled.length > 0 && this.anpDomainMode && Boolean(this.providerSlot?.initialized && !this.providerSlot.disposed),
+        managedAdapters, unmanagedAdapters: enabled.length - managedAdapters }
+    })
+    check()
+    return { policy, domainAccessEnabled: this.anpDomainMode, protocols }
+  }
+  configureProtocolPolicy(context: Context, input: UpdateProtocolPolicy, additionalCheck?: () => void): Promise<import('./protocol-policy-types.js').ProtocolPolicy> {
+    return this.protocolSettings.update(input, () => { additionalCheck?.(); this.assertManagementContext(context) })
   }
   resolveRegistrationServiceOrigin(context: Context, key: string, fingerprint: string): Promise<string> {
     return this.registrationSettings.pin(key, fingerprint, () => this.assertManagementContext(context))
@@ -1095,14 +1282,26 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
           snapshots.some(item => sameReference(item.identity, identity.reference))
           || (snapshot !== undefined && request.identity !== undefined && sameReference(request.identity, identity.reference)))
         const allGrants = await this.users.engine.listGrants()
+        const operationPreview = this.users.operationPreview(request.id)
+        if (request.kind === 'access' && snapshot && ['anp-domain/1','domain-operation/1'].includes(snapshot.version) && request.status === 'pending' && !operationPreview) unavailableReason = 'Operation preview expired; cancel and request this exact operation again.'
         const grant = request.kind === 'access' ? allGrants.find(value => value.id === request.grantId) : undefined
         const permanentIdentities = allGrants.filter(grant => grant.caller.consumer === request.caller.consumer
           && grant.mode === 'permanent' && grant.status === 'active').map(grant => grant.identity)
-        return { request, identities, snapshots, permanentIdentities, ...(snapshot === undefined ? {} : { snapshot }),
+        return { request, identities, snapshots, permanentIdentities, ...(operationPreview ? {operationPreview} : {}), ...(snapshot === undefined ? {} : { snapshot }),
           ...(grant === undefined ? {} : { grant }),
           ...(unavailableReason === undefined ? {} : { unavailableReason }) }
       },
-      decide: async input => { await ready(); return this.users.engine.decide(input) },
+      decide: async input => {
+        await ready()
+        if (input.decision === 'approve') {
+          const request = (await this.users.engine.listRequests()).find(request=>request.id===input.requestId)
+          if (request?.kind === 'access' && request.identity) {
+            const snapshot = await this.userSnapshot(request.caller,request.identity)
+            if (['anp-domain/1','domain-operation/1'].includes(snapshot.version) && !this.users.operationPreview(request.id)) throw pluginError('capability_forbidden')
+          }
+        }
+        return this.users.engine.decide(input)
+      },
       reauthorize: async input => { await ready(); return this.users.engine.reauthorize(input.requestId, input.expectedVersion) },
       grants: async reference => { await ready(); return (await this.users.engine.listGrants(reference)).filter(grant => grant.status === 'active') },
       revoke: async input => { await ready(); await this.users.engine.revoke(input.grantId, input.expectedVersion) },
@@ -1269,6 +1468,18 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     const identity = await this.withUserNative(native => native.publicIdentity(reference))
     if (identity.state !== 'active' || !identity.capabilities.didWba) throw pluginError('provider_incompatible')
     const http = httpSigningKey(identity)
+    const operationProfile = caller.consumer === '@awiki/dsh-pap/plugin' ? 'pap_session' : caller.consumer === '@deepseek-ai/dsh-mcp-client/domain' ? 'mcp_machine' : undefined
+    if (this.anpDomainMode && operationProfile) {
+      const binding = await this.domains.resolve(caller.consumer, operationProfile)
+      if (!sameReference(reference,binding.identityRef)) throw pluginError('capability_forbidden')
+      return {version:'domain-operation/1',capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']}
+    }
+    if (this.anpDomainMode && caller.consumer === '@agent-network-protocol/dsh-anp/plugin') {
+      const binding = await this.domains.resolve(caller.consumer, 'anp')
+      if (!sameReference(reference, binding.identityRef)) throw pluginError('capability_forbidden')
+      return { version: 'anp-domain/1', capabilities: ['identity:read','identity:http-auth'], signingPurposes: [],
+        httpOrigins: [...(this.resolvedConfig.httpAllowedOrigins.get(caller.consumer) ?? ['*'])].sort() }
+    }
     if (http.httpOnly) return { version: 'ordinary-http/1', capabilities: ['identity:read', 'identity:http-auth'],
       signingPurposes: [], httpOrigins: [...(this.resolvedConfig.httpAllowedOrigins.get(caller.consumer) ?? [])].sort() }
     return { version: 'ordinary-use/1', capabilities: ['identity:read', 'identity:sign', 'identity:http-auth'],

@@ -336,3 +336,15 @@ Existing saved registrations and published identities keep their original DID
 and path; neither Handle mappings nor keys are rewritten. This change does not
 modify the Web profile branch or its server-side hosting requirements.
 Registration fields are displayed as Handle, DID, CIMD, then local reference.
+
+## Domain access and shared protocol policy
+
+Domain access is a one-time Host opt-in. Configure `domainAccess.enabled`, allow the actual installed adapters, and enable PAP/ANP `autoConnect` or the official MCP domain connector once. A single eligible published identity is selected automatically; multiple eligible identities require an explicit default. Identity/key custody and account authorization remain separate. Storage does not silently fall back from keyring to files.
+
+The plugin provides one **Protocol Management** page, with independent read/write modes and exact per-protocol domain whitelists. Policy-allowed operations execute without repeated dialogs; ask opens the exact-operation global dialog; deny prevents business dispatch. Unknown effects, declared payments and additional privileges still require individual confirmation. Settings do not expose generic signing, keys, account tokens or unrestricted model signing authority. Existing identity-ledger refusals remain enforced.
+
+See [Shared protocol management](PROTOCOL-MANAGEMENT.md) for schema/CAS persistence, classification, adapter boundaries, compatibility and current acceptance status, and [Domain consent](DOMAIN-CONSENT.md) for once-only grants. The matching Harness update is required for MCP; its source is not contained in the three npm plugins. MCP domain integration and the real two-site/three-protocol read/write matrix are verified in the local candidate. Use Identity 0.1.15 with PAP/ANP 0.1.4; MCP additionally requires Harness commit 194aaf492e or a compatible successor.
+
+## Agent settings access
+
+The owner manager exposes `protocol_permissions` and `identity_settings` through the owner manager. Query current settings and their versions first; persistent mutations show an exact in-session confirmation, use the same CAS backend as the pages, and retain DSH approval/change audit. No Settings navigation is needed. The default published identity is a persistent shared preference, distinct from the UI display selection. Lifecycle actions, OTPs, tokens, keys and generic signing are not accepted. See [Shared protocol management](PROTOCOL-MANAGEMENT.md#agent-configuration-tools-third-batch-candidate) for the tool contract and live/package acceptance requirements.

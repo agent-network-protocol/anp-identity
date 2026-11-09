@@ -1,6 +1,6 @@
 {
   "name": "@agent-network-protocol/dsh-anp-identity",
-  "version": "0.1.13",
+  "version": "0.1.15",
   "description": "ANP Identity management plugin for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -54,7 +54,9 @@
     "V7-MANAGEMENT.md",
     "PUBLICATION.md",
     "examples/**",
-    "LICENSE"
+    "LICENSE",
+    "DOMAIN-CONSENT.md",
+    "PROTOCOL-MANAGEMENT.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/build-client.mjs",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -29,6 +29,9 @@ import type {
   CapabilitySnapshot,
 } from "../src/authorization-types.js";
 import type { RegistrationBootstrapStatus } from '../src/registration-bootstrap.js';
+import { mountStyles } from '../src/client/styles.js';
+
+beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true); });
 
 const identity: ManagedIdentitySummary = {
   reference: {
@@ -196,7 +199,7 @@ function fixture(
       ),
   };
 }
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Identity management UI against Host-shaped Remote", () => {
   it('shows safe registration phases and references without claiming an automatic protocol permission grant', async () => {
@@ -832,6 +835,26 @@ it('shows published registration fields in Handle, DID, CIMD, local reference or
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });
 
+it('keeps the DID copy button in the same trailing column as other published fields', async () => {
+  const f=fixture(); const unmountStyles=mountStyles();
+  const copy=vi.spyOn(f.controller,'copy').mockResolvedValue(undefined);
+  try {
+    f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{
+      id:'published',requestId:'created',phase:'published',reference:identity.reference,
+      clientId:'https://example.com/work/client.json',
+    }]});
+    f.render(); await act(()=>f.controller.refresh());
+    const section=screen.getByRole('heading',{name:'协议身份注册'}).closest('[role="status"]')!;
+    const did=within(section as HTMLElement).getByRole('button',{name:'复制 DID'});
+    const cimd=within(section as HTMLElement).getByRole('button',{name:'复制 CIMD'});
+    expect(did.parentElement!.lastElementChild).toBe(did);
+    expect(getComputedStyle(did.parentElement!).gridTemplateColumns).toBe(getComputedStyle(cimd.parentElement!).gridTemplateColumns);
+    expect(getComputedStyle(did).gridColumn).toBe(getComputedStyle(cimd).gridColumn);
+    expect(getComputedStyle(did).gridRow).toBe(getComputedStyle(cimd).gridRow);
+    fireEvent.click(did); expect(copy).toHaveBeenLastCalledWith(identity.reference.did);
+  } finally { unmountStyles(); f.controller.dispose(); }
+});
+
 it.each([
   ['awaiting_approval',false], ['awaiting_email_verification',true],
   ['awaiting_phone_verification',true], ['registering',true], ['publishing',true],
@@ -871,4 +894,118 @@ it('turns an open registration dialog into completion, not another continuation,
   fireEvent.click(within(dialog).getByRole('button',{name:'完成'}));
   expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('button',{name:'继续注册'})).toBeNull();
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+
+it.each(['anp-domain/1','domain-operation/1'])('opens an exact %s approval dialog without settings and never offers permanent access', async version => {
+  const f=fixture([request('access','exact-anp')]);
+  const exact:CapabilitySnapshot={version,capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']};
+  const original=f.remote.getRequest.getMockImplementation()!;
+  f.remote.getRequest.mockImplementation(async id=>{const result=await original(id);return {ok:true,value:{...result.value,snapshot:exact,snapshots:[{identity:identity.reference,snapshot:exact}],operationPreview:{method:'GET',target:'https://api.example.com/profile',parameters:{query:'<script>not executable</script>',amount:12,currency:'USD'},bodyDigest:'a'.repeat(64)}}};});
+  render(<IdentityOverlay controller={f.controller}/>);
+  await act(()=>f.controller.refresh());
+  const dialog=screen.getByRole('dialog');
+  expect(screen.queryByRole('tablist',{name:'身份管理'})).toBeNull();
+  expect(within(dialog).getByText(/GET https:\/\/api.example.com\/profile/)).toBeTruthy();
+  expect(within(dialog).getByText('目标网站：https://api.example.com')).toBeTruthy();
+  expect(within(dialog).getByLabelText('参数摘要').textContent).toContain('<script>not executable</script>');
+  expect(dialog.querySelector('script')).toBeNull();
+  expect(within(dialog).getByText('a'.repeat(64))).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  expect(within(dialog).queryByRole('radio',{name:/永久授权/})).toBeNull();
+  expect(within(dialog).queryByText(FULL_PERMISSION_NOTICE)).toBeNull();
+  expect(within(dialog).getByText(/请求内容均已绑定/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button',{name:'允许本次操作'}));
+  await waitFor(()=>expect(f.remote.decide).toHaveBeenCalledWith(expect.objectContaining({mode:'once',requestId:'exact-anp',reviewedSnapshot:exact})));
+  f.controller.dispose();
+});
+it('does not let a background tab consume an approval prompt before the foreground page', async () => {
+  vi.mocked(document.hasFocus).mockReturnValue(false);
+  const f=fixture([request('access','foreground')]);f.render();
+  await act(()=>f.controller.refresh());expect(screen.queryByRole('dialog')).toBeNull();expect(f.remote.markPrompted).not.toHaveBeenCalled();
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  await act(()=>f.controller.refresh());expect(screen.getByRole('dialog')).toBeTruthy();expect(f.remote.markPrompted).toHaveBeenCalledOnce();
+  f.controller.dispose();
+});
+it('deferring one batch does not disable automatic dialogs for later authorization requests', async () => {
+  const f=fixture([request('access','first-batch')]);f.render();
+  await act(()=>f.controller.refresh());fireEvent.click(screen.getByRole('button',{name:'稍后'}));
+  await act(()=>f.controller.refresh());expect(screen.queryByRole('dialog')).toBeNull();
+  const next=request('access','new-operation');
+  f.remote.listRequests.mockResolvedValue({ok:true,value:[next]});
+  f.remote.getRequest.mockResolvedValue({ok:true,value:{request:next,identities:[identity],snapshot}});
+  await act(()=>f.controller.refresh());expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(f.remote.markPrompted).toHaveBeenLastCalledWith({requestId:'new-operation',expectedVersion:1});f.controller.dispose();
+});
+
+it('does not consume an automatic prompt when focus is lost during the review fetch', async () => {
+  const f=fixture([request('access','focus-during-fetch')]);f.render();
+  const original=f.remote.getRequest.getMockImplementation()!;
+  let entered!:()=>void, release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve), gate=new Promise<void>(resolve=>release=resolve);
+  f.remote.getRequest.mockImplementationOnce(async id=>{entered();await gate;return original(id);});
+  let refreshing!:Promise<void>;act(()=>{refreshing=f.controller.refresh();});await started;
+  vi.mocked(document.hasFocus).mockReturnValue(false);
+  await act(async()=>{release();await refreshing;});
+  expect(screen.queryByRole('dialog')).toBeNull();expect(f.remote.markPrompted).not.toHaveBeenCalled();
+  vi.mocked(document.hasFocus).mockReturnValue(true);await act(()=>f.controller.refresh());
+  expect(screen.getByRole('dialog')).toBeTruthy();expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('recovers an unseen automatic dialog after focus changes during markPrompted', async () => {
+  const f=fixture([request('access','focus-during-mark')]);f.render();
+  const original=f.remote.markPrompted.getMockImplementation()!;
+  let entered!:()=>void, release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  f.remote.markPrompted.mockImplementationOnce(async input=>{entered();await gate;return original(input);});
+  let refreshing!:Promise<void>;act(()=>{refreshing=f.controller.refresh();});await started;
+  vi.mocked(document.hasFocus).mockReturnValue(false);await act(async()=>{release();await refreshing;});
+  expect(screen.queryByRole('dialog')).toBeNull();
+  vi.mocked(document.hasFocus).mockReturnValue(true);await act(()=>f.controller.refresh());
+  expect(screen.getByRole('dialog')).toBeTruthy();expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('allows a foreground page to present a new pending request already marked by another tab', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  const next={...request('access','new-other-tab'),prompted:true};
+  f.remote.listRequests.mockResolvedValue({ok:true,value:[next]});
+  f.remote.getRequest.mockResolvedValue({ok:true,value:{request:next,identities:[identity],snapshot}});
+  await act(()=>f.controller.refresh());expect(screen.getByRole('dialog')).toBeTruthy();
+  act(()=>f.controller.closeModal(false));await act(()=>f.controller.refresh());
+  expect(screen.queryByRole('dialog')).toBeNull();expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('does not automatically reopen inherited already-prompted requests or consume a prompt after disposal', async () => {
+  const inherited={...request('access','inherited'),prompted:true};
+  const f=fixture([inherited]);f.render();await act(()=>f.controller.refresh());
+  expect(screen.queryByRole('dialog')).toBeNull();expect(f.remote.getRequest).not.toHaveBeenCalled();f.controller.dispose();
+  cleanup();
+  const g=fixture([request('access','disposed-fetch')]);g.render();
+  const original=g.remote.getRequest.getMockImplementation()!;
+  let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  g.remote.getRequest.mockImplementationOnce(async id=>{entered();await gate;return original(id);});
+  let refreshing!:Promise<void>;act(()=>{refreshing=g.controller.refresh();});await started;
+  g.controller.dispose();await act(async()=>{release();await refreshing;});
+  expect(g.remote.markPrompted).not.toHaveBeenCalled();expect(g.remote.decide).not.toHaveBeenCalled();
+});
+it('keeps exact approval disabled when the immutable operation preview is unavailable', async () => {
+  const f=fixture([request('access','missing-preview')]);
+  const exact:CapabilitySnapshot={version:'domain-operation/1',capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']};
+  const original=f.remote.getRequest.getMockImplementation()!;
+  f.remote.getRequest.mockImplementation(async id=>{const result=await original(id);return {ok:true,value:{...result.value,snapshot:exact,snapshots:[{identity:identity.reference,snapshot:exact}]}};});
+  render(<IdentityOverlay controller={f.controller}/>);await act(()=>f.controller.refresh());
+  const dialog=screen.getByRole('dialog');
+  expect(within(dialog).getByRole('button',{name:'允许本次操作'}).hasAttribute('disabled')).toBe(true);
+  expect(within(dialog).getByRole('alert').textContent).toContain('操作摘要不可用');
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+it('starts a foreground-triggered prompt queue once and removes its event handlers on disposal', async () => {
+  vi.mocked(document.hasFocus).mockReturnValue(false);
+  const f=fixture([request('access','focus-event')]);render(<IdentityOverlay controller={f.controller}/>);
+  try {
+    act(()=>{f.controller.start();f.controller.start();});
+    await waitFor(()=>expect(f.remote.listRequests).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    vi.mocked(document.hasFocus).mockReturnValue(true);fireEvent(window,new Event('focus'));
+    await screen.findByRole('dialog');const calls=f.remote.listRequests.mock.calls.length;
+    f.controller.dispose();fireEvent(window,new Event('focus'));
+    await new Promise(resolve=>setTimeout(resolve,0));expect(f.remote.listRequests).toHaveBeenCalledTimes(calls);
+  } finally { f.controller.dispose(); }
 });

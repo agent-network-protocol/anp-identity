@@ -25,5 +25,5 @@ const result = await build({
 });
 
 const forbidden = Object.keys(result.metafile.inputs).filter(path =>
-  /src\/(?:index|provider|registration-bootstrap|registration-onboarding|registration-service-settings|protocol-bootstrap|management-remote|agent-guidance)\.ts$/.test(path) || path.startsWith('node:'));
+  /src\/(?:index|provider|registration-bootstrap|registration-onboarding|registration-service-settings|default-identity-settings|configuration-tools|protocol-policy|protocol-bootstrap|management-remote|agent-guidance)\.ts$/.test(path) || path.startsWith('node:'));
 if (forbidden.length) throw new Error('Identity browser bundle includes a Host module');

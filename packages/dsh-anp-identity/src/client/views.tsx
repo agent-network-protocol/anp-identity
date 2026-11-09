@@ -36,6 +36,8 @@ const capabilityNames: Record<string, string> = {
   "identity:sign": "签名",
   "identity:http-auth": "网站认证",
 };
+const isExactSnapshot = (snapshot: CapabilitySnapshot | undefined): boolean =>
+  snapshot?.version === 'anp-domain/1' || snapshot?.version === 'domain-operation/1';
 function CopyRow({
   label,
   value,
@@ -68,6 +70,7 @@ function Scope({
 }: {
   snapshot?: CapabilitySnapshot | undefined;
 }): ReactNode {
+  if (isExactSnapshot(snapshot)) return <p className="anpi-small">仅授权当前请求的网站认证，不包含永久权限、通用签名或其他操作。</p>;
   return (
     <>
       <h3>全部使用权限</h3>
@@ -179,6 +182,38 @@ function RegistrationServiceForm({ controller, settings, pending }: {
   </div>;
 }
 
+function DefaultIdentityForm({ controller }: { controller: IdentityController }): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const settings = view.defaultIdentity;
+  const selected = settings?.identity ? identityKey(settings.identity) : 'automatic';
+  const [draft, setDraft] = useState(selected);
+  const [version, setVersion] = useState(settings?.version ?? 0);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (settings && !dirty) { setDraft(selected); setVersion(settings.version); } }, [selected, settings?.version, dirty]);
+  const candidates = view.identities.filter(identity => identity.state === 'active' && identity.catalogState === 'active');
+  const missing = draft !== 'automatic' && !candidates.some(identity => identityKey(identity.reference) === draft);
+  return <div className="anpi-section"><h3>默认公共身份</h3>
+    <p className="anpi-small">ANP、PAP、MCP 的域名访问共用此默认身份。下面身份列表的选中行仅用于查看，不会改变默认身份。只能保存本机已发布的身份；自动选择遇到多个候选时会要求明确选择。</p>
+    {view.defaultIdentityError && <p role="alert">{view.defaultIdentityError}</p>}
+    {settings && <form onSubmit={event => {
+      event.preventDefault();
+      const reference = candidates.find(identity => identityKey(identity.reference) === draft)?.reference;
+      if (draft !== 'automatic' && !reference) return;
+      void controller.configureDefaultIdentity({ identity: reference ?? null, expectedVersion: version }).then(saved => { if (saved) setDirty(false); });
+    }}>
+      <label>默认身份<select aria-label="默认身份" value={draft} disabled={view.defaultIdentitySaving}
+        onChange={event => { setDraft(event.target.value); setDirty(true); }}>
+        <option value="automatic">自动选择唯一的已发布身份</option>
+        {missing && <option value={draft}>已保存的身份不可用（不会自动替换）</option>}
+        {candidates.map(identity => <option key={identityKey(identity.reference)} value={identityKey(identity.reference)}>{identityLabel(identity)}</option>)}
+      </select></label>
+      {dirty && version !== settings.version && <p role="alert">配置已由其他页面或 Agent 修改。草稿已保留，请刷新配置后重新选择。</p>}
+      <div className="anpi-actions"><Button type="submit" disabled={!dirty || missing || view.defaultIdentitySaving || version !== settings.version}>保存默认身份</Button>
+        <Button type="button" disabled={view.defaultIdentitySaving} onClick={() => { setDirty(false); void controller.refreshDefaultIdentity(); }}>刷新默认身份</Button></div>
+    </form>}
+  </div>;
+}
+
 /** Shared owner-only registration progress for settings and the approval continuation. */
 function RegistrationProgress({ controller, bootstrap, approvalCompleted = false }: {
   controller: IdentityController; bootstrap: RegistrationBootstrapStatus; approvalCompleted?: boolean;
@@ -249,6 +284,7 @@ export function IdentitySettings({
         <p className="anpi-small">Agent 会打开创建入口；Handle、手机号/邮箱和验证码只在本页面填写。创建、验证、发布及第三方使用授权是不同步骤。</p>
       </div>
       {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
+      {(view.defaultIdentity || view.defaultIdentityError) && <DefaultIdentityForm controller={controller} />}
       {view.bootstraps.map(bootstrap => <div key={bootstrap.id}>
         {view.modal?.kind === 'registration-progress' && view.modal.requestId === bootstrap.requestId ? null :
           <RegistrationProgress controller={controller} bootstrap={bootstrap} />}
@@ -772,7 +808,9 @@ function IdentityModal({
     );
   } else if (modal.kind === "request") {
     const request = modal.review.request;
-    title = `允许${request.caller.displayName}${request.kind === "create" ? "创建" : "使用"}身份？`;
+    title = request.kind === 'access' && isExactSnapshot(modal.review.snapshot)
+      ? '确认本次操作'
+      : `允许${request.caller.displayName}${request.kind === "create" ? "创建" : "使用"}身份？`;
     content = (
       <>
         <p className="anpi-small">{request.caller.consumer}</p>
@@ -969,6 +1007,8 @@ function AccessForm({
     (request.identity && identityKey(request.identity) === key
       ? review.snapshot
       : undefined);
+  const exact = isExactSnapshot(snapshot);
+  const selectedMode = exact ? 'once' : mode;
   return (
     <>
       <label htmlFor="anpi-identity-choice">使用哪个身份</label>
@@ -991,6 +1031,17 @@ function AccessForm({
         ))}
       </select>
       {!identity && <p>没有兼容身份，请回到原插件申请创建身份。</p>}
+      {exact && request.operation?.httpOrigin && <p className="anpi-break">目标网站：{request.operation.httpOrigin}</p>}
+      {exact && review.operationPreview && <dl className="anpi-parameters" aria-label="本次操作范围">
+        <dt>请求方法</dt><dd>{review.operationPreview.method}</dd>
+        <dt>目标网址</dt><dd>{review.operationPreview.target}</dd>
+        {review.operationPreview.parameters !== undefined && <>
+          <dt>参数摘要</dt><dd><p className="anpi-small">敏感字段已隐藏；较长内容可能截断。此处仅供核对，不能修改请求。</p>
+            <pre className="anpi-document" aria-label="参数摘要">{JSON.stringify(review.operationPreview.parameters, null, 2)}</pre></dd>
+        </>}
+        <dt>请求内容 SHA-256</dt><dd><code className="anpi-break">{review.operationPreview.bodyDigest}</code></dd>
+      </dl>}
+      {exact && !review.operationPreview && <p role="alert">当前操作摘要不可用，暂不能批准。请从原任务重新发起操作。</p>}
       <fieldset>
         <legend>授权方式</legend>
         <div className="anpi-mode">
@@ -998,14 +1049,14 @@ function AccessForm({
             <input
               type="radio"
               name="anpi-mode"
-              checked={mode === "once"}
+              checked={selectedMode === "once"}
               onChange={() => {
                 setMode("once");
               }}
             />
             单次授权<small>仅本次操作有效</small>
           </label>
-          <label>
+          {!exact && <label>
             <input
               type="radio"
               name="anpi-mode"
@@ -1015,21 +1066,21 @@ function AccessForm({
               }}
             />
             永久授权<small>持续有效，直到你撤销</small>
-          </label>
+          </label>}
         </div>
       </fieldset>
-      {mode === "permanent" ? (
+      {selectedMode === "permanent" ? (
         <p className="anpi-operation">持续授权：可读取公开身份、签名，并请求下列全部网站，直到你撤销。不仅限于当前操作。</p>
       ) : request.operation ? (
         <p className="anpi-operation">本次操作：{request.operation.summary}</p>
       ) : (
-        mode === "once" && (
+        selectedMode === "once" && (
           <p role="alert">
             原插件未提供明确操作，暂不能批准单次授权，请原插件补齐。
           </p>
         )
       )}
-      {mode === "once" &&
+      {!exact && mode === "once" &&
         review.permanentIdentities?.some(
           (reference) => identityKey(reference) === key,
         ) && (
@@ -1040,7 +1091,10 @@ function AccessForm({
       {review.unavailableReason && (
         <p role="alert">{review.unavailableReason}</p>
       )}
-      <div className="anpi-access-scope">
+      {exact ? <div className="anpi-access-scope" role="note">
+        <p>仅允许上方这一次请求。请求方法、目标网址和请求内容均已绑定；未明确批准前不会执行操作。</p>
+        <p className="anpi-small">不会授予其他域名、其他请求、永久写入或通用签名权限。</p>
+      </div> : <div className="anpi-access-scope">
         <p className="anpi-small">{FULL_PERMISSION_NOTICE}</p>
         <p className="anpi-small">{snapshot?.capabilities.includes('identity:sign') ? '签名可在外部使用，不受网站列表限制。' : '仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。'}</p>
         <details>
@@ -1065,25 +1119,26 @@ function AccessForm({
         <p className="anpi-small anpi-break">
           网站：{snapshot?.httpOrigins.includes('*') ? '全部 HTTPS 域名（通配权限）' : snapshot?.httpOrigins.join("、") || "无"}
         </p>
-      </div>
+      </div>}
       <DecisionActions
         controller={controller}
         disabled={
           !identity ||
           !snapshot ||
           Boolean(review.unavailableReason) ||
-          (mode === "once" && !request.operation)
+          (exact && !review.operationPreview) ||
+          (selectedMode === "once" && !request.operation)
         }
         approve={() => {
           if (identity)
             void controller.decide({
               decision: "approve",
               identity: identityReference(identity),
-              mode,
+              mode: selectedMode,
               ...(snapshot ? { reviewedSnapshot: snapshot } : {}),
             });
         }}
-        label="允许授权"
+        label={exact ? '允许本次操作' : '允许授权'}
       />
     </>
   );

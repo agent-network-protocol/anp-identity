@@ -27,6 +27,8 @@ export interface ProtocolAuthorityHost {
   assertCaller(caller: VerifiedCaller): void
   providerGeneration(): unknown
   withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
+  /** Recheck durable default selection for Host-installed domain policies, including retained native leases. */
+  assertDomainPolicy?(context: Context, policy: ProtocolUsePolicy, profile: ValidatedTargetEvidence['profile']): Promise<void>
 }
 /** Private manager-owned driver and encrypted public transaction bindings. No credential value is returned. */
 export interface PapCallbackHostAuthority {
@@ -42,6 +44,15 @@ interface PapTarget {
 /** The trusted adapter validates public discovery; this authority enforces identity and permission policy. */
 export class ProtocolIdentityAuthority {
   private readonly targets = new WeakMap<object, PapTarget>()
+  private readonly domainPolicies = new Map<string, ProtocolUsePolicy>()
+  /** Called only by the Host's explicitly enabled domain resolver, never by a consumer facade. */
+  installDomainPolicy(policy: ProtocolUsePolicy): void {
+    if (this.policies.some(value => value.id === policy.id)) throw pluginError('invalid_request')
+    if (!this.domainPolicies.has(policy.id)) this.domainPolicies.set(policy.id, structuredClone(policy))
+  }
+  /** Retire a Host-owned temporary policy after its exact operation finishes. */
+  removeDomainPolicy(id: string): void { this.domainPolicies.delete(id) }
+  private allPolicies(): readonly ProtocolUsePolicy[] { return [...this.policies, ...this.domainPolicies.values()] }
   constructor(private readonly policies: readonly ProtocolUsePolicy[], private readonly host: ProtocolAuthorityHost,
     private readonly publications: PublicationCoordinator) {
     this.policies = structuredClone(policies)
@@ -57,11 +68,11 @@ export class ProtocolIdentityAuthority {
   }
   bind(context: Context): ProtocolIdentityClient {
     const caller = this.host.resolveCaller(context)
-    if (!this.policies.some(policy => policy.consumer === caller.consumer)) throw pluginError('consumer_forbidden')
+    if (!this.allPolicies().some(policy => policy.consumer === caller.consumer)) throw pluginError('consumer_forbidden')
     const contextGeneration = this.host.providerGeneration()
     return Object.freeze<ProtocolIdentityClient>({ registerValidatedTarget: async input => {
       const evidence = structuredClone(input.discovery)
-      const policy = this.policies.find(value => value.id === input.policyRef && value.consumer === caller.consumer && same(value.identity, input.identityRef))
+      const policy = this.allPolicies().find(value => value.id === input.policyRef && value.consumer === caller.consumer && same(value.identity, input.identityRef))
       const checkCaller = () => {
         const current = this.host.resolveCaller(context)
         if (current.consumer !== caller.consumer || this.host.providerGeneration() !== contextGeneration) throw pluginError('provider_disposed')
@@ -72,6 +83,7 @@ export class ProtocolIdentityAuthority {
       if (!policy || Date.now() >= policy.expiresAt || !policy.profiles.includes(evidence.profile)
         || (!policy.publicTargets && (!policy.issuers.includes(evidence.issuer) || !policy.resources.includes(evidence.resource)))
         || input.requestedScopes.some(scope => !policy.scopes.includes(scope))) throw pluginError('capability_forbidden')
+      const dynamic = this.domainPolicies.get(policy.id) === policy
       let disposed = false
       let publicationVersion: number | undefined
       let publicationKid: string | undefined
@@ -80,9 +92,12 @@ export class ProtocolIdentityAuthority {
       const keys = new WeakMap<object, { scopeRef: object; native: NativeKey }>()
       const checkCurrent = () => {
         checkCaller()
-        if (disposed || Date.now() >= policy.expiresAt || Date.now() >= evidence.expiresAt) throw pluginError('capability_forbidden')
+        if (disposed || Date.now() >= policy.expiresAt || Date.now() >= evidence.expiresAt
+          || dynamic && this.domainPolicies.get(policy.id) !== policy) throw pluginError('capability_forbidden')
       }
       const check = async () => {
+        checkCurrent()
+        if (dynamic) await this.host.assertDomainPolicy?.(context, policy, evidence.profile)
         checkCurrent()
         const record = await this.publications.requirePublished(input.identityRef)
         checkCurrent()
@@ -202,11 +217,16 @@ export class ProtocolIdentityAuthority {
       const current = this.host.resolveCaller(context)
       if (disposed || current.consumer !== caller.consumer || this.host.providerGeneration() !== generation) throw pluginError('provider_disposed')
       this.host.assertCaller(current)
-      if ([...selectedPolicies].some(policy => Date.now() >= policy.expiresAt)) throw pluginError('capability_forbidden')
+      if ([...selectedPolicies].some(policy => Date.now() >= policy.expiresAt
+        || !this.policies.includes(policy) && this.domainPolicies.get(policy.id) !== policy)) throw pluginError('capability_forbidden')
     }
-    const assertActive = async () => { checkActive() }
+    const assertActive = async () => {
+      checkActive()
+      for (const policy of selectedPolicies) if (!this.policies.includes(policy)) await this.host.assertDomainPolicy?.(context, policy, 'pap_session')
+      checkActive()
+    }
     const policyFor = (identity: IdentityReference, policyRef: string, profile: 'pap_session' | 'pap_account') => {
-      const policy = this.policies.find(value => value.id === policyRef && value.consumer === caller.consumer && same(value.identity, identity))
+      const policy = this.allPolicies().find(value => value.id === policyRef && value.consumer === caller.consumer && same(value.identity, identity))
       if (!policy || !policy.profiles.includes(profile) || Date.now() >= policy.expiresAt) throw pluginError('capability_forbidden')
       selectedPolicies.add(policy); return policy
     }
@@ -230,7 +250,7 @@ export class ProtocolIdentityAuthority {
         await this.host.withNative(async native => { checkActive(); await native.publicIdentity(identity); checkActive() })
         checkActive()
         const current = await publishedFor(identity, profile)
-        checkActive()
+        await assertActive()
         if (record.version !== current.version || record.key.kid !== current.key.kid) throw pluginError('capability_forbidden')
         const redirectUri = profile === 'pap_account' ? relay(current) : undefined
         return { binding: { identityRef: structuredClone(identity), ownerRef: policy.owner, clientId: current.clientId },

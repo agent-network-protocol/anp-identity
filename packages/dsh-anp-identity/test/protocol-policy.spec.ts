@@ -125,3 +125,14 @@ describe('protocol target policies', () => {
 })
 
 it('rejects an explicitly configured remote signer', () => { expect(() => Config({ signerMode: 'remote' } as never)).toThrow() })
+
+it('removing a Host temporary policy invalidates a retained native lease, not only future registrations', async () => {
+  const f = fixture()
+  const temporary = { ...f.policy, id: 'domain-once-test' }
+  f.authority.installDomainPolicy(temporary)
+  const lease = await f.client.registerValidatedTarget({ identityRef: identity, policyRef: temporary.id, discovery: evidence, requestedScopes: ['agent.self.read'] })
+  await lease.assertActive()
+  f.authority.removeDomainPolicy(temporary.id)
+  await expect(lease.signOAuthClientAssertion(lease.targetRef)).rejects.toThrow()
+  expect(f.sign).not.toHaveBeenCalled()
+})

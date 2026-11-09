@@ -1,4 +1,6 @@
 import { registrationInputSchema } from './registration-onboarding-types.js';
+import { updateProtocolPolicySchema } from './protocol-policy-types.js';
+import { updateDefaultIdentitySchema } from './default-identity-types.js';
 import { PublicationConfigSchema } from './publication-types.js';
 /** Explicit browser-safe Typert method contract for the optional manager. */
 import { z } from "zod";
@@ -37,6 +39,10 @@ const decision = version
   })
   .strict();
 const methods = [
+  ["protocolManagement", undefined],
+  ["configureProtocolPolicy", updateProtocolPolicySchema],
+  ["defaultIdentity", undefined],
+  ["configureDefaultIdentity", updateDefaultIdentitySchema],
   ["registrationBootstrapStatus", undefined],
   ["registrationOnboardingStatus", undefined],
   ["dismissRegistrationRequest", undefined],

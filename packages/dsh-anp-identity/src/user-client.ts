@@ -29,6 +29,8 @@ export interface AuthorizedIdentity {
 }
 
 export interface UserIdentityClient {
+  /** Reuse only an active permanent grant already covering this exact caller, identity and operation. */
+  findAccessGrant?(input: { identity: IdentityReference; operation: UserOperation }): Promise<string | undefined>
   requestCreateIdentity(input: RequestCreateInput): Promise<AuthorizationRequest>
   getCreateRequest(requestId: string): Promise<AuthorizationRequest>
   cancelCreateRequest(requestId: string, expectedVersion: number): Promise<AuthorizationRequest>
