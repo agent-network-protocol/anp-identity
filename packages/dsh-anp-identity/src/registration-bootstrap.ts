@@ -19,6 +19,7 @@ import { PROTOCOL_BOOTSTRAP_CONSUMER } from './protocol-bootstrap.js'
 import { syncDirectory } from './sync-directory.js'
 import { identityClientVersionHeader } from './client-metadata.js'
 import { hasPublicPosixPermissions } from './private-file-mode.js'
+import type { RegistrationInspection } from './management-driver.js'
 
 export const RegistrationBootstrapConfigSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
@@ -63,6 +64,7 @@ export interface RegistrationBootstrapStatus {
   reason?: RegistrationBootstrapReason
   reference?: IdentityReference
   clientId?: string
+  registrationCheck?: RegistrationInspection
 }
 export interface RegistrationBootstrapController {
   submitOtp(code: string): void
@@ -131,6 +133,7 @@ export function startRegistrationBootstrap(options: {
   let backend: Awaited<ReturnType<AnpIdentityService['configureManagedPublicationBackend']>> | undefined
   let retryPhoneChallenge = options.retryPhoneChallenge === true
   let otpCode: string | undefined
+  let registrationInspected = false
   const assertManagerActive = () => {
     controller.signal.throwIfAborted()
     // This assertion retains the real manager Loader identity; it never accepts a caller string.
@@ -302,7 +305,18 @@ export function startRegistrationBootstrap(options: {
         await save(state)
       }
       if (!state.registered) {
-        if (state.registerStarted) { update('registration_uncertain'); return }
+        if (state.registerStarted) {
+          if (!registrationInspected) {
+            registrationInspected = true
+            try {
+              view.registrationCheck = await options.service.inspectLocalRegistration(options.context, {
+                reference, origin: config.origin, fetch: send, assertActive,
+              })
+              assertActive()
+            } catch { view.registrationCheck = { outcome: 'unavailable' } }
+          }
+          update('registration_uncertain'); return
+        }
         if (config.phone) {
           if (!state.phoneAttempted) {
             state.phoneAttempted = true; await save(state)

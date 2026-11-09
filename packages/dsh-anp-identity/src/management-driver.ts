@@ -19,6 +19,13 @@ export interface DeviceManagementCredential {
   audience?: string
   operationBindings?: Record<string, Record<string, unknown>>
 }
+/** Closed read-only evidence; never a registration receipt or a recovery authorization. */
+export interface RegistrationInspection {
+  outcome: 'verified' | 'rejected' | 'incompatible' | 'unavailable'
+  httpStatus?: number
+  rpcCode?: number
+  nativeCode?: 'capability_denied' | 'provider_unavailable' | 'provider_disposed' | 'catalog_conflict'
+}
 /** The implementation must encrypt secrets at rest and partition by exact identity and service origin. */
 export interface ManagementCredentialBroker {
   get(reference: IdentityReference, origin: string): Promise<DeviceManagementCredential | undefined>
@@ -34,6 +41,52 @@ async function signedRequest(request: Request, input: {
   return input.withNative(native => createAuthenticatedHttp(input.reference, native,
     new Set([input.origin]), input.assertActive, async () => input.signingKeyId,
   ).dispatch(request, input.transport))
+}
+
+/** Inspect only the current registered device. Never register, adopt a document or save credentials. */
+export async function inspectRegisteredDevice(input: {
+  reference: IdentityReference; origin: string
+  withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
+  fetch?: typeof fetch
+  assertActive: () => void
+}): Promise<RegistrationInspection> {
+  try {
+    input.assertActive()
+    const origin = exactHttps(input.origin)
+    if (new URL(origin).origin !== origin) return { outcome: 'incompatible' }
+    const identity = await input.withNative(native => native.publicIdentity(input.reference))
+    input.assertActive()
+    const keys = identity.activeKeys.filter(key => key.purposes.includes('device_assertion'))
+    if (keys.length !== 1) return { outcome: 'incompatible' }
+    const response = await signedRequest(new Request(origin + '/user-service/v1/did-auth/rpc', {
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method: 'device_registry_get', params: {} }),
+    }), { ...input, origin, signingKeyId: keys[0]!.kid, transport: input.fetch ?? fetch,
+      assertActive: async () => { input.assertActive() } })
+    input.assertActive()
+    const httpStatus = response.status
+    if (httpStatus !== 200 || response.redirected || !(response.headers.get('content-type') ?? '').startsWith('application/json')) {
+      await response.body?.cancel()
+      return { outcome: 'rejected', httpStatus }
+    }
+    const bytes = await response.text()
+    input.assertActive()
+    if (Buffer.byteLength(bytes) > 32768) return { outcome: 'incompatible', httpStatus }
+    const envelope = parsePublicJson(bytes) as { result?: Registry; error?: { code?: unknown } }
+    if (envelope.error) return { outcome: 'rejected', httpStatus,
+      ...(typeof envelope.error.code === 'number' && Number.isSafeInteger(envelope.error.code) ? { rpcCode: envelope.error.code } : {}) }
+    const registry = envelope.result
+    const device = Array.isArray(registry?.devices) ? registry.devices.find(device => device.signing_key_id === keys[0]!.kid) : undefined
+    if (registry?.did !== input.reference.did || !device || device.status !== 'active' || device.role !== 'admin' || !device.management_ready
+      || !Number.isSafeInteger(registry.checkpoint?.document_version) || !Number.isSafeInteger(registry.checkpoint.registry_version)
+      || !/^sha256:[A-Za-z0-9_-]{43}$/u.test(registry.checkpoint.document_hash)) return { outcome: 'incompatible', httpStatus }
+    return { outcome: 'verified', httpStatus }
+  } catch (error) {
+    const code = (error as { code?: unknown }).code
+    return { outcome: 'unavailable', ...(['capability_denied', 'provider_unavailable', 'provider_disposed', 'catalog_conflict'].includes(String(code))
+      ? { nativeCode: code as NonNullable<RegistrationInspection['nativeCode']> } : {}) }
+  }
 }
 
 interface Checkpoint { document_version: number; document_hash: string; registry_version: number }

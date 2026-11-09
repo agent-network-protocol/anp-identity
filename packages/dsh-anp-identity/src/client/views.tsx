@@ -241,6 +241,11 @@ function RegistrationProgress({ controller, bootstrap, approvalCompleted = false
         <p>{({ awaiting_approval: approvalCompleted ? '创建已批准，正在准备验证' : '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
           publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
         {bootstrap.reason && <p className="anpi-small" role="alert">{registrationReasonText[bootstrap.reason] ?? '注册流程暂不可用，请核对错误代码。'} 错误代码：<code>{bootstrap.reason}</code></p>}
+        {bootstrap.registrationCheck && <p className="anpi-small" role="status">设备清单只读核对：<code>{bootstrap.registrationCheck.outcome}</code>
+          {bootstrap.registrationCheck.httpStatus !== undefined && <>；HTTP {bootstrap.registrationCheck.httpStatus}</>}
+          {bootstrap.registrationCheck.rpcCode !== undefined && <>；RPC {bootstrap.registrationCheck.rpcCode}</>}
+          {bootstrap.registrationCheck.nativeCode && <>；{bootstrap.registrationCheck.nativeCode}</>}
+          。核对不会重发注册或自动标记成功。</p>}
         {bootstrap.phase === 'awaiting_approval' && <div>
           {!approvalCompleted && view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
             <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>

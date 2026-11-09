@@ -5,7 +5,7 @@ import { ProtocolPolicyStore, ProtocolPolicyAuthority, type ProtocolPolicyClient
 import { protocolNames, type ManagedProtocol, type UpdateProtocolPolicy, type ProtocolManagementState } from './protocol-policy-types.js'
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js'
 import type { PapCallbackManagementOperations } from './pap-callback.js'
-import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
+import { createManagedPublicationDriver, registerLocalIdentity, inspectRegisteredDevice, type RegistrationInspection, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
 import { installedConsumerEntries, resolveInstalledConsumer } from './installed-consumer.js'
 import { ProtocolIdentityAuthority } from './target-policy.js'
 import { DomainAccessResolver, type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js'
@@ -1115,6 +1115,19 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     } })
     assertActive()
     return result
+  }
+
+  /** Read-only diagnosis for the pinned owner registration; this cannot finalize or replay it. */
+  async inspectLocalRegistration(context: Context, input: {
+    reference: IdentityReference; origin: string; fetch?: typeof fetch; assertActive?: () => void
+  }): Promise<RegistrationInspection> {
+    const assertActive = await this.pinManagementContext(context, input.reference, input.assertActive)
+    const result = await inspectRegisteredDevice({ ...input, assertActive, withNative: async operation => {
+      assertActive()
+      const value = await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(operation)
+      assertActive(); return value
+    } })
+    assertActive(); return result
   }
 
   /** Private owner storage path, never exposed through a Remote or model tool. */

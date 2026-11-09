@@ -1,6 +1,6 @@
 # Windows registration recovery verification
 
-Run date: 2026-11-09. This records client regressions and acceptance gates; it is
+Run dates: 2026-11-09 through 2026-11-10 (Asia/Shanghai). This records client regressions and acceptance gates; it is
 not a declaration that a public identity or three-protocol business flow passed.
 
 ## Observed defects and changes
@@ -22,13 +22,20 @@ not a declaration that a public identity or three-protocol business flow passed.
   storage failure and deleted identity, without credential/provider details.
 - The service-settings test retains persistence/CAS coverage on Windows and
   restricts only its POSIX permission assertions to POSIX platforms.
+- An uncertain flow now performs at most one signed, read-only device Registry
+  check per controller. It exposes only closed outcomes and numeric HTTP/RPC
+  status. It never registers, saves credentials, adopts a document, or changes
+  the uncertain result to success. The existing manager/provider fence remains
+  authoritative; ordinary contexts cannot acquire this inspection.
 
 ## Validation
 
 Windows, Node 22.22.3: build, API snapshot/type checks, and generated-artifact
 checks passed. After restoring the ignored native binding from the exact
 published Windows dependency (version 0.2.6, verified SHA-256), the complete
-plugin tests passed: 39 files passed, 11 skipped; 354 tests passed, 19 skipped.
+plugin tests initially passed with 354 tests. After the read-only inspection
+change, the final complete run passed: 40 files passed, 11 skipped; 362 tests
+passed, 19 skipped.
 The skipped Linux/live tests are not product acceptance evidence. Initial
 missing-binding errors and the Windows-only mode assertion failure were retained
 in the local run record rather than treated as product defects.
@@ -47,16 +54,33 @@ The new registration preference was confirmed in the actual owner page as
 JSON-RPC invalid-request probes confirm reachability only; registration/account
 compatibility still requires a successful dedicated test registration.
 
-Publication, Handle/DID/CIMD verification, and authenticated ANP/MCP/PAP business
-reads remain gated on owner verification. No OTP or account details are collected
-in chat, and no repeated registration request is issued to guess an outcome.
+The verified 0.1.16 candidate resumed the same approved request and reached SMS
+verification. After owner OTP submission, the public DID endpoint returned 200
+with the matching DID, but the local journal retained registerStarted=true and
+registered=false, with no stored management credential ciphertext. Desktop still
+reported registration_uncertain and not published. CIMD and authenticated
+ANP/MCP/PAP business reads remain blocked. No OTP or account details were
+collected in chat, and no repeated registration request was issued.
+
+The real Desktop candidate's signed device_registry_get inspection returned
+HTTP 401. An anonymous read-only baseline also returned 401 / JSON-RPC -32000;
+its error mentioned Bearer, Token and Authorization. The client contract uses
+HTTP Message Signatures without Bearer fallback. An independent
+@awiki/anp-typescript-sdk 0.9.4 verifier accepted the equivalent native 0.2.6
+signature from a generated isolated identity. This suggests deployed server
+authentication-contract incompatibility, but server traces are still needed for
+final attribution. Public DID availability alone is not a registration receipt.
 
 ANP source regressions: 14 passed. PAP related Windows regressions: 49 passed
 after test portability fixes and a test-process OpenSSL PATH adjustment. Shared
 MCP domain/once/consent regressions: 37 passed on Node 24.21.0; its candidate
-package compiled and bundled. The released Desktop MCP package lacks the fork's
-domain entry, so its presence must be verified after actual candidate loading.
-These source checks are separate from Desktop business acceptance.
+package compiled and bundled. The complete matching source Host built through
+all eight artifact gates and ran on Windows. Actual Loader state and tool registry
+confirmed the domain entry and all four tool families; the real module path and
+hash were recorded. No business tool was invoked. Directly overlaying the fork
+package onto the released Desktop had earlier caused duplicate registrations;
+the failed package tree/lock were retained and the Desktop dependency layout was
+restored. These source Host checks are separate from Desktop business acceptance.
 
 The existing isolated Service Agent was restarted with its dedicated PostgreSQL
 container. Certificate-verified local readiness and public metadata returned 200;
@@ -74,7 +98,11 @@ must remain explicitly blocked or unexecuted in the final report.
 
 Windows ACL security is separate from POSIX mode bits; this patch does not audit
 or repair arbitrary directory ACLs. Recovery depends on trusted ledger evidence
-and cannot recover an initialized or uncertain remote operation. The fresh
-Desktop candidate still needs product validation; unit results do not replace it.
+and cannot recover an initialized or uncertain remote operation. Local recovery
+and diagnostic changes were verified in the actual Desktop candidate; real
+publication and downstream business validation remain blocked by the 401.
 The referenced shared awiki-harness rule checkout was absent, so local source,
 tests and repository instructions were used.
+
+The [Chinese acceptance report](windows-acceptance-20261109.zh-CN.md) records the
+step-by-step outcomes, preserved failures, attribution limits and server handoff.
