@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { IdentityProvider } from '../../../../bindings/node/provider.js'
-import AnpIdentityService from '../../src/index.js'
+import AnpIdentityService, {type Config} from '../../src/index.js'
 import { CatalogStore } from '../../src/catalog.js'
 import { publicationProfile, type PublicationBackend, type PreparedClientMaterials, type PublicationCapabilities } from '../../src/publication-types.js'
 import type { NativeProviderRegistry } from '../../src/provider-api.js'
@@ -26,6 +26,7 @@ interface FixtureConsumer {
 export async function createNativeProtocolFixture(options: {
   redirectUris?: string[]; publicationOrigin?: string; publicationCapabilities?: PublicationCapabilities; consumer?: string; profiles?: ProtocolUsePolicy['profiles']; scopes?: string[]; issuers?: string[]; resources?: string[]
   additionalConsumers?: FixtureConsumer[]
+  domainAccess?: Config["domainAccess"]
   httpAllowedOrigins?: Record<string, string[]>
 } = {}) {
   const consumer = options.consumer ?? '@fixture/pap-consumer'
@@ -50,7 +51,7 @@ export async function createNativeProtocolFixture(options: {
     failureContext = ctx
     const entries: Array<{ options: { name: string }; disabled: boolean; fiber: Context['fiber'] }> = []
     ctx.provide('loader', { *entries() { yield* entries } })
-    await ctx.plugin(AnpIdentityService, { stateRoot: root, allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer),
+    await ctx.plugin(AnpIdentityService, { stateRoot: root, ...(options.domainAccess ? {domainAccess:options.domainAccess} : {}), allowConsumers: consumers.map(item => item.consumer), userConsumers: consumers.map(item => item.consumer),
       ...(options.httpAllowedOrigins === undefined ? {} : { httpAllowedOrigins: options.httpAllowedOrigins }),
       protocolPolicies: consumers.map(item => ({ id: item.policyRef, version: 1, consumer: item.consumer, owner: '@agent-network-protocol/dsh-anp-identity', identity: identity.reference,
         profiles: item.profiles ?? ['pap_session', 'pap_account', 'mcp_machine'], issuers: item.issuers ?? ['https://company.example'],
@@ -103,7 +104,7 @@ export async function createNativeProtocolFixture(options: {
     return { get publicMaterials() { return { metadata: row!.metadata!, jwks: row!.jwks! } },
       getConsumer(name: string) { const installed = installedConsumers.get(name); if (!installed) throw new Error('fixture_unknown_consumer'); return installed },
       async publicDocument() { const read = provider.acquireLease({ consumer: 'fixture-public-read', capabilities: ['IDENTITY_READ'], ttlSeconds: 60 }); try { return (await read.publicIdentity(identity.reference)).document } finally { read.dispose() } },
-      root, client, reference: identity.reference, policyRef: 'fixture-policy', provider, context: consumerContext,
+      root, service, client, reference: identity.reference, policyRef: 'fixture-policy', provider, context: consumerContext,
       management: managerService.acquireManagement(managerContext),
       async dispose() { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) } }
   } catch (error) {

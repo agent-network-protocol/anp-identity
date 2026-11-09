@@ -106,7 +106,12 @@ export class IdentityController {
   private refreshing = false;
   private requestReviewEpoch = 0;
   private disposed = false;
-  private pauseQueue = false;
+  private readonly deferredRequests = new Set<string>();
+  private readonly staleRequestIds = new Set<string>();
+  private readonly presentedRequests = new Set<string>();
+  private readonly inheritedPromptedRequests = new Set<string>();
+  private requestsInitialized = false;
+  private readonly onForeground = () => { void this.refresh(); };
   private selectionVersion = 0;
   private openedOnboardingIntent: string | undefined;
   private returnFocus: HTMLElement | null = null;
@@ -136,6 +141,9 @@ export class IdentityController {
     return result.value as Awaited<ReturnType<IdentityManagement[K]>>;
   }
   start(): void {
+    if (this.timer || this.disposed) return;
+    if (typeof window !== 'undefined') window.addEventListener('focus', this.onForeground);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onForeground);
     void this.refresh();
     this.timer = setInterval(() => {
       void this.refresh();
@@ -144,6 +152,8 @@ export class IdentityController {
   dispose(): void {
     this.disposed = true;
     clearInterval(this.timer);
+    if (typeof window !== 'undefined') window.removeEventListener('focus', this.onForeground);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onForeground);
     this.listeners.clear();
   }
   async refresh(): Promise<void> {
@@ -162,6 +172,17 @@ export class IdentityController {
       if (onboardingResult && !onboardingResult.ok) throw new Error('Unable to read identity onboarding status');
       if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
       if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
+      const pendingRequests = requests.filter(request => request.status === 'pending');
+      const pendingKeys = new Set(pendingRequests.map(request => `${request.id}:${request.version}`));
+      const pendingIds = new Set(pendingRequests.map(request => request.id));
+      for (const entries of [this.deferredRequests, this.presentedRequests, this.inheritedPromptedRequests]) {
+        for (const key of entries) if (!pendingKeys.has(key)) entries.delete(key);
+      }
+      for (const id of this.staleRequestIds) if (!pendingIds.has(id)) this.staleRequestIds.delete(id);
+      if (!this.requestsInitialized) {
+        for (const request of pendingRequests) if (request.prompted) this.inheritedPromptedRequests.add(`${request.id}:${request.version}`);
+        this.requestsInitialized = true;
+      }
       const selectedKey = identities.some(
         (i) => identityKey(identityReference(i)) === this.view.selectedKey,
       )
@@ -176,9 +197,7 @@ export class IdentityController {
         onboarding: onboardingResult?.ok ? onboardingResult.value : null,
         bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
-        requests: requests
-          .filter((r) => r.status === "pending")
-          .sort((a, b) => b.createdAt - a.createdAt),
+        requests: pendingRequests.sort((a, b) => b.createdAt - a.createdAt),
         selectedKey,
         ...(changed ? { publication: null, grants: [], document: null, documentOpen: false } : {}),
       });
@@ -197,8 +216,12 @@ export class IdentityController {
         this.openedOnboardingIntent = intent;
         this.openRegistration();
       }
-      if (!this.pauseQueue && this.view.modal === null) {
-        const next = this.view.requests.find((r) => !r.prompted);
+      if (this.view.modal === null && this.isForeground()) {
+        const next = this.view.requests.find((r) => {
+          const key = `${r.id}:${r.version}`;
+          return (!r.prompted || !this.inheritedPromptedRequests.has(key)) && !this.presentedRequests.has(key)
+            && !this.staleRequestIds.has(r.id) && !this.deferredRequests.has(key);
+        });
         if (next) await this.openRequest(next.id, true);
       }
     } catch (error) {
@@ -245,7 +268,7 @@ export class IdentityController {
       }
       if (value?.status === "uncertain" || value?.phase !== "awaiting_approval" || typeof value.requestId !== "string") throw new Error("creation_unconfirmed");
       this.patch({ pending: false });
-      this.pauseQueue = false;
+      this.deferredRequests.clear();
       this.closeModal(false);
       // Resume this exact owner-submitted flow; a background refresh may be busy.
       await this.openRequest(value.requestId);
@@ -316,6 +339,9 @@ export class IdentityController {
       }
     }
   }
+  private isForeground(): boolean {
+    return typeof document === 'undefined' || document.visibilityState !== 'hidden' && document.hasFocus();
+  }
   private captureFocus(): void {
     if (typeof document !== "undefined")
       this.returnFocus =
@@ -324,7 +350,7 @@ export class IdentityController {
           : null;
   }
   async openRequest(id: string, automatic = false): Promise<void> {
-    if (this.view.modal !== null || this.view.pending) return;
+    if (this.disposed || this.view.modal !== null || this.view.pending || automatic && !this.isForeground()) return;
     this.requestReviewEpoch++;
     this.captureFocus();
     this.patch({ pending: true, error: null });
@@ -334,17 +360,20 @@ export class IdentityController {
         await this.refresh();
         return;
       }
+      if (this.disposed || automatic && !this.isForeground()) return;
       await this.call("markPrompted", {
         requestId: id,
         expectedVersion: review.request.version,
       });
+      if (this.disposed || automatic && !this.isForeground()) return;
+      this.presentedRequests.add(`${id}:${review.request.version}`);
       this.patch({
         modal: { kind: "request", review },
         requests: this.view.requests.map((r) =>
           r.id === id ? { ...r, prompted: true } : r,
         ),
       });
-      if (!automatic) this.pauseQueue = false;
+      if (!automatic) { this.deferredRequests.clear(); this.staleRequestIds.delete(id); }
     } catch (error) {
       this.fail(error);
     } finally {
@@ -362,7 +391,7 @@ export class IdentityController {
     if (later && this.view.modal?.kind === "registration") {
       void this.remote.dismissRegistrationRequest?.().catch(() => {});
     }
-    if (later) this.pauseQueue = true;
+    if (later) for (const request of this.view.requests) this.deferredRequests.add(`${request.id}:${request.version}`);
     this.patch({ modal: null, error: null });
     const focus = this.returnFocus;
     queueMicrotask(() => {
@@ -370,8 +399,9 @@ export class IdentityController {
     });
   }
   private closeStaleRequest(): void {
+    if (this.view.modal?.kind === "request") this.staleRequestIds.add(this.view.modal.review.request.id);
     this.patch({ pending: false });
-    this.closeModal();
+    this.closeModal(false);
     this.patch({ notice: "此授权请求已处理、已过期或已变更，旧弹窗已关闭。请查看授权请求的最新状态；不会自动重复授权。" });
   }
   async decide(

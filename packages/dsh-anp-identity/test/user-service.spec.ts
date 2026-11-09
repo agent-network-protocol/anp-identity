@@ -645,6 +645,7 @@ async function userFixture() {
 }
 
 interface StartupHooks {
+  config?: Partial<Config>;
   beforeProvider?(service: AnpIdentityService, first: UserIdentityClient): void
   afterProvider?(service: AnpIdentityService, first: UserIdentityClient): Promise<void>
 }
@@ -665,6 +666,7 @@ async function start(root: string, origins = [ORIGIN], hooks?: StartupHooks) {
     stateRoot: root, allowConsumers: [PROTOCOL_BOOTSTRAP_CONSUMER, 'user-one', 'user-two', 'host-fixture'], userConsumers: ['user-one', 'user-two', PROTOCOL_BOOTSTRAP_CONSUMER],
     allowProviderConsumers: ['host-fixture'],
     httpAllowedOrigins: { 'user-one': origins, 'user-two': origins },
+    ...hooks?.config,
   }
   await ctx.plugin(AnpIdentityService, config)
   const service = ctx.anpIdentity as AnpIdentityService
@@ -792,3 +794,16 @@ it('the bundled requester requires the real owner manager and creates no keys be
   expect(approved.executionStatus).toBe('succeeded');
   expect(await f.managerService.acquireManagement(f.managerContext).grants(approved.result!.reference)).toEqual([]);
 });
+
+it('domain mode does not replace the transport or permissions of unrelated ordinary consumers', async () => {
+  await using f = await userFixture()
+  const reference = await createApproved(f, 'ordinary-with-domain-mode')
+  await f.restart([ORIGIN], {config:{domainAccess:{enabled:true,scopes:['protocol.read']}}})
+  const request = await f.first.requestAccess({requestId:'ordinary-domain-mode',purpose:'Read ordinary service',identity:reference,operation:{action:'http',request:new Request(ORIGIN+'/profile')}})
+  const manager=f.managerService.acquireManagement(f.managerContext)
+  const approved=await manager.decide({requestId:request.id,expectedVersion:request.version,decision:'approve',mode:'once',reviewedSnapshot:(await manager.getRequest(request.id)).snapshot!}) as AccessAuthorizationRequest
+  const transport=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('ordinary response'))
+  const authorized=await f.first.openAuthorizedIdentity(approved.grantId!)
+  expect(await (await authorized.authenticatedHttp.dispatch(new Request(ORIGIN+'/profile'))).text()).toBe('ordinary response')
+  expect(transport).toHaveBeenCalledOnce()
+})

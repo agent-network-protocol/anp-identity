@@ -232,3 +232,11 @@ or blindly retried. The Agent-facing status and intent outputs expose only publi
 references/status, not phone/email, credentials, storage paths or signing objects.
 ANP/MCP/PAP guides give discovery order, actual available registry names, exact
 parameter conventions, approval handling and no-replay rules for uncertain writes.
+
+## 域名自动接入
+
+Host 一次性设置 `domainAccess: { enabled: true, scopes: ['protocol.read'], secretStore: 'local-file' }`，并启用 PAP/ANP 的 `autoConnect` 及 MCP domain 连接器后，Agent 只需调用 `pap_connect({domain})`、`mcp_connect({domain})` 或 `anp_discover({domain})`。不再要求逐域名添加连接。默认选择唯一符合协议能力的已发布身份；多个身份必须通过 Host 的 `domainAccess.identity` 明确选定。`scopes` 是 MCP 的全局权限上限，不会随网站元数据扩大；PAP 只自动启用读取，不启用账户权限或写操作。未指定 `secretStore` 时使用 keyring，不静默回退。ANP 的签名仍需用户审批，已有永久授权可跨重启复用，但不扩大原域名范围。关闭权限或改变默认身份通过正常 Host 配置重载生效。当前 MCP 域名接入支持域名级发现元数据和 CIMD/ES256 客户端凭证认证；不兼容的站点返回明确错误。
+
+## 只读自动与单次操作确认
+
+本版保留“已发现只读自动访问、写入及额外权限仅本次确认”的模式，不包含聊天切换全量写权限。授权在前台全局弹窗中完成，无需进入设置寻找请求；拒绝、取消或卸载不发送操作，不自动重放不确定写入。参数预览脱敏且仅保存在 Host 内存，重启后不能凭丢失的旧预览批准请求。PAP、ANP 需要本次身份插件；MCP 的单次操作能力还依赖配套 Harness 更新，三个 npm 插件本身不包含 Harness 的 MCP 客户端源码。降级前须清理新流程的 pending 请求并撤销或归档新 profile 的授权，详见 [Domain consent](DOMAIN-CONSENT.md)。

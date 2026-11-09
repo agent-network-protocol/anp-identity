@@ -18,6 +18,8 @@ export interface ManagedIdentitySummary extends IdentityDescriptor {
   readonly deleteBlockedReason?: string;
 }
 export interface RequestReview {
+  /** Redacted owner-only preview, retained in Host memory rather than the authorization ledger. */
+  readonly operationPreview?: { readonly method: string; readonly target: string; readonly parameters?: unknown; readonly bodyDigest: string };
   readonly request: AuthorizationRequest;
   readonly grant?: AuthorizationGrant;
   readonly identities: readonly ManagedIdentitySummary[];

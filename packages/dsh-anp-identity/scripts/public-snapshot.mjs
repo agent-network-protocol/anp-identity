@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const fixture = join(root, 'test', 'fixtures', 'public-api.d.ts')
-const entries = ['index.d.ts', 'provider.d.ts', 'provider-api.d.ts', 'types.d.ts', 'user-client.d.ts', 'protocol-client.d.ts', 'protocol-bootstrap.d.ts', 'registration-bootstrap.d.ts', 'target-policy.d.ts', 'management-driver.d.ts', 'pap-callback.d.ts', 'management-credentials.d.ts', 'authorization-types.d.ts', 'management-types.d.ts', 'publication-types.d.ts', 'publication-http.d.ts', 'management-remote.d.ts', 'remote.d.ts', 'client/index.d.ts']
+const entries = ['index.d.ts', 'domain-access.d.ts', 'anp-domain.d.ts', 'domain-consent.d.ts', 'provider.d.ts', 'provider-api.d.ts', 'types.d.ts', 'user-client.d.ts', 'protocol-client.d.ts', 'protocol-bootstrap.d.ts', 'registration-bootstrap.d.ts', 'target-policy.d.ts', 'management-driver.d.ts', 'pap-callback.d.ts', 'management-credentials.d.ts', 'authorization-types.d.ts', 'management-types.d.ts', 'publication-types.d.ts', 'publication-http.d.ts', 'management-remote.d.ts', 'remote.d.ts', 'client/index.d.ts']
 const sections = []
 for (const entry of entries) {
   const value = (await readFile(join(root, 'lib', entry), 'utf8'))

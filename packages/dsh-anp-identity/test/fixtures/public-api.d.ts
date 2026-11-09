@@ -2,6 +2,9 @@
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PapCallbackManagementOperations } from './pap-callback.js';
 import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
+import { type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js';
+import { type AnpDomainReadClient } from './anp-domain.js';
+import { type DomainOperationClient } from './domain-consent.js';
 import type { ProtocolUsePolicy, ProtocolIdentityClient, PapHostConsumer } from './protocol-client.js';
 import type { PublicationBackend } from './publication-types.js';
 import { Service, type Context } from '@deepseek-ai/cordis';
@@ -12,6 +15,9 @@ import type { IdentityManagement } from './management-types.js';
 import { type AnpIdentityService as AnpIdentityServiceContract, type HostProviderLease, type ProviderRequest } from './provider-api.js';
 import type { AnpIdentityHealth, ClientRequest, IdentityClientLease } from './types.js';
 export type * from './types.js';
+export type { DomainAccessConfig, DomainProfile, DomainBinding } from './domain-access.js';
+export type { AnpReadEvidence, AnpDomainReadClient } from './anp-domain.js';
+export type { DomainOperationClient, DomainConsentCapabilities, DomainMachineIdentity } from './domain-consent.js';
 export { AnpIdentityPluginError } from './errors.js';
 export type { AnpIdentityPluginErrorCode } from './errors.js';
 export { ANP_IDENTITY_HTTP_MAX_BODY_BYTES, } from './http-auth.js';
@@ -38,6 +44,8 @@ export interface Config {
     readonly oauthAllowedAudiences?: Record<string, string[]>;
     readonly userConsumers?: string[];
     readonly protocolPolicies?: ProtocolUsePolicy[];
+    /** Explicit global domain-access opt-in; no per-domain policies are created by the model. */
+    readonly domainAccess?: DomainAccessConfig;
 }
 export declare const Config: z<Config>;
 /** One multi-DID ANP Identity service with a replaceable native Provider. */
@@ -51,6 +59,10 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     private readonly publicationBackends;
     private readonly papCallbackAuthorities;
     private readonly protocols;
+    private readonly domains;
+    private readonly anpReads;
+    private readonly anpDomainMode;
+    private readonly domainOperations;
     private readonly users;
     private readonly hostContext;
     private readonly disabledFences;
@@ -85,6 +97,21 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     /** Host-bound ordinary facade; request inputs never select a caller. */
     bindUserConsumer(context: Context): UserIdentityClient;
     bindProtocolConsumer(context: Context): ProtocolIdentityClient;
+    /** Bind the installed ANP adapter to exact discovered reads under global Host permission. */
+    bindAnpDomainConsumer(context: Context): AnpDomainReadClient;
+    /** Bind exact, once-only owner confirmation for the installed PAP/MCP domain adapters. */
+    bindDomainOperationConsumer(context: Context): DomainOperationClient;
+    /** Resolve a Host-approved default identity and global policy for an installed domain adapter.
+     * @param context - Actual Loader-owned adapter context.
+     * @param profile - Protocol to connect; PAP account access is intentionally excluded.
+     * @returns Non-secret identity, policy and local storage references.
+     */
+    resolveDomainAccess(context: Context, profile: DomainProfile): Promise<DomainBinding>;
+    /** Public discovery never signs or obtains a user identity.
+     * @param request - Public HTTPS request, pinned against private DNS destinations.
+     * @returns Unauthenticated response without redirect following.
+     */
+    publicDiscovery(request: Request): Promise<Response>;
     /** Bind the actual installed PAP Host. Private callback access additionally requires its current opaque target.
      * @param context - Original Loader-installed PAP plugin Context.
      * @returns Public identity selection and target-bound, closed callback operations.
@@ -162,6 +189,121 @@ export type { ManagementCredentialBroker, DeviceManagementCredential, LocalRegis
 export type { PapHostConsumer } from './protocol-client.js';
 export { PapCallbackManagementError } from './pap-callback.js';
 export type { PapCallbackRegistration, PapCallbackClaim, PapCallbackRegistrationResult, PapCallbackClaimResult, PapCallbackRegisterOperation, PapCallbackClaimOperation, PapCallbackManagementOperations, PapCallbackManagementErrorCode } from './pap-callback.js';
+
+// ===== domain-access.d.ts =====
+import type { IdentityReference } from './types.js';
+import type { ProtocolUsePolicy } from './protocol-client.js';
+export type DomainProfile = 'anp' | 'pap_session' | 'mcp_machine';
+export interface DomainAccessConfig {
+    enabled: boolean;
+    identity?: IdentityReference;
+    /** Global OAuth scope ceiling. Empty means MCP needs an owner policy update. */
+    scopes: string[];
+    secretStore?: 'keyring' | 'local-file';
+    expiresAt?: number;
+}
+export interface DomainBinding {
+    identityRef: IdentityReference;
+    policyRef: string;
+    stateRoot: string;
+    secretsRoot: string;
+    secretStore: 'keyring' | 'local-file';
+    scopes: string[];
+}
+export declare class DomainAccessError extends Error {
+    readonly code: string;
+    constructor(code: string);
+}
+/** Resolve only locally published identities and install a Host-owned global policy. */
+export declare class DomainAccessResolver {
+    private readonly config;
+    private readonly root;
+    private readonly candidates;
+    private readonly install;
+    constructor(config: DomainAccessConfig | undefined, root: string, candidates: (profile: DomainProfile) => Promise<IdentityReference[]>, install: (policy: ProtocolUsePolicy) => void);
+    resolve(consumer: string, profile: DomainProfile): Promise<DomainBinding>;
+}
+
+// ===== anp-domain.d.ts =====
+/** Exact HTTP reads under the Host's global domain-access policy. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { ProviderLease } from '@agent-network-protocol/anp-identity/provider';
+import type { DomainBinding } from './domain-access.js';
+/** Produced only by the installed discovery adapter, never by model arguments. */
+export interface AnpReadEvidence {
+    profile: 'anp-discovered/1';
+    kind: 'agent' | 'information' | 'interface' | 'operation';
+    source: string;
+    url: string;
+    requiresApproval: boolean;
+}
+export interface AnpDomainReadClient {
+    dispatchRead(request: Request, evidence: AnpReadEvidence): Promise<Response>;
+}
+export interface AnpDomainReadHost {
+    assertCaller(context: Context): void;
+    generation(): unknown;
+    resolve(context: Context): Promise<DomainBinding>;
+    withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
+    dispatch(request: Request, assertBeforeSend: () => Promise<void>): Promise<Response>;
+}
+/** No raw signature, generic write permission, or caller-provided transport is exposed. */
+export declare class AnpDomainReadAuthority {
+    private readonly host;
+    constructor(host: AnpDomainReadHost);
+    bind(context: Context): AnpDomainReadClient;
+}
+
+// ===== domain-consent.d.ts =====
+/** One owner-approved effect, distinct from global protocol read permission. */
+import type { Context } from '@deepseek-ai/cordis';
+import type { AccessAuthorizationRequest } from './authorization-types.js';
+import type { DomainBinding } from './domain-access.js';
+import type { UserIdentityClient } from './user-client.js';
+import type { ProtocolIdentityClient, ProtocolSignerLease, ProtocolUsePolicy } from './protocol-client.js';
+export declare class DomainConsentError extends Error {
+    readonly code: string;
+    constructor(code: string);
+}
+export interface DomainMachineSigner {
+    readonly targetRef: object;
+    readonly policyGeneration: number;
+    assertActive(): Promise<void>;
+    getOAuthClientIdentity(): ReturnType<ProtocolSignerLease['getOAuthClientIdentity']>;
+    signOAuthClientAssertion(targetRef: object): Promise<string>;
+    dispose(): void;
+}
+export interface DomainMachineIdentity {
+    registerValidatedTarget(input: Parameters<ProtocolIdentityClient['registerValidatedTarget']>[0]): Promise<DomainMachineSigner>;
+}
+export interface DomainConsentCapabilities {
+    machineIdentity?: DomainMachineIdentity;
+}
+export interface DomainOperationClient {
+    request(input: {
+        requestId: string;
+        purpose: string;
+        request: Request;
+    }): Promise<AccessAuthorizationRequest>;
+    status(id: string): Promise<AccessAuthorizationRequest>;
+    cancel(id: string, version: number): Promise<AccessAuthorizationRequest>;
+    execute<T>(grantId: string, request: Request, effect: (assertActive: () => Promise<void>, capabilities: DomainConsentCapabilities) => Promise<T>): Promise<T>;
+}
+export interface DomainConsentHost {
+    assertCaller(context: Context): string;
+    resolve(context: Context): Promise<DomainBinding>;
+    user(context: Context): UserIdentityClient;
+    run<T>(context: Context, grantId: string, request: Request, identity: DomainBinding['identityRef'], effect: (assertActive: () => Promise<void>) => Promise<T>): Promise<T>;
+    protocol(context: Context): ProtocolIdentityClient;
+    install(policy: ProtocolUsePolicy): void;
+    retire(id: string): void;
+}
+/** Only the installed adapters may bind this facade; model tools never receive it. */
+export declare class DomainOperationAuthority {
+    private readonly host;
+    constructor(host: DomainConsentHost);
+    bind(context: Context): DomainOperationClient;
+}
 
 // ===== provider.d.ts =====
 /** Native ANP Identity Provider registration for the Host-only DSH service. */
@@ -374,6 +516,11 @@ export interface AuthorizedIdentity {
     };
 }
 export interface UserIdentityClient {
+    /** Reuse only an active permanent grant already covering this exact caller, identity and operation. */
+    findAccessGrant?(input: {
+        identity: IdentityReference;
+        operation: UserOperation;
+    }): Promise<string | undefined>;
     requestCreateIdentity(input: RequestCreateInput): Promise<AuthorizationRequest>;
     getCreateRequest(requestId: string): Promise<AuthorizationRequest>;
     cancelCreateRequest(requestId: string, expectedVersion: number): Promise<AuthorizationRequest>;
@@ -650,6 +797,12 @@ export declare class ProtocolIdentityAuthority {
     private readonly host;
     private readonly publications;
     private readonly targets;
+    private readonly domainPolicies;
+    /** Called only by the Host's explicitly enabled domain resolver, never by a consumer facade. */
+    installDomainPolicy(policy: ProtocolUsePolicy): void;
+    /** Retire a Host-owned temporary policy after its exact operation finishes. */
+    removeDomainPolicy(id: string): void;
+    private allPolicies;
     constructor(policies: readonly ProtocolUsePolicy[], host: ProtocolAuthorityHost, publications: PublicationCoordinator);
     bind(context: Context): ProtocolIdentityClient;
     /** Bind the exact installed PAP plugin; publication and callback data never replace its Host policy. */
@@ -930,6 +1083,7 @@ export interface CreateAuthorizationRequest extends RequestBase {
     readonly result?: CreateResult;
 }
 export interface AccessAuthorizationRequest extends RequestBase {
+    readonly approvalProfile?: 'exact-operation/1';
     readonly kind: 'access';
     readonly identity?: IdentityReference;
     readonly operation?: ControlledOperation;
@@ -983,6 +1137,7 @@ export interface AuthorizationState {
         kind: 'create' | 'access';
         identity?: IdentityReference;
         requestId: string;
+        operationFingerprint?: string;
     }[];
 }
 export interface RequestCreateInput {
@@ -995,6 +1150,7 @@ export interface RequestAccessInput {
     readonly purpose: string;
     readonly identity?: IdentityReference;
     readonly operation?: ControlledOperation;
+    readonly approvalProfile?: 'exact-operation/1';
 }
 export interface AuthorizationDecision {
     readonly requestId: string;
@@ -1041,6 +1197,13 @@ export interface ManagedIdentitySummary extends IdentityDescriptor {
     readonly deleteBlockedReason?: string;
 }
 export interface RequestReview {
+    /** Redacted owner-only preview, retained in Host memory rather than the authorization ledger. */
+    readonly operationPreview?: {
+        readonly method: string;
+        readonly target: string;
+        readonly parameters?: unknown;
+        readonly bodyDigest: string;
+    };
     readonly request: AuthorizationRequest;
     readonly grant?: AuthorizationGrant;
     readonly identities: readonly ManagedIdentitySummary[];
@@ -1167,10 +1330,10 @@ export declare const PublicationRecordSchema: z.ZodObject<{
     operationId: z.ZodString;
     expectedVersion: z.ZodNumber;
     state: z.ZodEnum<{
-        failed: "failed";
         awaiting_configuration: "awaiting_configuration";
         publishing: "publishing";
         published: "published";
+        failed: "failed";
     }>;
     clientId: z.ZodString;
     version: z.ZodNumber;

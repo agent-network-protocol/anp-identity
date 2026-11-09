@@ -15,9 +15,7 @@ export const styles = `
 .anpi .anpi-fields .anpi-copy{margin:0;padding:12px 14px;border:0;border-radius:0;background:none;gap:8px;grid-template-columns:58px minmax(0,1fr) auto}
 .anpi .anpi-fields .anpi-copy+.anpi-copy{border-top:1px solid var(--dsw-alias-border-l2,#343b46)}
 .anpi-field-label{font-size:12px;color:var(--dsw-alias-label-secondary,#bec6d2)}
-.anpi .anpi-fields .anpi-copy-did{grid-template-columns:minmax(0,1fr) auto;align-items:start}
-.anpi-copy-did .anpi-field-value{grid-row:2;grid-column:1/-1;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text}
-.anpi-copy-did button{grid-column:2;grid-row:1}
+.anpi-copy-did .anpi-field-value{font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text}
 .anpi .anpi-detail .anpi-section{padding-top:16px;margin-top:20px}
 .anpi .anpi-detail .anpi-section h3{font-size:14px;font-weight:600;margin-bottom:8px}
 .anpi .anpi-detail .anpi-section>p.anpi-muted{padding:8px 0;margin:0}

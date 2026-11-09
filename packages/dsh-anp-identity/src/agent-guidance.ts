@@ -27,7 +27,7 @@ export function registerIdentityGuidance(ctx: Context, handlers: {
       type:'object',additionalProperties:false,properties:{protocol:{type:'string',enum:['all','anp','mcp','pap']}},required:[],
     }, async args => {
       const protocol = args.protocol === undefined ? 'all' : args.protocol; if (!['all','anp','mcp','pap'].includes(protocol)) throw new Error('invalid_protocol');
-      return connectionGuide(protocol, (tools.definitions?.() ?? []).map(x=>x.name).filter(name=>/^(?:anp_|pap_|mcp__)/u.test(name)));
+      return connectionGuide(protocol, (tools.definitions?.() ?? []).map(x=>x.name).filter(name=>/^(?:anp_|pap_|mcp__|mcp_connect$)/u.test(name)));
     });
   });
   ctx.inject(['systemPrompt'], inner => {
