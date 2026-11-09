@@ -30,6 +30,7 @@ function fixture() {
   const controller = new IdentityController(remote); controllers.push(controller)
   return { controller, remote, query, configure,
     setInstalled(protocols: string[]) { state = { ...state, protocols: state.protocols.map(item => ({ ...item, installed: protocols.includes(item.protocol) })) } },
+    resetExternally() { state = { ...state, policy: initialProtocolPolicy() } },
     changeExternally() { state = { ...state, policy: { ...state.policy, version: state.policy.version + 1 } } } }
 }
 async function open() {
@@ -78,7 +79,7 @@ it('preserves an unsaved domain draft and blocks stale saves when another page c
   expect((screen.getByText('保存权限') as HTMLButtonElement).disabled).toBe(true)
   expect(f.configure).not.toHaveBeenCalled()
   fireEvent.click(screen.getByText('重新加载配置'))
-  expect((screen.getByLabelText('写入模式') as HTMLSelectElement).value).toBe('ask')
+  await waitFor(() => expect((screen.getByLabelText('写入模式') as HTMLSelectElement).value).toBe('ask'))
 })
 it('keeps a failed save visible and preserves the draft rather than announcing success', async () => {
   const f = await open(); f.configure.mockRejectedValueOnce(new Error('Unavailable'))
@@ -124,4 +125,46 @@ it.each([['anp'], ['pap'], ['anp', 'pap']])('registers exactly one shared naviga
     await waitFor(() => expect(sections.has('protocol-management')).toBe(false))
   } finally { try { await dispose?.() } finally { await ctx.fiber.dispose() } }
   expect(sections.size).toBe(0); expect(unmounts).toBe(1)
+})
+
+it('reloads authoritative policy after a data reset instead of reusing the old page version', async () => {
+  const f = await open()
+  f.changeExternally(); await act(() => f.controller.refresh())
+  await waitFor(() => expect(f.controller.getSnapshot().protocolManagement?.policy.version).toBe(1))
+  f.query.mockRejectedValueOnce(new Error('Temporary disconnect'))
+  await act(() => f.controller.refresh())
+  await screen.findByText(/无法读取协议权限/)
+  f.resetExternally()
+  const reads = f.query.mock.calls.length
+  fireEvent.click(screen.getByText('重新加载配置'))
+  await waitFor(() => expect(f.query.mock.calls.length).toBeGreaterThan(reads))
+  await waitFor(() => expect(f.controller.getSnapshot().protocolError).toBeNull())
+  expect(f.controller.getSnapshot().protocolManagement?.policy.version).toBe(0)
+  fireEvent.change(screen.getByLabelText('写入模式'), { target: { value: 'allow_all' } })
+  fireEvent.click(screen.getByText('保存权限'))
+  await waitFor(() => expect(f.configure).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 0, policy: expect.objectContaining({ write: expect.objectContaining({ mode: 'allow_all' }) }) })))
+})
+it('does not discard the edit or clear an error when authoritative reload fails', async () => {
+  const f = await open()
+  fireEvent.change(screen.getByLabelText('写入模式'), { target: { value: 'allow_all' } })
+  f.query.mockRejectedValueOnce(new Error('Unreadable settings'))
+  fireEvent.click(screen.getByText('重新加载配置'))
+  await screen.findByText(/无法读取协议权限/)
+  expect((screen.getByLabelText('写入模式') as HTMLSelectElement).value).toBe('allow_all')
+  expect(f.configure).not.toHaveBeenCalled()
+})
+
+it('does not let a delayed poll roll back a successful permission save', async () => {
+  const f = await open()
+  const old = structuredClone(f.controller.getSnapshot().protocolManagement!)
+  let release!: (value: ReturnType<typeof ok<ProtocolManagementState>>) => void
+  f.query.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  await act(() => f.controller.refresh())
+  fireEvent.change(screen.getByLabelText('写入模式'), { target: { value: 'allow_all' } })
+  fireEvent.click(screen.getByText('保存权限'))
+  await waitFor(() => expect(f.controller.getSnapshot().protocolManagement?.policy.version).toBe(1))
+  await act(async () => { release(ok(old)); await Promise.resolve() })
+  expect(f.controller.getSnapshot().protocolManagement?.policy.version).toBe(1)
+  expect(f.controller.getSnapshot().protocolManagement?.policy.write.mode).toBe('allow_all')
+  expect(f.controller.getSnapshot().protocolError).toBeNull()
 })
