@@ -68,7 +68,7 @@ describe('Host management secret with actual credentials-local', () => {
       const observedUpdates = updates
       await recordKey(firstContext)
       const path = join(root, '.credentials.yaml'), before = await readFile(path)
-      expect(((await stat(path)).mode & 0o077) === 0).toBe(true)
+      if (process.platform !== 'win32') expect(((await stat(path)).mode & 0o077) === 0).toBe(true)
       a.fill(0)
       const c = await first.getKey()
       try { expect(c !== b && c.equals(b) && !c.equals(a)).toBe(true) }

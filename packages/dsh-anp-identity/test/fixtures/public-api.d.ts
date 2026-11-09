@@ -781,7 +781,7 @@ export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
 export type RegistrationBootstrapConfig = z.infer<typeof RegistrationBootstrapConfigSchema>;
 export type RegistrationBootstrapInput = z.input<typeof RegistrationBootstrapConfigSchema>;
 export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'awaiting_phone_verification' | 'registering' | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed';
-export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required';
+export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required' | 'storage_unavailable' | 'identity_deleted';
 /** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
 export interface RegistrationBootstrapStatus {
     id: string;
@@ -1503,6 +1503,7 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     private readonly onboardingStore;
     private readonly configuredBootstrap;
     private onboardingVersion;
+    private onboardingArchived;
     private onboardingIntent;
     private startingRegistration;
     constructor(ctx: Context, config?: Config);
@@ -1511,6 +1512,7 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     registrationOnboardingStatus(): Promise<{
         available: boolean;
         version: number;
+        archived: boolean;
         inProgress: boolean;
         intentId?: string;
     }>;

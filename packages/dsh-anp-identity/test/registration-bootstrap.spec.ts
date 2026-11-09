@@ -171,6 +171,15 @@ it('does not accept another consumer or an ordinary creation approval as the con
   }
 })
 
+it('never reuses a deleted creation result or sends a verification challenge for it', async () => {
+  const f = await fixture({ phone: true }); f.approve()
+  Object.assign(f.request, { executionStatus: 'deleted' })
+  const controller = f.start()
+  await vi.waitFor(() => expect(controller.status()).toMatchObject({ phase: 'blocked', reason: 'identity_deleted' }))
+  expect(f.requests).toHaveLength(0); expect(f.register).not.toHaveBeenCalled()
+  expect(await readdir(f.root)).not.toContain('registration-bootstrap')
+})
+
 it('does not recreate a missing established key after its marker was also deleted from a used scope', async () => {
   const f = await fixture(); f.approve()
   const first = f.start()

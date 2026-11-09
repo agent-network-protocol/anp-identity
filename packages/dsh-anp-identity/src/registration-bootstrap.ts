@@ -18,6 +18,7 @@ import { PublicationCapabilitiesSchema } from './publication-types.js'
 import { PROTOCOL_BOOTSTRAP_CONSUMER } from './protocol-bootstrap.js'
 import { syncDirectory } from './sync-directory.js'
 import { identityClientVersionHeader } from './client-metadata.js'
+import { hasPublicPosixPermissions } from './private-file-mode.js'
 
 export const RegistrationBootstrapConfigSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
@@ -51,6 +52,7 @@ export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_v
   | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed'
 export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration'
   | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required'
+  | 'storage_unavailable' | 'identity_deleted'
 /** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
 export interface RegistrationBootstrapStatus {
   id: string
@@ -177,7 +179,7 @@ export function startRegistrationBootstrap(options: {
     assertActive()
     const base = await realpath(config.stateRoot)
     assertActive()
-    if ((await lstat(base)).mode & 0o077) throw new Error('bootstrap_state_unavailable')
+    if (hasPublicPosixPermissions((await lstat(base)).mode)) throw new Error('bootstrap_state_unavailable')
     root = join(base, 'registration-bootstrap', digest(config.id))
     await mkdir(root, { recursive: true, mode: 0o700 })
     assertActive()
@@ -210,7 +212,7 @@ export function startRegistrationBootstrap(options: {
       try {
         const info = await lstat(marker)
         assertActive()
-        if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077)) throw new BootstrapCredentialStateUnavailable()
+        if (!info.isFile() || info.isSymbolicLink() || hasPublicPosixPermissions(info.mode)) throw new BootstrapCredentialStateUnavailable()
       } catch { throw new BootstrapCredentialStateUnavailable() }
     }
     const key = await secret!.getKey()
@@ -220,7 +222,7 @@ export function startRegistrationBootstrap(options: {
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       const info = await lstat(marker)
-      if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077)) throw new Error('bootstrap_state_unavailable')
+      if (!info.isFile() || info.isSymbolicLink() || hasPublicPosixPermissions(info.mode)) throw new Error('bootstrap_state_unavailable')
       assertActive(); return
     }
     try { assertActive(); await file.writeFile('1\n'); assertActive(); await file.sync(); assertActive() } finally { await file.close() }
@@ -230,7 +232,7 @@ export function startRegistrationBootstrap(options: {
   const journal = async (): Promise<Journal> => {
     try {
       const path = join(root!, 'state.json'); const info = await lstat(path)
-      if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) || info.size > 16384) throw new Error('bootstrap_state_unavailable')
+      if (!info.isFile() || info.isSymbolicLink() || hasPublicPosixPermissions(info.mode) || info.size > 16384) throw new Error('bootstrap_state_unavailable')
       const value = JournalSchema.parse(JSON.parse(await readFile(path, 'utf8')))
       assertActive()
       if (value.fingerprint !== fingerprint) throw new Error('bootstrap_configuration_changed')
@@ -263,6 +265,7 @@ export function startRegistrationBootstrap(options: {
     if (request.kind !== 'create' || request.caller.consumer !== PROTOCOL_BOOTSTRAP_CONSUMER || request.parameters.usage !== 'protocol') {
       update('blocked', 'invalid_configuration'); return
     }
+    if (request.executionStatus === 'deleted') { update('blocked', 'identity_deleted'); return }
     if (request.status === 'pending' || request.status === 'approved' && (request.executionStatus === 'running' || request.executionStatus === 'unknown')) { update('awaiting_approval'); return }
     if (request.status !== 'approved' || request.executionStatus !== 'succeeded' || !request.result) { update('blocked', 'approval_denied'); return }
     const reference = structuredClone(request.result.reference)
@@ -389,6 +392,7 @@ export function startRegistrationBootstrap(options: {
         : code === 'credential_unavailable' ? 'credential_unavailable'
         : (error as Error).message === 'bootstrap_email_unavailable' ? 'email_unavailable'
           : (error as Error).message === 'bootstrap_phone_unavailable' ? 'phone_unavailable'
+          : (error as Error).message === 'bootstrap_state_unavailable' || (error as Error).message === 'bootstrap_configuration_changed' ? 'storage_unavailable'
           : view.phase === 'publishing' ? 'publication_failed' : 'provider_unavailable')
     }
   })()
