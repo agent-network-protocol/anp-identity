@@ -1,4 +1,4 @@
-# Shared protocol management (development candidate)
+# Shared protocol management
 
 This branch adds one Identity-owned Protocol Management settings section for installed ANP, PAP and MCP adapters. It replaces the PAP manual connection navigation, not the stored connections, credentials, identities or authorization history. Installation order does not create a second section. Identity creation/publication remains in Identity Management.
 
@@ -14,7 +14,7 @@ Read and write each select `allow_all`, `whitelist`, `ask` or `deny`. Defaults a
 
 The additive `manager-settings/protocol-access.json` document has schema 1 and a monotonic version. Updates require the owner's manager Context and expected version, use a cross-process exclusive lock and atomic rename, and preserve restrictive filesystem permissions. Malformed settings fail closed and are not overwritten with defaults. No private keys, tokens, operation bodies or generic signing permissions are stored here. Any policy edit invalidates earlier execution admissions, including pending approvals. Explicit operation disables, disconnected sessions and identity-ledger refusals remain independent fences.
 
-Older plugins do not implement these rules. Disable managed protocol adapters before downgrading; keeping the settings file alone cannot make an older client enforce a new deny rule. Do not mix candidate adapters with an older Identity Host. Runtime capability checks reject an absent shared policy API rather than silently falling back to old write behavior. Matching package versions will be pinned when this candidate is released.
+Older plugins do not implement these rules. Disable managed protocol adapters before downgrading; keeping the settings file alone cannot make an older client enforce a new deny rule. Use Identity 0.1.15 or later together with PAP 0.1.4 and ANP 0.1.4; do not mix these adapters with an older Identity Host. Runtime capability checks reject an absent shared policy API rather than silently falling back to old write behavior. MCP also requires the matching Harness domain connector implementation (commit 194aaf492e or a compatible successor); installing these npm plugins alone does not update the official MCP client.
 
 ## Operation classification
 
