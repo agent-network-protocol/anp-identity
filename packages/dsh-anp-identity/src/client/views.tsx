@@ -1,4 +1,4 @@
-import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
+import type { RegistrationBootstrapReason, RegistrationBootstrapStatus } from '../registration-bootstrap.js';
 import { composeRegistrationPhone } from '../registration-onboarding-types.js';
 import { IDENTITY_PROMPT } from '../agent-guidance-text.js';
 import type { RegistrationServiceSettings } from '../registration-service-types.js';
@@ -215,6 +215,19 @@ function DefaultIdentityForm({ controller }: { controller: IdentityController })
 }
 
 /** Shared owner-only registration progress for settings and the approval continuation. */
+const registrationReasonText: Record<RegistrationBootstrapReason, string> = {
+  approval_unavailable: '创建审批服务暂不可用，请检查身份插件是否已加载。',
+  approval_denied: '创建审批未成功，当前流程不能继续。',
+  invalid_configuration: '注册配置与创建请求不匹配，需要核对插件配置。',
+  credential_unavailable: '注册所需的本地加密凭据不可用，需要恢复原凭据服务。',
+  email_unavailable: '邮箱验证服务暂不可用，请检查注册服务。',
+  phone_unavailable: '短信验证请求未确认成功。',
+  provider_unavailable: '本地身份服务或注册依赖暂不可用，请核对插件状态。',
+  publication_failed: '身份发布未完成，需要核对发布状态后恢复。',
+  client_upgrade_required: '注册服务拒绝了当前客户端版本。',
+  storage_unavailable: '注册状态目录不可用，或保存的配置与当前流程不一致。',
+  identity_deleted: '此流程创建的身份已删除；已有执行记录时必须核对结果，不能直接重放注册。',
+};
 function RegistrationProgress({ controller, bootstrap, approvalCompleted = false }: {
   controller: IdentityController; bootstrap: RegistrationBootstrapStatus; approvalCompleted?: boolean;
 }): ReactNode {
@@ -227,6 +240,12 @@ function RegistrationProgress({ controller, bootstrap, approvalCompleted = false
         {bootstrap.clientVersion && <p className="anpi-small">客户端版本头：{bootstrap.clientVersion}</p>}
         <p>{({ awaiting_approval: approvalCompleted ? '创建已批准，正在准备验证' : '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
           publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
+        {bootstrap.reason && <p className="anpi-small" role="alert">{registrationReasonText[bootstrap.reason] ?? '注册流程暂不可用，请核对错误代码。'} 错误代码：<code>{bootstrap.reason}</code></p>}
+        {bootstrap.registrationCheck && <p className="anpi-small" role="status">设备清单只读核对：<code>{bootstrap.registrationCheck.outcome}</code>
+          {bootstrap.registrationCheck.httpStatus !== undefined && <>；HTTP {bootstrap.registrationCheck.httpStatus}</>}
+          {bootstrap.registrationCheck.rpcCode !== undefined && <>；RPC {bootstrap.registrationCheck.rpcCode}</>}
+          {bootstrap.registrationCheck.nativeCode && <>；{bootstrap.registrationCheck.nativeCode}</>}
+          。核对不会重发注册或自动标记成功。</p>}
         {bootstrap.phase === 'awaiting_approval' && <div>
           {!approvalCompleted && view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
             <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>
@@ -278,6 +297,7 @@ export function IdentitySettings({
         <Button disabled={view.pending || !view.onboarding?.available || view.onboarding.inProgress}
           onClick={() => controller.openRegistration()}>创建公共身份</Button></div>
       <p className="anpi-muted">管理此 DSH 中保存的身份</p>
+      {view.onboarding?.archived && <p role="status">已归档尚未执行注册的旧流程：原身份已删除。现在可以创建新的公共身份；旧记录已保留。</p>}
       <div className="anpi-section"><h3>让 Agent 帮你创建</h3>
         <p className="anpi-small">{IDENTITY_PROMPT}</p>
         <Button onClick={() => { void controller.copy(IDENTITY_PROMPT); }}>复制示例提示词</Button>

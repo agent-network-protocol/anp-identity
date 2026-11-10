@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { mkdir, lstat, readFile, open, rename, rm } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { RegistrationBootstrapConfigSchema } from './registration-bootstrap.js';
@@ -10,6 +10,7 @@ import { registrationInputSchema, type RegistrationOnboardingInput } from './reg
 
 const saved = z.object({
   version: z.number().int().nonnegative(),
+  archived: z.literal(true).optional(),
   config: RegistrationBootstrapConfigSchema,
   parameters: z.object({
     profile: z.enum(['e1','web']), usage: z.literal('protocol'), identityOnly: z.literal(true),
@@ -45,6 +46,37 @@ export class RegistrationOnboardingStore {
   read(active: () => void): Promise<SavedRegistrationOnboarding | undefined> {
     return this.locked(active, async () => { const value = await this.load(); active(); return value; });
   }
+  /** Retain an unstarted flow only after the owner ledger proves its identity was deleted. */
+  archiveUnstarted(input: { requestId: string; expectedVersion: number },
+    verifyDeleted: (value: SavedRegistrationOnboarding) => Promise<void>, active: () => void): Promise<SavedRegistrationOnboarding> {
+    return this.locked(active, async () => {
+      const current = await this.load();
+      if (!current || current.archived || current.version !== input.expectedVersion || current.config.requestId !== input.requestId)
+        throw new Error('registration_onboarding_conflict');
+      await verifyDeleted(current); active();
+      // Any execution directory, including a partial/corrupt one, requires reconciliation.
+      const parent = join(this.root, 'registration-bootstrap');
+      try {
+        const info = await lstat(parent);
+        if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('registration_onboarding_recovery_required');
+        const flow = join(parent, createHash('sha256').update(current.config.id).digest('hex'));
+        try { await lstat(flow); throw new Error('registration_onboarding_recovery_required'); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      active();
+      await this.write(current, active, 'archived-registration-' + randomUUID() + '.json');
+      const result = saved.parse({ ...current, version: current.version + 1, archived: true });
+      active(); await this.write(result, active); active(); return result;
+    });
+  }
+  private async write(value: SavedRegistrationOnboarding, active: () => void, name = 'owner-registration.json'): Promise<void> {
+    const temp = join(this.root, '.' + randomUUID() + '.tmp');
+    try {
+      const file = await open(temp, 'wx', 0o600);
+      try { await file.writeFile(JSON.stringify(value) + '\n'); await file.sync(); } finally { await file.close(); }
+      active(); await rename(temp, join(this.root, name)); await syncDirectory(this.root);
+    } finally { await rm(temp, { force: true }); }
+  }
   async create(input: RegistrationOnboardingInput, origin: string, active: () => void): Promise<SavedRegistrationOnboarding> {
     const value = registrationInputSchema.parse(input);
     if (value.expectedOrigin !== origin) throw new Error('registration_onboarding_origin_changed');
@@ -62,12 +94,7 @@ export class RegistrationOnboardingStore {
         parameters: { profile: value.profile, usage: 'protocol', identityOnly: true, label: value.label,
           domain: host.hostname, path: (value.profile === 'e1' ? '/user/' : '/awiki/user/') + value.handle, handle: value.handle + '.' + host.hostname },
       });
-      const temp = join(this.root, '.' + randomUUID() + '.tmp');
-      try {
-        const file = await open(temp, 'wx', 0o600);
-        try { await file.writeFile(JSON.stringify(result) + '\n'); await file.sync(); } finally { await file.close(); }
-        active(); await rename(temp, join(this.root, 'owner-registration.json')); await syncDirectory(this.root); active();
-      } finally { await rm(temp, { force: true }); }
+      active(); await this.write(result, active); active();
       return result;
     });
   }

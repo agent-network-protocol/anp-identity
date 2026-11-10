@@ -125,6 +125,7 @@ export class IdentityController {
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
   private protocolRefreshing = false;
+  private protocolRequestVersion = 0;
   private defaultIdentityRefreshing = false;
   private requestReviewEpoch = 0;
   private disposed = false;
@@ -183,7 +184,7 @@ export class IdentityController {
     this.refreshing = true;
     const reviewEpoch = this.requestReviewEpoch;
     // Protocol preferences must not block identity approval delivery if their query fails.
-    if (this.remote.protocolManagement) void this.refreshProtocols();
+    if (this.remote.protocolManagement && !this.view.protocolSaving) void this.refreshProtocols();
     if (this.remote.defaultIdentity) void this.refreshDefaultIdentity();
     try {
       const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
@@ -262,19 +263,38 @@ export class IdentityController {
       this.refreshing = false;
     }
   }
-  private async refreshProtocols(): Promise<void> {
-    if (this.disposed || this.protocolRefreshing) return;
+  private async refreshProtocols(replace = false): Promise<ProtocolPolicy | null> {
+    if (this.disposed || !this.remote.protocolManagement || this.protocolRefreshing && !replace) return null;
+    const requestVersion = ++this.protocolRequestVersion;
     this.protocolRefreshing = true;
     try {
-      const result = await this.remote.protocolManagement!();
+      const result = await this.remote.protocolManagement();
+      if (this.disposed || requestVersion !== this.protocolRequestVersion) return null;
       if (!result.ok) throw new Error('protocol_policy_unavailable');
       const current = this.view.protocolManagement;
-      if (!current || result.value.policy.version >= current.policy.version) this.patch({ protocolManagement: result.value, protocolError: null });
-    } catch { this.patch({ protocolError: '无法读取协议权限，请重试；不会使用临时默认值覆盖已有配置' }); }
-    finally { this.protocolRefreshing = false; }
+      if (!replace && current && result.value.policy.version < current.policy.version) {
+        this.patch({ protocolError: '权限配置版本已重置，请点击“重新加载配置”读取当前配置并核对后再保存' });
+        return null;
+      }
+      this.patch({ protocolManagement: result.value, protocolError: null });
+      return result.value.policy;
+    } catch {
+      if (!this.disposed && requestVersion === this.protocolRequestVersion)
+        this.patch({ protocolError: '无法读取协议权限，请重试；不会使用临时默认值覆盖已有配置' });
+      return null;
+    } finally { if (requestVersion === this.protocolRequestVersion) this.protocolRefreshing = false; }
+  }
+  /** Explicit owner reload may adopt a reset version; polling cannot replace newer saved state. */
+  async reloadProtocolPolicy(): Promise<ProtocolPolicy | null> {
+    if (this.disposed || this.view.protocolSaving) return null;
+    this.patch({ protocolSaving: true });
+    try { return await this.refreshProtocols(true); }
+    finally { if (!this.disposed) this.patch({ protocolSaving: false }); }
   }
   async configureProtocolPolicy(input: UpdateProtocolPolicy): Promise<boolean> {
     if (this.view.protocolSaving || !this.remote.configureProtocolPolicy || this.disposed) return false;
+    this.protocolRequestVersion++;
+    this.protocolRefreshing = false;
     this.patch({ protocolSaving: true, protocolSaveError: null });
     try {
       const result = await this.remote.configureProtocolPolicy(input);

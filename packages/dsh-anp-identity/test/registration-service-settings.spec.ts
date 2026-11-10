@@ -22,8 +22,10 @@ it('persists a canonical HTTPS preference and rejects stale writes across instan
   expect(await next.read(active)).toEqual({ origin: 'https://service.example', version: 1 });
   await expect(store.update({ origin: 'https://other.example', expectedVersion: 0 }, active)).rejects.toThrow('registration_service_conflict');
   expect((await next.read(active)).origin).toBe('https://service.example');
-  expect((await stat(join(root, 'manager-settings'))).mode & 0o777).toBe(0o700);
-  expect((await stat(join(root, 'manager-settings/registration.json'))).mode & 0o777).toBe(0o600);
+  if (process.platform !== 'win32') {
+    expect((await stat(join(root, 'manager-settings'))).mode & 0o777).toBe(0o700);
+    expect((await stat(join(root, 'manager-settings/registration.json'))).mode & 0o777).toBe(0o600);
+  }
 });
 it.each(['http://awiki.me','https://user:pass@awiki.me','https://awiki.me/path','https://awiki.me?token=value','https://awiki.me#fragment','not-a-url'])('rejects an unsafe service origin: %s', value => {
   expect(() => registrationOrigin(value)).toThrow('registration_service_invalid_origin');

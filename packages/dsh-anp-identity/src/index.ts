@@ -5,7 +5,7 @@ import { ProtocolPolicyStore, ProtocolPolicyAuthority, type ProtocolPolicyClient
 import { protocolNames, type ManagedProtocol, type UpdateProtocolPolicy, type ProtocolManagementState } from './protocol-policy-types.js'
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js'
 import type { PapCallbackManagementOperations } from './pap-callback.js'
-import { createManagedPublicationDriver, registerLocalIdentity, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
+import { createManagedPublicationDriver, registerLocalIdentity, inspectRegisteredDevice, type RegistrationInspection, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js'
 import { installedConsumerEntries, resolveInstalledConsumer } from './installed-consumer.js'
 import { ProtocolIdentityAuthority } from './target-policy.js'
 import { DomainAccessResolver, type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js'
@@ -251,6 +251,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   private readonly domains: DomainAccessResolver
   private readonly anpReads: AnpDomainReadAuthority
   private readonly anpDomainMode: boolean
+  private readonly domainExpiresAt: number | undefined
   private readonly domainOperations: DomainOperationAuthority
   private readonly users: UserIdentityService
   private readonly hostContext: Context
@@ -260,6 +261,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
   public constructor(ctx: Context, config: Config) {
     super(ctx, 'anpIdentity')
     this.anpDomainMode = config.domainAccess?.enabled === true
+    this.domainExpiresAt = config.domainAccess?.expiresAt
     this.resolvedConfig = resolveConfig(config)
     this.registrationSettings = new RegistrationServiceSettingsStore(this.resolvedConfig.stateRoot)
     this.protocolSettings = new ProtocolPolicyStore(this.resolvedConfig.stateRoot)
@@ -316,7 +318,7 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       generation: () => this.requireSlot().id,
       resolve: context => this.resolveDomainAccess(context, 'anp'),
       withNative: operation => this.withUserNative(operation),
-      dispatch: publicHttps,
+      dispatch: (request, check, onSend) => publicHttps(request, check, { timeoutMs: config.domainAccess?.requestTimeoutMs ?? 60000, onSend }),
       policy: context => this.bindProtocolPolicy(context,'anp'),
       runApproved: (context,grantId,request,identity,effect)=>this.users.executeApprovedOperation(context,grantId,request,identity,effect),
     })
@@ -1117,6 +1119,19 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
     return result
   }
 
+  /** Read-only diagnosis for the pinned owner registration; this cannot finalize or replay it. */
+  async inspectLocalRegistration(context: Context, input: {
+    reference: IdentityReference; origin: string; fetch?: typeof fetch; assertActive?: () => void
+  }): Promise<RegistrationInspection> {
+    const assertActive = await this.pinManagementContext(context, input.reference, input.assertActive)
+    const result = await inspectRegisteredDevice({ ...input, assertActive, withNative: async operation => {
+      assertActive()
+      const value = await (context.get('anpIdentity') as AnpIdentityService).withPublicationNative(operation)
+      assertActive(); return value
+    } })
+    assertActive(); return result
+  }
+
   /** Private owner storage path, never exposed through a Remote or model tool. */
   registrationBootstrapRoot(context: Context): string {
     this.assertManagementContext(context)
@@ -1160,12 +1175,22 @@ export class AnpIdentityService extends Service implements AnpIdentityServiceCon
       mcp: ['@deepseek-ai/dsh-mcp-client/domain', '@deepseek-ai/dsh-mcp-client'],
     }
     const entries = installedConsumerEntries(this.hostContext)
+    const slot = this.providerSlot
+    const providerReady = Boolean(slot?.initialized && !slot.disposed)
+    const [selection, catalog] = await Promise.all([
+      this.defaultIdentitySettings.read(check), providerReady ? this.loadCatalog(this.requireSlot()) : undefined,
+    ])
     const protocols = protocolNames.map(protocol => {
       const installed = entries.filter(entry => names[protocol].includes(entry.options.name))
       const enabled = installed.filter(entry => !entry.disabled && entry.fiber && [1, 2].includes(entry.fiber.state))
       const managedAdapters = enabled.filter(entry => [...this.protocolAdapters].some(([adapter, binding]) => binding.protocol === protocol && sameFiber(adapter.fiber, entry.fiber))).length
+      const eligible = catalog?.entries.filter(entry => entry.state === 'active' && entry.publication?.state === 'published'
+        && (!selection.identity || sameReference(entryReference(entry), selection.identity))
+        && (protocol !== 'pap' || entry.publication.config.capabilities?.papSession)
+        && (protocol !== 'mcp' || entry.publication.config.capabilities?.mcpMachine)) ?? []
       return { protocol, installed: installed.length > 0, enabled: enabled.length > 0,
-        ready: enabled.length > 0 && this.anpDomainMode && Boolean(this.providerSlot?.initialized && !this.providerSlot.disposed),
+        ready: managedAdapters > 0 && this.anpDomainMode && providerReady && eligible.length === 1
+          && (this.domainExpiresAt === undefined || Date.now() < this.domainExpiresAt),
         managedAdapters, unmanagedAdapters: enabled.length - managedAdapters }
     })
     check()
