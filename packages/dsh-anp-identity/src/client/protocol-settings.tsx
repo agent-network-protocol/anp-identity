@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import { protocolNames, protocolPolicyInputSchema, type ProtocolPolicyInput } from '../protocol-policy-types.js'
+import { protocolNames, protocolPolicyInputSchema, type ProtocolPolicy, type ProtocolPolicyInput } from '../protocol-policy-types.js'
 import type { IdentityController } from './controller.js'
 
 const labels = { allow_all: '全部允许', whitelist: '仅白名单', ask: '每次确认', deny: '全部禁止' } as const
@@ -12,10 +12,10 @@ export function ProtocolSettings({ controller }: { controller: IdentityControlle
   const [version, setVersion] = useState(0)
   const [dirty, setDirty] = useState(false)
   const [inputError, setInputError] = useState<string | null>(null)
-  const load = () => {
-    if (!saved) return
-    setDraft({ read: structuredClone(saved.policy.read), write: structuredClone(saved.policy.write) })
-    setVersion(saved.policy.version); setDirty(false); setInputError(null)
+  const load = (policy: ProtocolPolicy | undefined = saved?.policy) => {
+    if (!policy) return
+    setDraft({ read: structuredClone(policy.read), write: structuredClone(policy.write) })
+    setVersion(policy.version); setDirty(false); setInputError(null)
     controller.dismissProtocolSaveError()
   }
   useEffect(() => { if (!dirty && saved) load() }, [saved?.policy.version, dirty])
@@ -29,7 +29,7 @@ export function ProtocolSettings({ controller }: { controller: IdentityControlle
     <p className="anpi-muted">输入域名后自动发现与连接，统一使用已发布的默认身份</p>
     {view.protocolError && <p role="alert" className="anpi-error">{view.protocolError}</p>}
     {view.protocolSaveError && <p role="alert" className="anpi-error">{view.protocolSaveError}</p>}
-    {!saved || !draft ? <Button onClick={() => { void controller.refresh() }}>重新加载协议配置</Button> : <>
+    {!saved || !draft ? <Button onClick={async () => { const policy = await controller.reloadProtocolPolicy(); if (policy) load(policy) }}>重新加载协议配置</Button> : <>
       <div className="anpi-section"><h3>协议状态</h3>
         {!saved.domainAccessEnabled && <p className="anpi-small">Host 尚未开启全局域名接入；需要宿主配置 domainAccess.enabled，并将协议适配器加入 allowConsumers 与 userConsumers。本页只管理读写权限，没有域名接入开关</p>}
         {saved.protocols.map(item => <div className="anpi-row" key={item.protocol}>
@@ -71,7 +71,7 @@ export function ProtocolSettings({ controller }: { controller: IdentityControlle
             if (!parsed.success) { setInputError('请填写有效域名，并为每个域名选择至少一个协议'); return }
             if (await controller.configureProtocolPolicy({ expectedVersion: version, policy: parsed.data })) setDirty(false)
           }}>{view.protocolSaving ? '保存中…' : '保存权限'}</Button>
-          <Button disabled={view.protocolSaving} onClick={load}>重新加载配置</Button>
+          <Button disabled={view.protocolSaving} onClick={async () => { const policy = await controller.reloadProtocolPolicy(); if (policy) load(policy) }}>重新加载配置</Button>
           <Button disabled={view.protocolSaving} onClick={() => { void controller.refresh() }}>刷新状态</Button>
         </div>
       </div>
