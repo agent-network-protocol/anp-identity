@@ -1,0 +1,34 @@
+# Host opt-in after owner consent. Merge these names with existing consumer lists.
+# This does not change shared write permissions; their initial mode remains ask.
+- id: anp-identity
+  config:
+    allowConsumers:
+      - '@awiki/dsh-plugin'
+      - '@agent-network-protocol/dsh-anp-identity/protocol-bootstrap'
+      - '@agent-network-protocol/dsh-anp/plugin'
+      - '@awiki/dsh-pap/plugin'
+      - '@deepseek-ai/dsh-mcp-client/domain'
+    userConsumers:
+      - '@agent-network-protocol/dsh-anp-identity/protocol-bootstrap'
+      - '@agent-network-protocol/dsh-anp/plugin'
+      - '@awiki/dsh-pap/plugin'
+      - '@deepseek-ai/dsh-mcp-client/domain'
+    domainAccess:
+      enabled: true
+      scopes: [protocol.read]
+      # Windows/macOS PAP requires an explicit local-file selection:
+      # secretStore: local-file
+- id: anp
+  config:
+    enabled: true
+    autoConnect: true
+- id: pap
+  config:
+    enabled: true
+    autoConnect: true
+# Requires a compatible MCP package that exports this entry.
+- insert:
+    - id: mcp-domain
+      name: '@deepseek-ai/dsh-mcp-client/domain'
+      config:
+        enabled: true

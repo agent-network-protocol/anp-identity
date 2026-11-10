@@ -12,6 +12,8 @@ export interface DomainAccessConfig {
   scopes: string[]
   secretStore?: 'keyring' | 'local-file'
   expiresAt?: number
+  /** Signed ANP transport deadline, separate from the owner's confirmation wait. */
+  requestTimeoutMs?: number
 }
 export interface DomainBinding {
   identityRef: IdentityReference
@@ -39,7 +41,8 @@ export class DomainAccessResolver {
     if (config && (config.secretStore !== undefined && !['keyring', 'local-file'].includes(config.secretStore)
       || typeof config.enabled !== 'boolean' || !Array.isArray(config.scopes)
       || config.scopes.length > 64 || config.scopes.some(scope => !/^[\x21\x23-\x5b\x5d-\x7e]{1,128}$/u.test(scope))
-      || config.expiresAt !== undefined && (!Number.isSafeInteger(config.expiresAt) || config.expiresAt <= 0))) {
+      || config.expiresAt !== undefined && (!Number.isSafeInteger(config.expiresAt) || config.expiresAt <= 0)
+      || config.requestTimeoutMs !== undefined && (!Number.isSafeInteger(config.requestTimeoutMs) || config.requestTimeoutMs < 1000 || config.requestTimeoutMs > 120000))) {
       throw new DomainAccessError('invalid_domain_access_configuration')
     }
     this.config = config && structuredClone(config)

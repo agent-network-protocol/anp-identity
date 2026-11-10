@@ -5,6 +5,12 @@ import { isPublicDomainAddress } from '../src/public-http.js'
 
 const identity = { storeId: 'store', identityId: 'identity', did: 'did:wba:identity.example' }
 const consumer = '@awiki/dsh-pap/plugin'
+it('rejects invalid Host request deadlines before any identity or policy work', () => {
+  const candidates=vi.fn(async()=>[identity]),install=vi.fn()
+  for(const requestTimeoutMs of [0,999,120001,NaN,Infinity])
+    expect(()=>new DomainAccessResolver({enabled:true,scopes:[],requestTimeoutMs},'/isolated',candidates,install)).toThrow('invalid_domain_access_configuration')
+  expect(candidates).not.toHaveBeenCalled();expect(install).not.toHaveBeenCalled()
+})
 it('resolves one published identity without a domain and installs only the Host scope ceiling', async () => {
   const policies: ProtocolUsePolicy[] = []
   const resolver = new DomainAccessResolver({ enabled: true, scopes: ['protocol.read'] }, '/isolated', async () => [identity], policy => policies.push(policy))

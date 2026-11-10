@@ -14,10 +14,13 @@ export function isPublicDomainAddress(address: string): boolean {
     : isIP(address) === 6 && globalV6.check(address, 'ipv6') && !denied.check(address, 'ipv6')
 }
 /** Pin all public DNS answers before sending; no redirects, cookies, proxies or retry. */
-export async function publicHttps(requestValue: Request, assertBeforeSend?: () => Promise<void>): Promise<Response> {
+export async function publicHttps(requestValue: Request, assertBeforeSend?: () => Promise<void>, options: {
+  timeoutMs?: number
+  onSend?: () => void
+} = {}): Promise<Response> {
   const url = new URL(requestValue.url)
   if (url.protocol !== 'https:' || url.username || url.password || url.hash || requestValue.headers.has('host')) throw new Error('unsafe_target')
-  const signal = AbortSignal.any([requestValue.signal, AbortSignal.timeout(10000)])
+  const signal = AbortSignal.any([requestValue.signal, AbortSignal.timeout(options.timeoutMs ?? 10000)])
   const addresses = await abortable(lookup(url.hostname.replace(/^\[|\]$/gu, ''), { all: true, verbatim: true }), signal)
   signal.throwIfAborted()
   if (!addresses.length || addresses.length > 32 || addresses.some(value => !isPublicDomainAddress(value.address))) throw new Error('unsafe_target')
@@ -45,7 +48,9 @@ export async function publicHttps(requestValue: Request, assertBeforeSend?: () =
       if ([204, 205, 304].includes(status) || requestValue.method === 'HEAD') { incoming.resume(); resolve(new Response(null, { status, headers })); return }
       resolve(new Response(Readable.toWeb(incoming) as ReadableStream<Uint8Array>, { status, headers }))
     })
-    outgoing.on('error', () => reject(new Error('network_failure')))
+    outgoing.on('error', () => reject(Object.assign(new Error(signal.reason?.name === 'TimeoutError' ? 'http_request_timeout' : 'network_failure'),
+      { code: signal.reason?.name === 'TimeoutError' ? 'http_request_timeout' : 'network_failure' })))
+    options.onSend?.()
     outgoing.end(Buffer.from(bytes))
   })
 }

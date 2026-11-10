@@ -30,7 +30,7 @@ export interface AnpDomainReadHost {
   generation(): unknown
   resolve(context: Context): Promise<DomainBinding>
   withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>
-  dispatch(request: Request, assertBeforeSend: () => Promise<void>): Promise<Response>
+  dispatch(request: Request, assertBeforeSend: () => Promise<void>, onSend: () => void): Promise<Response>
   policy(context: Context): ProtocolPolicyClient
   runApproved<T>(context:Context,grantId:string,request:Request,identity:DomainBinding['identityRef'],effect:(check:()=>Promise<void>)=>Promise<T>):Promise<T>
 }
@@ -95,7 +95,7 @@ export class AnpDomainReadAuthority {
           const identity = await native.publicIdentity(binding.identityRef)
           await check()
           return httpSigningKey(identity).kid
-        }).dispatch(outgoing, value => {attempted=true;return this.host.dispatch(value, check)})
+        }).dispatch(outgoing, value => this.host.dispatch(value, check, () => { attempted = true }))
       })
       try { await check() } catch (error) { await response.body?.cancel(); throw error }
       return response

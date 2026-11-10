@@ -233,6 +233,17 @@ references/status, not phone/email, credentials, storage paths or signing object
 ANP/MCP/PAP guides give discovery order, actual available registry names, exact
 parameter conventions, approval handling and no-replay rules for uncertain writes.
 
+Windows registration and encrypted management credentials do not interpret
+Node's synthesized POSIX mode bits as ACLs; POSIX private-mode checks remain
+enforced on Unix. Registration failures expose stable reason codes in both the
+owner page and `identity_status`, without provider error details or secrets.
+At startup, a flow whose creation ledger explicitly records a deleted identity
+can be archived only when its execution directory has never been initialized.
+The owner input is retained in a private archive, the version advances, and a
+new flow still requires its own form and creation approval. Any existing execution
+directory, including an incomplete one, prevents this recovery; uncertain or
+published work is never reset or replayed.
+
 ## 域名自动接入与统一协议管理
 
 Host 一次性启用 `domainAccess`、允许实际安装的适配器，并开启 PAP/ANP 的 `autoConnect` 或官方 MCP 域名连接器。Agent 只提供域名即可发现和连接，无需逐站配置。默认使用唯一符合条件的已发布身份；多个身份需要明确默认身份。密钥托管、身份发布与远端账户授权仍各自独立，秘密后端不静默回退。

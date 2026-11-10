@@ -31,7 +31,7 @@ export function ProtocolSettings({ controller }: { controller: IdentityControlle
     {view.protocolSaveError && <p role="alert" className="anpi-error">{view.protocolSaveError}</p>}
     {!saved || !draft ? <Button onClick={() => { void controller.refresh() }}>重新加载协议配置</Button> : <>
       <div className="anpi-section"><h3>协议状态</h3>
-        {!saved.domainAccessEnabled && <p className="anpi-small">Host 尚未开启全局域名接入；此页面不会代替 Host 启用协议或创建身份</p>}
+        {!saved.domainAccessEnabled && <p className="anpi-small">Host 尚未开启全局域名接入；需要宿主配置 domainAccess.enabled，并将协议适配器加入 allowConsumers 与 userConsumers。本页只管理读写权限，没有域名接入开关</p>}
         {saved.protocols.map(item => <div className="anpi-row" key={item.protocol}>
           <span>{item.protocol.toUpperCase()}</span>
           <span className="anpi-small">{!item.installed ? '未安装' : !item.enabled ? '未启用' : item.unmanagedAdapters ? `存在未受管适配器（${item.unmanagedAdapters}）` : item.ready ? '已受管 · 身份就绪' : '已受管 · 身份未就绪'}</span>

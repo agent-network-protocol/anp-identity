@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -63,4 +64,46 @@ it('keeps an existing saved E1 namespace and leaves the Web branch unchanged', a
   const web = await new RegistrationOnboardingStore(webRoot).create({...input,profile:'web'},'https://awiki.me',active);
   expect(web.parameters.path).toBe('/awiki/user/test-user');
   expect(created.parameters.handle).toBe(web.parameters.handle);
+});
+
+it('archives an unstarted deleted identity flow with CAS and retains its owner record', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'onboarding-archive-')); roots.push(root);
+  const store = new RegistrationOnboardingStore(root);
+  const first = await store.create(input, 'https://awiki.me', active);
+  const archiveInput = { requestId: first.config.requestId, expectedVersion: first.version };
+  const archived = await store.archiveUnstarted(archiveInput, async current => { expect(current).toEqual(first); }, active);
+  expect(archived).toMatchObject({ version: 2, archived: true, config: first.config });
+  expect(await new RegistrationOnboardingStore(root).read(active)).toEqual(archived);
+  const backup = (await readdir(root)).find(name => name.startsWith('archived-registration-'))!;
+  expect(JSON.parse(await readFile(join(root, backup), 'utf8'))).toEqual(first);
+  await expect(store.archiveUnstarted(archiveInput, async () => {}, active)).rejects.toThrow('registration_onboarding_conflict');
+  await expect(store.create(input, 'https://awiki.me', active)).rejects.toThrow('registration_onboarding_conflict');
+  const next = await store.create({ ...input, expectedVersion: archived.version }, 'https://awiki.me', active);
+  expect(next.version).toBe(3); expect(next.archived).toBeUndefined();
+  expect(next.config.requestId).not.toBe(first.config.requestId);
+});
+
+it('refuses to archive any initialized flow, even if its journal is missing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'onboarding-execution-')); roots.push(root);
+  const store = new RegistrationOnboardingStore(root);
+  const first = await store.create(input, 'https://awiki.me', active);
+  const flow = join(root, 'registration-bootstrap', createHash('sha256').update(first.config.id).digest('hex'));
+  await mkdir(flow, { recursive: true, mode: 0o700 });
+  await expect(store.archiveUnstarted({ requestId: first.config.requestId, expectedVersion: first.version }, async () => {}, active))
+    .rejects.toThrow('registration_onboarding_recovery_required');
+  expect(await store.read(active)).toEqual(first);
+  expect((await readdir(root)).some(name => name.startsWith('archived-registration-'))).toBe(false);
+});
+
+it('requires deletion evidence and serializes competing archive writers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'onboarding-archive-cas-')); roots.push(root);
+  const store = new RegistrationOnboardingStore(root);
+  const first = await store.create(input, 'https://awiki.me', active);
+  const key = { requestId: first.config.requestId, expectedVersion: first.version };
+  await expect(store.archiveUnstarted(key, async () => { throw new Error('not_deleted'); }, active)).rejects.toThrow('not_deleted');
+  expect(await store.read(active)).toEqual(first);
+  const results = await Promise.allSettled([store.archiveUnstarted(key, async () => {}, active),
+    new RegistrationOnboardingStore(root).archiveUnstarted(key, async () => {}, active)]);
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+  expect((await store.read(active))?.version).toBe(2);
 });
