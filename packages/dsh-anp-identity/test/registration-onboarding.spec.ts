@@ -59,7 +59,7 @@ it('combines the selected dialing code without assuming China for other countrie
   expect(composeRegistrationPhone('+86','1234')).toBeUndefined();
 });
 
-it('keeps an existing saved E1 namespace and leaves the Web branch unchanged', async () => {
+it('keeps an existing saved E1 namespace and isolates new Web namespaces', async () => {
   const root = await mkdtemp(join(tmpdir(),'onboarding-')); roots.push(root);
   const store = new RegistrationOnboardingStore(root);
   const created = await store.create(input,'https://awiki.me',active);
@@ -69,6 +69,6 @@ it('keeps an existing saved E1 namespace and leaves the Web branch unchanged', a
   expect((await new RegistrationOnboardingStore(root).read(active))?.parameters.path).toBe('/awiki/user/test-user');
   const webRoot = await mkdtemp(join(tmpdir(),'onboarding-web-')); roots.push(webRoot);
   const web = await new RegistrationOnboardingStore(webRoot).create({...input,profile:'web'},'https://awiki.me',active);
-  expect(web.parameters.path).toBe('/awiki/user/test-user');
+  expect(web.parameters.path).toMatch(/^\/awiki\/web\/[a-f0-9]{32}$/u);
   expect(created.parameters.handle).toBe(web.parameters.handle);
 });
