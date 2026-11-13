@@ -24,6 +24,7 @@ test('default Node Facade manages multiple identities and purpose-scoped signing
   const alice = await manager.create(identitySpec('alice'))
   await manager.create(identitySpec('bob'))
   assert.equal((await manager.info()).identityCount, 2)
+  assert.equal((await manager.info()).backendAvailable, true)
   assert.equal((await manager.list()).length, 2)
 
   const snapshot = await alice.publicIdentity()

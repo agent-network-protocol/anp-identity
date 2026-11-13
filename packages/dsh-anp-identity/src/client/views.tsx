@@ -1,3 +1,7 @@
+import type { RegistrationBootstrapStatus } from '../registration-bootstrap.js';
+import { composeRegistrationPhone } from '../registration-onboarding-types.js';
+import { IDENTITY_PROMPT } from '../agent-guidance-text.js';
+import type { RegistrationServiceSettings } from '../registration-service-types.js';
 import {
   useEffect,
   useRef,
@@ -32,6 +36,8 @@ const capabilityNames: Record<string, string> = {
   "identity:sign": "签名",
   "identity:http-auth": "网站认证",
 };
+const isExactSnapshot = (snapshot: CapabilitySnapshot | undefined): boolean =>
+  snapshot?.version === 'anp-domain/1' || snapshot?.version === 'domain-operation/1';
 function CopyRow({
   label,
   value,
@@ -64,6 +70,7 @@ function Scope({
 }: {
   snapshot?: CapabilitySnapshot | undefined;
 }): ReactNode {
+  if (isExactSnapshot(snapshot)) return <p className="anpi-small">仅授权当前请求的网站认证，不包含永久权限、通用签名或其他操作。</p>;
   return (
     <>
       <h3>全部使用权限</h3>
@@ -77,17 +84,175 @@ function Scope({
             ))}
           </ul>
           <p>签名用途：{snapshot.signingPurposes.join("、") || "无"}</p>
+          {!!snapshot.oauthAudiences?.length && <p>OAuth 目标：{snapshot.oauthAudiences.join("、")}</p>}
           <p className="anpi-break">
-            网站：{snapshot.httpOrigins.join("、") || "无"}
+            网站：{snapshot.httpOrigins.includes('*') ? '全部 HTTPS 域名（通配权限）' : snapshot.httpOrigins.join("、") || "无"}
           </p>
         </>
       ) : (
         <p>无法读取权限范围，暂不能授权。</p>
       )}
       <p className="anpi-small">{FULL_PERMISSION_NOTICE}</p>
-      <p className="anpi-small">签名可在外部使用，不受网站列表限制。</p>
+      <p className="anpi-small">{snapshot?.capabilities.includes('identity:sign') ? '签名可在外部使用，不受网站列表限制。' : '仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。'}</p>
     </>
   );
+}
+
+function RegistrationForm({ controller }: { controller: IdentityController }): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const [label, setLabel] = useState("三方服务公共身份");
+  const [handle, setHandle] = useState("");
+  const [method, setMethod] = useState<"phone" | "email">("phone");
+  const [contact, setContact] = useState("");
+  const [dialingCode, setDialingCode] = useState("+86");
+  const [customCode, setCustomCode] = useState("+");
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [origin] = useState(view.registrationService?.origin ?? "https://awiki.me");
+  return <form onSubmit={event => {
+    event.preventDefault();
+    const code = dialingCode === "other" ? customCode : dialingCode;
+    const phone = method === "phone" ? composeRegistrationPhone(code, contact) : undefined;
+    if (method === "phone" && !phone) {
+      setContactError(code === 'international' ? "请填写完整国际号码，以 + 或 00 和国家码开头。"
+        : !/^\+[1-9][0-9]{0,3}$/u.test(code) ? "国家码格式不正确，请填写 +国家码，例如 +86。"
+        : code === "+86" ? "中国大陆手机号应为有效的11位数字。国家码已在左侧选择，手机号框不要重复填写 +86。"
+        : "手机号格式不正确，请只填写号码，不含国家码；国家码请在左侧选择。");
+      return;
+    }
+    if (!/^[a-z][a-z0-9-]{2,39}$/u.test(handle)) { setContactError("Handle 请使用3–40位小写字母、数字或连字符，并以字母开头。"); return; }
+    setContactError(null);
+    void controller.startIdentityRegistration({ label, handle, profile: 'e1', expectedOrigin: origin,
+      expectedVersion: view.onboarding?.version ?? 0, ...(method === "phone" ? { phone: phone! } : { email: contact.trim() }) });
+  }}>
+    <p>注册服务：{origin}</p>
+    <label>身份名称<input aria-label="身份名称" required maxLength={128} value={label} onChange={event => setLabel(event.target.value)} /></label>
+    <label>Handle<input aria-label="Handle" required minLength={3} maxLength={40} value={handle} onChange={event => setHandle(event.target.value)} placeholder="your-name" /></label>
+    <p className="anpi-small">3–40 位小写字母、数字和连字符，以字母开头，不含域名。创建的是新的公共身份，不是导入已有私钥。</p>
+    <label>验证方式<select aria-label="验证方式" value={method} onChange={event => { setMethod(event.target.value as "phone" | "email"); setContact(""); setContactError(null); }}>
+      <option value="phone">手机号</option><option value="email">邮箱</option></select></label>
+    {method === "phone" ? <div style={{display:"grid",gridTemplateColumns:"minmax(125px,35%) minmax(0,1fr)",gap:12}}>
+      <label>国家/地区码<select aria-label="国家/地区码" value={dialingCode} onChange={event=>{setDialingCode(event.target.value);setContactError(null);}}>
+        <option value="+86">中国大陆 +86</option><option value="+852">中国香港 +852</option>
+        <option value="+853">中国澳门 +853</option><option value="+886">中国台湾 +886</option>
+        <option value="+1">美国/加拿大 +1</option><option value="+65">新加坡 +65</option>
+        <option value="+81">日本 +81</option><option value="+44">英国 +44</option>
+        <option value="+49">德国 +49</option><option value="+33">法国 +33</option>
+        <option value="+61">澳大利亚 +61</option><option value="+91">印度 +91</option>
+        <option value="other">其他国家/地区</option>
+        <option value="international">完整国际号码</option>
+      </select>{dialingCode==="other"&&<input aria-label="自定义国家码" value={customCode} onChange={event=>{setCustomCode(event.target.value);setContactError(null);}} placeholder="+国家码" />}</label>
+      <label>手机号<input aria-label="注册手机号" type="tel" inputMode="tel" autoComplete="off" required value={contact}
+        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder={dialingCode==="international"?"+国家码及手机号":dialingCode==="+86"?"11位手机号，不含国家码":"号码，不含国家码"} /></label>
+    </div> : <label>邮箱<input aria-label="注册邮箱" type="email" autoComplete="off" required value={contact}
+        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder="you@example.com" /></label>}
+    {method==="phone"&&<p className="anpi-small">支持海外手机号。选择国家/地区码并填写号码，或选择“完整国际号码”填写 +国家码及手机号。</p>}
+    {contactError && <p role="alert">{contactError}</p>}
+    <details><summary>高级：身份类型</summary><select aria-label="身份类型" value="e1" disabled><option value="e1">E1（默认）</option><option value="web" disabled>Web（暂未开放）</option></select><p className="anpi-small">当前仅支持创建 E1 身份，Web 身份暂未开放。</p></details>
+    <p className="anpi-small">本次用途为 MCP / ANP / PAP 登录，不包含消息能力或账户回调授权。提交只申请创建；你还需在下一步批准，随后才发送验证码并验证、发布。不会自动授权第三方访问。</p>
+    <p className="anpi-small">手机号、邮箱和验证码不提供给 Agent；不要把验证码发到聊天中。</p>
+    <div className="anpi-footer"><Button type="button" disabled={view.pending} onClick={() => controller.closeModal()}>稍后</Button>
+      <Button type="submit" disabled={view.pending || origin !== view.registrationService?.origin || !label.trim() || !handle.trim() || !contact.trim()}>申请创建并注册</Button></div>
+  </form>;
+}
+
+function RegistrationServiceForm({ controller, settings, pending }: {
+  controller: IdentityController; settings: RegistrationServiceSettings; pending: boolean;
+}): ReactNode {
+  const [draft, setDraft] = useState(settings.origin);
+  const [version, setVersion] = useState(settings.version);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) { setDraft(settings.origin); setVersion(settings.version); }
+  }, [settings.origin, settings.version, dirty]);
+  return <div className="anpi-section">
+    <h3>身份服务</h3>
+    <form onSubmit={event => {
+      event.preventDefault();
+      void controller.configureRegistrationService(draft, version).then(saved => { if (saved) setDirty(false); });
+    }}>
+      <label>身份服务地址 <input aria-label="身份服务地址" type="url" required value={draft}
+        placeholder="https://awiki.me" disabled={pending}
+        onChange={event => { setDraft(event.target.value); setDirty(true); }} /></label>
+      <Button disabled={pending || !dirty || !draft.trim()} type="submit">保存服务地址</Button>
+      {dirty && <Button disabled={pending} type="button" onClick={() => {
+        setDraft(settings.origin); setVersion(settings.version); setDirty(false);
+      }}>重新载入已保存地址</Button>}
+    </form>
+    <p className="anpi-small">默认 https://awiki.me。这里只保存新注册使用的 HTTPS 根地址，不发送验证码、不创建身份。</p>
+    <p className="anpi-small">已有身份和正在进行的注册继续使用原服务。跨服务注册必须创建新的身份及注册流程，不能只修改已有 DID 的域名。</p>
+  </div>;
+}
+
+function DefaultIdentityForm({ controller }: { controller: IdentityController }): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const settings = view.defaultIdentity;
+  const selected = settings?.identity ? identityKey(settings.identity) : 'automatic';
+  const [draft, setDraft] = useState(selected);
+  const [version, setVersion] = useState(settings?.version ?? 0);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (settings && !dirty) { setDraft(selected); setVersion(settings.version); } }, [selected, settings?.version, dirty]);
+  const candidates = view.identities.filter(identity => identity.state === 'active' && identity.catalogState === 'active');
+  const missing = draft !== 'automatic' && !candidates.some(identity => identityKey(identity.reference) === draft);
+  return <div className="anpi-section"><h3>默认公共身份</h3>
+    <p className="anpi-small">ANP、PAP、MCP 的域名访问共用此默认身份。下面身份列表的选中行仅用于查看，不会改变默认身份。只能保存本机已发布的身份；自动选择遇到多个候选时会要求明确选择。</p>
+    {view.defaultIdentityError && <p role="alert">{view.defaultIdentityError}</p>}
+    {settings && <form onSubmit={event => {
+      event.preventDefault();
+      const reference = candidates.find(identity => identityKey(identity.reference) === draft)?.reference;
+      if (draft !== 'automatic' && !reference) return;
+      void controller.configureDefaultIdentity({ identity: reference ?? null, expectedVersion: version }).then(saved => { if (saved) setDirty(false); });
+    }}>
+      <label>默认身份<select aria-label="默认身份" value={draft} disabled={view.defaultIdentitySaving}
+        onChange={event => { setDraft(event.target.value); setDirty(true); }}>
+        <option value="automatic">自动选择唯一的已发布身份</option>
+        {missing && <option value={draft}>已保存的身份不可用（不会自动替换）</option>}
+        {candidates.map(identity => <option key={identityKey(identity.reference)} value={identityKey(identity.reference)}>{identityLabel(identity)}</option>)}
+      </select></label>
+      {dirty && version !== settings.version && <p role="alert">配置已由其他页面或 Agent 修改。草稿已保留，请刷新配置后重新选择。</p>}
+      <div className="anpi-actions"><Button type="submit" disabled={!dirty || missing || view.defaultIdentitySaving || version !== settings.version}>保存默认身份</Button>
+        <Button type="button" disabled={view.defaultIdentitySaving} onClick={() => { setDirty(false); void controller.refreshDefaultIdentity(); }}>刷新默认身份</Button></div>
+    </form>}
+  </div>;
+}
+
+/** Shared owner-only registration progress for settings and the approval continuation. */
+function RegistrationProgress({ controller, bootstrap, approvalCompleted = false }: {
+  controller: IdentityController; bootstrap: RegistrationBootstrapStatus; approvalCompleted?: boolean;
+}): ReactNode {
+  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const [otp, setOtp] = useState('');
+  const handle = bootstrap.reference && view.identities.find(identity => identityKey(identity.reference) === identityKey(bootstrap.reference!))?.handle;
+  return <div className="anpi-section" role="status">
+        <h3>协议身份注册</h3>
+        {bootstrap.origin && <p className="anpi-small">注册服务：{bootstrap.origin}</p>}
+        {bootstrap.clientVersion && <p className="anpi-small">客户端版本头：{bootstrap.clientVersion}</p>}
+        <p>{({ awaiting_approval: approvalCompleted ? '创建已批准，正在准备验证' : '等待创建审批', awaiting_email_verification: '等待邮箱激活确认', awaiting_phone_verification: '等待短信验证码', registering: '注册中',
+          publishing: '发布中', published: '已发布', registration_uncertain: '注册结果不确定，需要管理处理', blocked: '注册暂不可用', disposed: '已停止' })[bootstrap.phase]}</p>
+        {bootstrap.phase === 'awaiting_approval' && <div>
+          {!approvalCompleted && view.requests.some(request => request.id === bootstrap.requestId && request.status === 'pending') ? <>
+            <p className="anpi-small">下一步请确认创建。本步骤尚未发送验证码；批准创建且短信请求成功后，才会出现验证码输入框。</p>
+            <Button disabled={view.pending || view.modal !== null} onClick={() => { void controller.openRequest(bootstrap.requestId); }}>继续创建审批</Button>
+          </> : <p className="anpi-small">创建已批准，正在准备注册并请求验证码，请稍候。请勿重复创建；结果会在这里更新。</p>}
+        </div>}
+        {bootstrap.phase === 'published' && <p className="anpi-small">注册与发布已完成；还需由 Host 配置协议用途许可和消费者连接。</p>}
+        {bootstrap.reason === 'client_upgrade_required' && <p className="anpi-small">短信未发送：注册服务拒绝了当前客户端版本（client.upgrade_required），这不是验证码错误。请让服务管理员核对上方服务地址和客户端版本准入；不要重复创建身份。</p>}
+        {bootstrap.reason === 'phone_unavailable' && <p className="anpi-small">短信验证码请求未确认成功，请检查服务端手机号注册配置。不会自动重发或绕过验证。</p>}
+        {bootstrap.phase === 'blocked' && ['phone_unavailable','client_upgrade_required'].includes(bootstrap.reason ?? '') &&
+          <div><p className="anpi-small">修复服务或版本准入后，可手动重试发送验证码。沿用当前身份，不会再次创建或重放注册。</p>
+            <Button disabled={view.pending} onClick={() => { void controller.retryRegistrationSms(); }}>重试发送验证码</Button></div>}
+        {bootstrap.phase === 'awaiting_phone_verification'  && <form onSubmit={event => {
+          event.preventDefault(); const code = otp; setOtp(''); void controller.submitRegistrationOtp(code);
+        }}>
+          <p className="anpi-small">发送请求已受理不等于短信已送达。请使用此注册服务为当前 Handle 签发的验证码，不能复用其他环境或登录流程的验证码。</p>
+          <label>短信验证码 <input aria-label="短信验证码" type="password" inputMode="numeric" autoComplete="one-time-code"
+            maxLength={6} value={otp} onChange={event => setOtp(event.target.value)} /></label>
+          <button type="submit" disabled={view.pending || !/^[0-9]{6}$/u.test(otp)}>验证并注册</button>
+        </form>}
+        {handle && <CopyRow label="Handle" value={handle} controller={controller} />}
+        {bootstrap.reference && <CopyRow label="DID" value={bootstrap.reference.did} controller={controller} />}
+        {bootstrap.clientId && <CopyRow label="CIMD" value={bootstrap.clientId} controller={controller} />}
+        {bootstrap.reference && <CopyRow label="本地身份引用" value={JSON.stringify(bootstrap.reference)} controller={controller} />}
+  </div>;
 }
 
 /** Actual settings-section contribution, not a stand-alone preview. */
@@ -110,8 +275,23 @@ export function IdentitySettings({
       : "");
   return (
     <section className="anpi">
-      <h2>身份</h2>
+      <div className="anpi-row"><h2>身份管理</h2>
+        <Button disabled={view.pending || !view.onboarding?.available || view.onboarding.inProgress}
+          onClick={() => controller.openRegistration()}>创建公共身份</Button></div>
       <p className="anpi-muted">管理此 DSH 中保存的身份</p>
+      <div className="anpi-section"><h3>让 Agent 帮你创建</h3>
+        <p className="anpi-small">{IDENTITY_PROMPT}</p>
+        <Button onClick={() => { void controller.copy(IDENTITY_PROMPT); }}>复制示例提示词</Button>
+        <p className="anpi-small">Agent 会打开创建入口；Handle、手机号/邮箱和验证码只在本页面填写。创建、验证、发布及第三方使用授权是不同步骤。</p>
+      </div>
+      {view.registrationService && <RegistrationServiceForm controller={controller} settings={view.registrationService} pending={view.pending} />}
+      {(view.defaultIdentity || view.defaultIdentityError) && <DefaultIdentityForm controller={controller} />}
+      {view.bootstraps.map(bootstrap => <div key={bootstrap.id}>
+        {view.modal?.kind === 'registration-progress' && view.modal.requestId === bootstrap.requestId ? null :
+          <RegistrationProgress controller={controller} bootstrap={bootstrap} />}
+        {['awaiting_email_verification', 'awaiting_phone_verification', 'registering', 'publishing', 'registration_uncertain', 'blocked'].includes(bootstrap.phase) && <Button disabled={view.pending || view.modal !== null}
+          onClick={() => controller.openRegistrationProgress(bootstrap.requestId)}>继续注册</Button>}
+      </div>)}
       <div className="anpi-tabs" role="tablist" aria-label="身份管理">
         <button
           role="tab"
@@ -217,6 +397,17 @@ export function IdentitySettings({
                 controller={controller}
               />
               </div>
+              {view.publication && <div className="anpi-section">
+                <h3>对外身份</h3>
+                <p>{({local: "尚未发布", awaiting_configuration: "等待身份托管配置", publishing: "发布中", published: "已发布", failed: "发布未完成"})[view.publication.state]}</p>
+                {view.publication.capabilities && <p>{[
+                  view.publication.capabilities.mcpMachine ? 'MCP 机器访问（无需回调地址）' : '',
+                  view.publication.capabilities.papSession ? 'PAP 会话' : '',
+                  view.publication.capabilities.papAccount ? 'PAP 账户授权' : '',
+                ].filter(Boolean).join(' · ')}</p>}
+                {view.publication.clientId && <CopyRow label="CIMD" value={view.publication.clientId} controller={controller} />}
+                {view.publication.state === "failed" && <Button disabled={view.pending} onClick={() => { void controller.retryPublication(); }}>重试发布</Button>}
+              </div>}
               <div className="anpi-section">
                 <h3>你授权的插件</h3>
                 {view.grants.length === 0 && (
@@ -476,7 +667,8 @@ export function IdentityOverlay({
   );
   if (!view.modal) return null;
   const modal = view.modal;
-  const key =
+  const key = modal.kind === "registration" ? "registration" :
+    modal.kind === "registration-progress" ? `registration-progress:${modal.requestId}` :
     modal.kind === "request" || modal.kind === "result"
       ? `${modal.review.request.id}:${modal.review.request.version}`
       : modal.kind === "permissions" || modal.kind === "revoke"
@@ -500,7 +692,23 @@ function IdentityModal({
   if (!modal) return null;
   let title: string;
   let content: ReactNode;
-  if (modal.kind === "result") {
+  if (modal.kind === "registration") {
+    title = "创建公共身份";
+    content = <RegistrationForm controller={controller} />;
+  } else if (modal.kind === "registration-progress") {
+    const bootstrap = view.bootstraps.find(flow => flow.requestId === modal.requestId);
+    const completed = bootstrap?.phase === 'published';
+    const stopped = bootstrap?.phase === 'disposed';
+    title = completed ? "注册完成" : stopped ? "注册流程已停止" : "完成身份注册";
+    content = <>
+      {bootstrap ? <RegistrationProgress controller={controller} bootstrap={bootstrap} approvalCompleted /> :
+        <p role="status">正在读取注册状态，请稍候…</p>}
+      <p className="anpi-small">{completed ? '身份注册与发布已完成，无需再次注册。连接第三方服务属于独立的授权配置。'
+        : stopped ? '此注册流程已停止。'
+        : '创建身份、验证联系方式和发布是不同步骤。你可以稍后继续，不会丢失当前流程。'}</p>
+      <Button disabled={view.pending} onClick={() => controller.closeModal()}>{completed ? '完成' : stopped ? '关闭' : '稍后继续'}</Button>
+    </>;
+  } else if (modal.kind === "result") {
     title = "请求结果";
     const request = modal.review.request;
     const grant = modal.review.grant;
@@ -601,7 +809,9 @@ function IdentityModal({
     );
   } else if (modal.kind === "request") {
     const request = modal.review.request;
-    title = `允许${request.caller.displayName}${request.kind === "create" ? "创建" : "使用"}身份？`;
+    title = request.kind === 'access' && isExactSnapshot(modal.review.snapshot)
+      ? '确认本次操作'
+      : `允许${request.caller.displayName}${request.kind === "create" ? "创建" : "使用"}身份？`;
     content = (
       <>
         <p className="anpi-small">{request.caller.consumer}</p>
@@ -617,6 +827,9 @@ function IdentityModal({
               <dd>{request.parameters.domain}</dd>
               <dt>身份路径</dt>
               <dd>{request.parameters.path}</dd>
+              <dt>用途</dt><dd>{request.parameters.usage === 'protocol' ? 'MCP / PAP 协议身份（独立设备权限）' : '普通插件身份'}</dd>
+              <dt>身份方法</dt><dd>{request.parameters.profile ?? 'e1'}</dd>
+              {request.parameters.usage === 'protocol' && <><dt>设备能力</dt><dd>{request.parameters.identityOnly ? '仅公共身份（不含消息能力）' : '身份与消息能力'}</dd></>}
             </dl>
             <p>参数由插件提供，请确认后继续。</p>
             <p className="anpi-small">Handle 由申请插件提供，保存不代表已在服务端注册或验证。</p>
@@ -795,6 +1008,8 @@ function AccessForm({
     (request.identity && identityKey(request.identity) === key
       ? review.snapshot
       : undefined);
+  const exact = isExactSnapshot(snapshot);
+  const selectedMode = exact ? 'once' : mode;
   return (
     <>
       <label htmlFor="anpi-identity-choice">使用哪个身份</label>
@@ -817,6 +1032,17 @@ function AccessForm({
         ))}
       </select>
       {!identity && <p>没有兼容身份，请回到原插件申请创建身份。</p>}
+      {exact && request.operation?.httpOrigin && <p className="anpi-break">目标网站：{request.operation.httpOrigin}</p>}
+      {exact && review.operationPreview && <dl className="anpi-parameters" aria-label="本次操作范围">
+        <dt>请求方法</dt><dd>{review.operationPreview.method}</dd>
+        <dt>目标网址</dt><dd>{review.operationPreview.target}</dd>
+        {review.operationPreview.parameters !== undefined && <>
+          <dt>参数摘要</dt><dd><p className="anpi-small">敏感字段已隐藏；较长内容可能截断。此处仅供核对，不能修改请求。</p>
+            <pre className="anpi-document" aria-label="参数摘要">{JSON.stringify(review.operationPreview.parameters, null, 2)}</pre></dd>
+        </>}
+        <dt>请求内容 SHA-256</dt><dd><code className="anpi-break">{review.operationPreview.bodyDigest}</code></dd>
+      </dl>}
+      {exact && !review.operationPreview && <p role="alert">当前操作摘要不可用，暂不能批准。请从原任务重新发起操作。</p>}
       <fieldset>
         <legend>授权方式</legend>
         <div className="anpi-mode">
@@ -824,14 +1050,14 @@ function AccessForm({
             <input
               type="radio"
               name="anpi-mode"
-              checked={mode === "once"}
+              checked={selectedMode === "once"}
               onChange={() => {
                 setMode("once");
               }}
             />
             单次授权<small>仅本次操作有效</small>
           </label>
-          <label>
+          {!exact && <label>
             <input
               type="radio"
               name="anpi-mode"
@@ -841,21 +1067,21 @@ function AccessForm({
               }}
             />
             永久授权<small>持续有效，直到你撤销</small>
-          </label>
+          </label>}
         </div>
       </fieldset>
-      {mode === "permanent" ? (
+      {selectedMode === "permanent" ? (
         <p className="anpi-operation">持续授权：可读取公开身份、签名，并请求下列全部网站，直到你撤销。不仅限于当前操作。</p>
       ) : request.operation ? (
         <p className="anpi-operation">本次操作：{request.operation.summary}</p>
       ) : (
-        mode === "once" && (
+        selectedMode === "once" && (
           <p role="alert">
             原插件未提供明确操作，暂不能批准单次授权，请原插件补齐。
           </p>
         )
       )}
-      {mode === "once" &&
+      {!exact && mode === "once" &&
         review.permanentIdentities?.some(
           (reference) => identityKey(reference) === key,
         ) && (
@@ -866,9 +1092,12 @@ function AccessForm({
       {review.unavailableReason && (
         <p role="alert">{review.unavailableReason}</p>
       )}
-      <div className="anpi-access-scope">
+      {exact ? <div className="anpi-access-scope" role="note">
+        <p>仅允许上方这一次请求。请求方法、目标网址和请求内容均已绑定；未明确批准前不会执行操作。</p>
+        <p className="anpi-small">不会授予其他域名、其他请求、永久写入或通用签名权限。</p>
+      </div> : <div className="anpi-access-scope">
         <p className="anpi-small">{FULL_PERMISSION_NOTICE}</p>
-        <p className="anpi-small">签名可在外部使用，不受网站列表限制。</p>
+        <p className="anpi-small">{snapshot?.capabilities.includes('identity:sign') ? '签名可在外部使用，不受网站列表限制。' : '仅允许公开身份读取与精确 HTTP 请求认证，不提供设备断言或通用签名权限。'}</p>
         <details>
           <summary>全部使用权限 · 查看范围</summary>
           {snapshot ? (
@@ -889,27 +1118,28 @@ function AccessForm({
           )}
         </details>
         <p className="anpi-small anpi-break">
-          网站：{snapshot?.httpOrigins.join("、") || "无"}
+          网站：{snapshot?.httpOrigins.includes('*') ? '全部 HTTPS 域名（通配权限）' : snapshot?.httpOrigins.join("、") || "无"}
         </p>
-      </div>
+      </div>}
       <DecisionActions
         controller={controller}
         disabled={
           !identity ||
           !snapshot ||
           Boolean(review.unavailableReason) ||
-          (mode === "once" && !request.operation)
+          (exact && !review.operationPreview) ||
+          (selectedMode === "once" && !request.operation)
         }
         approve={() => {
           if (identity)
             void controller.decide({
               decision: "approve",
               identity: identityReference(identity),
-              mode,
+              mode: selectedMode,
               ...(snapshot ? { reviewedSnapshot: snapshot } : {}),
             });
         }}
-        label="允许授权"
+        label={exact ? '允许本次操作' : '允许授权'}
       />
     </>
   );

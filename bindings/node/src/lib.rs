@@ -176,7 +176,7 @@ impl JsIdentityManager {
 
     #[napi]
     pub async fn info(&self) -> Result<Value> {
-        self.with_manager(|manager| to_value(manager.info().map_err(map_error)?))
+        self.with_manager_unchecked(|manager| to_value(manager.info().map_err(map_error)?))
             .await
     }
 
@@ -270,6 +270,20 @@ impl JsIdentityManager {
         T: Send + 'static,
         F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
     {
+        self.with_manager_unchecked(move |manager| {
+            manager.assert_backend_available().map_err(map_error)?;
+            let result = operation(manager)?;
+            manager.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
+    }
+
+    async fn with_manager_unchecked<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
+    {
         let inner = Arc::clone(&self.inner);
         run_blocking(move || operation(&mut inner.blocking_lock())).await
     }
@@ -292,6 +306,60 @@ impl JsManagedIdentity {
     pub async fn public_identity(&self) -> Result<Value> {
         self.with_identity(|identity| to_value(identity.public_identity().map_err(map_error)?))
             .await
+    }
+
+    #[napi]
+    pub async fn oauth_public_jwk(&self, kid: Option<String>) -> Result<Value> {
+        self.with_identity(move |identity| {
+            to_value(
+                identity
+                    .oauth_public_jwk(key_selector(kid))
+                    .map_err(map_error)?,
+            )
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn export_candidate_oauth_public_jwk(&self, kid: String) -> Result<Value> {
+        self.with_identity(move |identity| {
+            to_value(
+                identity
+                    .export_candidate_oauth_public_jwk(kid)
+                    .map_err(map_error)?,
+            )
+        })
+        .await
+    }
+    #[napi]
+    pub async fn prepare_oauth_key_change(
+        &self,
+        request: Value,
+    ) -> Result<JsDocumentChangeSession> {
+        let request: anp_identity::OAuthKeyChangeRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_identity(move |identity| {
+                identity
+                    .prepare_oauth_key_change(request)
+                    .map_err(map_error)
+            })
+            .await?;
+        Ok(JsDocumentChangeSession {
+            inner: Arc::new(Mutex::new(session)),
+        })
+    }
+
+    #[napi]
+    pub async fn sign_oauth_client_assertion(&self, request: Value) -> Result<String> {
+        let request: anp_identity::OAuthClientAssertionRequest = serde_json::from_value(request)
+            .map_err(|_| map_error(IdentityError::InvalidRequest))?;
+        self.with_identity(move |identity| {
+            identity
+                .sign_oauth_client_assertion(request)
+                .map_err(map_error)
+        })
+        .await
     }
 
     #[napi]
@@ -394,7 +462,14 @@ impl JsManagedIdentity {
         F: FnOnce(&mut CoreManagedIdentity) -> Result<T> + Send + 'static,
     {
         let inner = Arc::clone(&self.inner);
-        run_blocking(move || operation(&mut inner.blocking_lock())).await
+        run_blocking(move || {
+            let mut identity = inner.blocking_lock();
+            identity.assert_backend_available().map_err(map_error)?;
+            let result = operation(&mut identity)?;
+            identity.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
     }
 }
 
@@ -612,10 +687,20 @@ impl JsProviderLease {
 
     #[napi]
     pub async fn info(&self) -> Result<Value> {
-        self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |manager| {
-            to_value(manager.info().map_err(map_error)?)
-        })
-        .await
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, anp_identity::host::capability::IDENTITY_READ)
+                .map_err(map_authorization_error)
+        })?;
+        let result = self
+            .with_manager_unchecked(|manager| to_value(manager.info().map_err(map_error)?))
+            .await?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, anp_identity::host::capability::IDENTITY_READ)
+                .map_err(map_authorization_error)
+        })?;
+        Ok(result)
     }
 
     #[napi]
@@ -749,6 +834,282 @@ impl JsProviderLease {
     }
 
     #[napi]
+    pub async fn provider_capabilities(&self) -> Result<Value> {
+        self.with_authorized(anp_identity::host::capability::IDENTITY_READ, |_| Ok(serde_json::json!({
+            "api_version":2,"algorithms":["EdDSA","ES256"],"features":["oauth_key_change","candidate_oauth_jwk","pap_delegation","pap_session","pap_dpop","temporary_key_retirement","management_proof","web_registration_proof"]
+        }))).await
+    }
+    #[napi]
+    pub async fn export_candidate_oauth_public_jwk(
+        &self,
+        identity: JsIdentityRef,
+        kid: String,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_READ,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.export_candidate_oauth_public_jwk(kid))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn prepare_oauth_key_change(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<JsProviderDocumentChangeSession> {
+        let reference = identity.into();
+        let request: anp_identity::OAuthKeyChangeRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        let session = self
+            .with_authorized(
+                anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+                move |manager| {
+                    manager
+                        .get(&reference)
+                        .and_then(|mut identity| identity.prepare_oauth_key_change(request))
+                        .map_err(map_error)
+                },
+            )
+            .await?;
+        Ok(JsProviderDocumentChangeSession::new(
+            session,
+            Arc::clone(&self.authorization),
+            Arc::clone(&self.lease),
+        ))
+    }
+    #[napi]
+    pub async fn create_delegated_key(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        let request: anp_identity::CreateTemporaryKeyRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_PAP_SESSION,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.create_delegated_key(request))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn create_dpop_key(&self, identity: JsIdentityRef, request: Value) -> Result<Value> {
+        let reference = identity.into();
+        let request: anp_identity::CreateTemporaryKeyRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_PAP_DPOP,
+            move |manager| {
+                to_value(
+                    manager
+                        .get(&reference)
+                        .and_then(|identity| identity.create_dpop_key(request))
+                        .map_err(map_error)?,
+                )
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn issue_pap_delegation(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<String> {
+        let reference = identity.into();
+        let request: anp_identity::PapDelegationRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, anp_identity::host::capability::IDENTITY_SIGN)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_PAP_SESSION,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.issue_pap_delegation(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn sign_pap_session_request(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<String> {
+        let reference = identity.into();
+        let request: anp_identity::PapSessionRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_PAP_SESSION,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.sign_pap_session_request(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn sign_dpop_proof(&self, identity: JsIdentityRef, request: Value) -> Result<String> {
+        let reference = identity.into();
+        let request: anp_identity::DpopProofRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_PAP_DPOP,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.sign_dpop_proof(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn describe_temporary_key(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        let request: anp_identity::DescribeTemporaryKeyRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        let capability = match request.purpose {
+            anp_identity::TemporaryKeyPurpose::PapSession => {
+                anp_identity::host::capability::IDENTITY_PAP_SESSION
+            }
+            anp_identity::TemporaryKeyPurpose::PapDpop => {
+                anp_identity::host::capability::IDENTITY_PAP_DPOP
+            }
+        };
+        self.with_authorized(capability, move |manager| {
+            to_value(
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.describe_temporary_key(request))
+                    .map_err(map_error)?,
+            )
+        })
+        .await
+    }
+    #[napi]
+    pub async fn retire_temporary_key(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<()> {
+        let reference = identity.into();
+        let request: anp_identity::RetireTemporaryKeyRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize_scope_owner(lease, &request.scope.owner)
+                .map_err(map_authorization_error)
+        })?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_KEY_LIFECYCLE,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.retire_temporary_key(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn oauth_public_jwk(
+        &self,
+        identity: JsIdentityRef,
+        kid: Option<String>,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_READ,
+            move |manager| {
+                let jwk = manager
+                    .get(&reference)
+                    .and_then(|identity| identity.oauth_public_jwk(key_selector(kid)))
+                    .map_err(map_error)?;
+                to_value(jwk)
+            },
+        )
+        .await
+    }
+
+    #[napi]
+    pub async fn sign_oauth_client_assertion(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<String> {
+        let reference = identity.into();
+        let request: anp_identity::OAuthClientAssertionRequest = serde_json::from_value(request)
+            .map_err(|_| map_error(IdentityError::InvalidRequest))?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_SIGN,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.sign_oauth_client_assertion(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+
+    #[napi]
     pub async fn sign(
         &self,
         identity: JsIdentityRef,
@@ -814,6 +1175,46 @@ impl JsProviderLease {
         .await
     }
 
+    #[napi]
+    pub async fn sign_web_registration_proof(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        let request: anp_identity::host::WebRegistrationProofRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.sign_web_registration_proof(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
+    #[napi]
+    pub async fn sign_management_proof(
+        &self,
+        identity: JsIdentityRef,
+        request: Value,
+    ) -> Result<Value> {
+        let reference = identity.into();
+        let request: anp_identity::host::ManagementProofRequest =
+            serde_json::from_value(request).map_err(invalid_json)?;
+        self.with_authorized(
+            anp_identity::host::capability::IDENTITY_DOCUMENT_UPDATE,
+            move |manager| {
+                manager
+                    .get(&reference)
+                    .and_then(|identity| identity.sign_management_proof(request))
+                    .map_err(map_error)
+            },
+        )
+        .await
+    }
     #[napi]
     pub async fn sign_object_proof(
         &self,
@@ -1823,10 +2224,30 @@ impl JsProviderLease {
                 .authorize(lease, capability)
                 .map_err(map_authorization_error)
         })?;
-        self.with_manager(operation).await
+        let result = self.with_manager(operation).await?;
+        self.with_lease(|lease| {
+            self.authorization
+                .authorize(lease, capability)
+                .map_err(map_authorization_error)
+        })?;
+        Ok(result)
     }
 
     async fn with_manager<T, F>(&self, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
+    {
+        self.with_manager_unchecked(move |manager| {
+            manager.assert_backend_available().map_err(map_error)?;
+            let result = operation(manager)?;
+            manager.assert_backend_available().map_err(map_error)?;
+            Ok(result)
+        })
+        .await
+    }
+
+    async fn with_manager_unchecked<T, F>(&self, operation: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut CoreIdentityManager) -> Result<T> + Send + 'static,
@@ -1930,6 +2351,7 @@ fn key_selector(kid: Option<String>) -> KeySelector {
 
 fn key_algorithm(algorithm: anp_identity::KeyAlgorithm) -> String {
     match algorithm {
+        anp_identity::KeyAlgorithm::P256 => "p256".to_owned(),
         anp_identity::KeyAlgorithm::Ed25519 => "ed25519".to_owned(),
         anp_identity::KeyAlgorithm::X25519 => "x25519".to_owned(),
     }

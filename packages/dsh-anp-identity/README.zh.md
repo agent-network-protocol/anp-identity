@@ -1,5 +1,11 @@
 # 面向 DeepSeek Harness 的 ANP Identity
 
+当前候选面向 Harness `0.2.2-rc.1`、Cordis `4.1.0` 与 Loader `1.1.0`，不再声明兼容 Harness `0.1.5`。Remote 描述符使用延迟 `create()` codec；同进程 Gateway 调用必须显式提供 Peer 并安装 Remote Access 服务。
+
+没有专用请求签名密钥的公共协议身份，可通过 `ordinary-http/1` 审批，仅使用唯一设备认证密钥执行本机精确 HTTP 请求签名和公开身份读取；不能做通用原始签名或 OAuth 断言。有专用请求签名密钥的身份保持原有能力，已有授权不会扩大。旧版本不识别该 HTTP-only 快照，降级前需撤销或归档这些授权。
+
+显式列入 `userConsumers` 的插件可配置 `httpAllowedOrigins[consumer]: ['*']`，允许任意 HTTPS 域名。管理界面会在审批前明确显示这一广泛权限；每次请求仍须同时符合已批准授权和当前 Host 策略。已有精确域名授权不会自动扩大，单次操作绑定和撤销检查不变；Legacy Host 消费者不能使用该通配符。旧版本不识别通配授权快照，降级前需撤销这些授权。
+
 `@agent-network-protocol/dsh-anp-identity` 为 DSH 应用提供共享的多 DID 身份 Store。应用不需要各自实现私钥托管、DID Document 生命周期、崩溃恢复和请求签名。
 
 普通插件通过 `bindIdentityClient(ctx)` 申请创建身份和使用授权；`ctx.anpIdentity` 的旧 lease 接口保留给可信 Host 集成。私钥操作由 ANP Identity 原生模块完成；私钥在磁盘上加密保存。DSH catalog 只记录 label、handle 和 consumer grant 等非秘密元数据。
@@ -14,7 +20,7 @@
 - HTTP 请求如何完成身份认证，同时不把可复用 Header patch 交给调用方；
 - 多 DID、通用 handle、consumer grant 和删除保护如何保持一致。
 
-ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。管理功能将 catalog 升级为 v2，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
+ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 catalog：创建前写 intent，删除前写 tombstone；跨进程修改使用文件锁、generation 检查和原子 rename。异常重启后流程会继续完成，未知身份只会成为无授权的 `Unclaimed`，不会猜测所有者。当前发布扩展将 catalog 升级为 v4，升级和回滚必须遵循 [V7-MANAGEMENT.md](./V7-MANAGEMENT.md) 的停写与一致性要求。
 
 ## 主要能力
 
@@ -34,6 +40,10 @@ ANP Identity Store 是身份与加密密钥的真值。插件增加事务化的 
 - consumer 名称是同进程策略与诊断边界，可防误用，但不是针对同一 Node.js 进程内恶意代码的沙箱。
 
 完整边界见 [BOUNDARY.md](./BOUNDARY.md)。
+
+本轮源码候选还提供显式启用的 fresh 协议身份注册：`./protocol-bootstrap` 发起真实创建审批，现有 manager 的非秘密 `registrationBootstrap` 配置继续 User Service 邮箱/Turnstile 确认、Registry 验证及加密 Host 凭据保管。它要求独立 `dsh-identity/1106` 产品准入和匹配的 native API v2 候选；registry 版本号相同不代表已含这些方法。[发布与 fresh 设置](PUBLICATION.md#fresh-host-registration-bootstrap)说明分两阶段配置真实 Host；“已发布”不自动表示 MCP/PAP 已获使用许可。
+
+协议身份创建（`parameters.usage: 'protocol'`）默认声明完整的私聊、群聊及端到端加密协议，E1 和 Web 都保留供后续消息插件使用的设备签名与加密协商密钥。创建身份不会自动连接消息插件或向它授权，也不会修改既有身份的文档。注册服务需要接受完整协议清单；显式开启 identity-only 模式的服务会拒绝该清单。具体协议列表见 [PUBLICATION.md](./PUBLICATION.md)。
 
 ## 安装与配置
 
@@ -69,6 +79,8 @@ pnpm add @agent-network-protocol/dsh-anp-identity
 ```
 
 keyring 的 `rootKeyProviderId` 格式为 `service/account`；env 模式填写环境变量名；injected 模式填写 key id，并且只能通过可信 Host 代码以 Buffer 注入，不能写入 Loader YAML。`local-file` 必须显式启用；如果 Store 与 Root Key 文件被一起复制，攻击者可以离线解密 Store。
+
+`local-file` 与 OS keyring 都是已实现的本地方式。采用文件保管的 Host 可选择 `rootKeyProvider: local-file`（bundle 对应 `DSH_ANP_IDENTITY_ROOT_KEY_PROVIDER=local-file`），不要求使用 OS keyring。管理 broker master 直接复用 DSH 既有原子 credential record，broker 与协议状态保持加密本地文件。
 
 ## 其他 DSH 插件如何使用
 
@@ -158,3 +170,77 @@ consumer 打包并安装到临时的真实 DSH profile，再向使用 ANP Python
 后会删除临时 DSH profile、Store、证书和 tarball。
 
 许可证：Apache-2.0。
+
+
+## 公共客户端身份基础
+
+新增能力和安全边界见 [PUBLICATION.md](./PUBLICATION.md)。公共身份插件可以独立加载，
+通过可信 Host 注册的 User Service 管理通道和已有 DID 发布驱动，准备并发布 CIMD/JWKS。
+缺少真实回调或授权通道时保持待配置，不要求消息或邮件插件，不默认发起第三方登录。
+现有管理页展示发布状态、CIMD 和失败重试；普通插件的 OAuth 签名必须同时满足精确
+`oauthAllowedAudiences`、用户 grant、已发布记录和有效密钥。断言不通过 Browser/Remote 返回。
+
+协议身份通过显式 `usage: 'protocol'` 创建审批，使用本地 E1/Web 设备密钥、按能力投影的 ES256 发布，以及目标绑定的机器/PAP lease。真实 User Service 管理通道、加密凭据 broker、catalog v4 迁移与验证边界见 [发布与管理契约](./PUBLICATION.md)。
+
+可信 Host 发布 driver 同时提供 typed、设备绑定的 PAP callback 注册与一次领取。V2 PAP account 可独立声明严格 RFC 8252 loopback redirect；V1 与受保护公开获取 URL 保持 HTTPS 规则。这些 callback 能力不向 Remote 或模型工具开放。
+
+
+受信的 User Service 注册／发布驱动使用已有 ANP HTTP 签名能力和登记设备密钥签署注册后的每次请求，不复用注册时保存的 Bearer。设备操作授权与公开 API 形状保持不变，详见 [传输约定](PUBLICATION.md#registration-and-management)。
+
+## Configurable registration service
+
+New registration configurations default to `https://awiki.me`. The authenticated
+**Settings → Identity → Identity service** form saves the HTTPS root address on
+the Host (not in browser local storage). Saving does not send an OTP, create an
+identity, publish a DID or migrate an existing identity.
+
+Omit `registrationBootstrap.origin` to use this saved default for a new flow.
+An explicitly configured origin keeps precedence. Every new default-based flow
+pins its original origin by its stable id/requestId; changing the preference or
+restarting the Host cannot redirect an existing verification or publication flow.
+Use a new identity and new flow IDs when moving between services, and configure
+the matching DID domain/Handle in the creation request. Existing `id.awiki.info`
+identities and their MCP/PAP bindings remain unchanged.
+
+## Public identity onboarding and protocol guidance
+
+The Identity settings page is **身份管理**. Use its **创建公共身份** button or ask
+the Agent: “帮我创建一个公共身份，用于登录三方服务。”
+The always-installed tools `identity_status`, `identity_request_creation` and
+`identity_connection_guide` are visible even before a protocol connection exists.
+A required runtime context routes identity requests to these tools instead of
+workspace searches, vault inspection or an unrelated AWiki CLI.
+
+The Agent request opens an owner form only. The user enters a Handle, label and
+phone/email in that form; country code and national phone number are separate,
+defaulting to China +86. A second explicit approval creates an identity-only
+E1/Web protocol identity. Only after that approval may the existing verified
+registration flow send a code and publish DID/CIMD materials. OTPs are entered in
+the owner page, never passed through model tools. No third-party grant, account
+callback or messaging capability is created automatically.
+
+The built-in `./protocol-bootstrap` entry now also provides the owner-only
+creation requester when no static request is configured. It must remain enabled
+and listed in both allowConsumers and userConsumers. Explicit Host lists are
+still authoritative; do not grant legacy Provider access to this requester.
+Static Host bootstrap configurations continue using their original flow and are
+not silently replaced by the form.
+
+Owner registration inputs are stored under protected Host storage for restart;
+OTP values are never persisted. An uncertain/unfinished flow cannot be replaced
+or blindly retried. The Agent-facing status and intent outputs expose only public
+references/status, not phone/email, credentials, storage paths or signing objects.
+ANP/MCP/PAP guides give discovery order, actual available registry names, exact
+parameter conventions, approval handling and no-replay rules for uncertain writes.
+
+## 域名自动接入与统一协议管理
+
+Host 一次性启用 `domainAccess`、允许实际安装的适配器，并开启 PAP/ANP 的 `autoConnect` 或官方 MCP 域名连接器。Agent 只提供域名即可发现和连接，无需逐站配置。默认使用唯一符合条件的已发布身份；多个身份需要明确默认身份。密钥托管、身份发布与远端账户授权仍各自独立，秘密后端不静默回退。
+
+插件提供共享的“协议管理”页面，读写各自选择全部允许、白名单、每次确认或禁止。白名单按域名精确匹配，可选适用协议。允许直接执行，询问自动弹窗，禁止不发送业务请求；未知效果、明确声明的支付和额外权限仍单独确认。已有身份拒绝记录和操作禁用不会被规则静默清除。页面不授予通用签名、密钥访问或账户 token，持续规则也可通过下述所有者确认的 Agent 工具修改。
+
+持久化格式、CAS、操作分类、兼容边界及验收进度见 [统一协议管理](PROTOCOL-MANAGEMENT.md)。单次授权说明见 [Domain consent](DOMAIN-CONSENT.md)。MCP 还需要配套 Harness 更新，源码不包含在三个 npm 插件中。MCP 域名适配及两站三协议真实读写已在本地候选验证；版本组合为 Identity 0.1.15 与 PAP/ANP 0.1.4；MCP 另需 Harness 提交 194aaf492e 或兼容后继版本。
+
+## 智能体配置接口
+
+所有者管理器通过所有者管理器提供 `protocol_permissions` 和 `identity_settings`。先查询当前配置和版本，再按用户明确指令修改协议读写／精确域名白名单、默认已发布身份或未来注册使用的服务地址。持久修改会在当前会话展示精确差异并确认一次，不需要去设置页面寻找请求；随后业务调用按已保存规则执行，不重复询问同一持续权限。页面与工具复用 CAS 配置后端，正常 DSH 会话保留审批及修改结果记录。默认身份与页面当前查看的选中行不同。接口不接受验证码、token、私钥、通用签名或身份生命周期审批。完整工具契约、持久格式与真实 Agent／安装包验收要求见 [共享协议管理](PROTOCOL-MANAGEMENT.md#agent-configuration-tools-third-batch-candidate)。

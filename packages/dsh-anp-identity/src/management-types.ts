@@ -1,3 +1,4 @@
+import type { OAuthClientIdentity, PublicationConfig } from './publication-types.js';
 import type { IdentityReference } from "@agent-network-protocol/anp-identity";
 import type {
   AuthorizationDecision,
@@ -17,6 +18,8 @@ export interface ManagedIdentitySummary extends IdentityDescriptor {
   readonly deleteBlockedReason?: string;
 }
 export interface RequestReview {
+  /** Redacted owner-only preview, retained in Host memory rather than the authorization ledger. */
+  readonly operationPreview?: { readonly method: string; readonly target: string; readonly parameters?: unknown; readonly bodyDigest: string };
   readonly request: AuthorizationRequest;
   readonly grant?: AuthorizationGrant;
   readonly identities: readonly ManagedIdentitySummary[];
@@ -42,6 +45,9 @@ export interface DeleteManagedIdentityInput {
 }
 /** Host-only manager capability. Ordinary consumer facades must not return this object. */
 export interface IdentityManagement {
+  retryPublication(reference: IdentityReference): Promise<OAuthClientIdentity>;
+  publicationStatus(reference: IdentityReference): Promise<OAuthClientIdentity>;
+  publishIdentity(input: { reference: IdentityReference; config: PublicationConfig }): Promise<OAuthClientIdentity>;
   listIdentities(): Promise<ManagedIdentitySummary[]>;
   listRequests(history?: boolean): Promise<AuthorizationRequest[]>;
   getRequest(requestId: string): Promise<RequestReview>;

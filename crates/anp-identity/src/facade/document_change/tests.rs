@@ -481,3 +481,114 @@ fn web_terminal_rejection_reconciles_only_forward_checkpoint_and_releases_candid
         .prepare_document_change(rotation("fresh-key"))
         .unwrap();
 }
+
+#[test]
+fn oauth_binding_uses_authorized_change_preserves_services_and_recovers_unknown_publication() {
+    let (_root, mut identity) = identity_with_services(vec![ServiceSpec {
+        id: "message".into(),
+        service_type: "ANPMessageService".into(),
+        service_endpoint: "https://example.com/im".into(),
+        service_did: None,
+        profiles: vec![],
+        security_profiles: vec![],
+    }]);
+    let client_id = "https://id.example/agent/client.json";
+    let digest = "ab".repeat(32);
+    let mut change = identity
+        .prepare_document_change(DocumentChangeRequest {
+            changes: vec![DocumentChange::BindOAuthClient {
+                client_id: client_id.into(),
+                kid: "#request".into(),
+                metadata_sha256: digest.clone(),
+            }],
+        })
+        .unwrap();
+    let candidate = change.candidate().clone();
+    let document = serde_json::to_value(&candidate.candidate_document).unwrap();
+    let services = document["service"].as_array().unwrap();
+    assert!(services.iter().any(|s| s["type"] == "ANPMessageService"));
+    let cimd = services.iter().find(|s| s["type"] == "ANPCIMD").unwrap();
+    assert_eq!(cimd["serviceEndpoint"], client_id);
+    assert_eq!(cimd["anp_metadata_sha256"], digest);
+    assert!(cimd["anp_oauth_keys"][0]
+        .as_str()
+        .unwrap()
+        .ends_with("#request"));
+    let attempt = change.begin_publication().unwrap();
+    assert_eq!(
+        change
+            .complete(attempt.clone(), PublicationResult::Unknown)
+            .unwrap(),
+        DocumentChangeOutcome::PublicationUncertain
+    );
+    assert!(change
+        .complete(attempt, PublicationResult::RejectedBeforeAcceptance)
+        .is_err());
+    let committed = change
+        .reconcile(remote(candidate.candidate_document.clone()))
+        .unwrap();
+    assert!(matches!(committed, DocumentChangeOutcome::Committed { .. }));
+    let bad = identity.prepare_document_change(DocumentChangeRequest {
+        changes: vec![DocumentChange::BindOAuthClient {
+            client_id: "https://other.example/client.json".into(),
+            kid: "#request".into(),
+            metadata_sha256: digest,
+        }],
+    });
+    assert_eq!(bad.err(), Some(IdentityError::InvalidRequest));
+}
+
+#[test]
+fn oauth_binding_rejects_non_runtime_key_and_invalid_digest_before_publishing() {
+    let (_root, mut identity) = identity();
+    for (kid, digest) in [("#root", "ab".repeat(32)), ("#request", "AB".repeat(32))] {
+        assert!(identity
+            .prepare_document_change(DocumentChangeRequest {
+                changes: vec![DocumentChange::BindOAuthClient {
+                    client_id: "https://id.example/client.json".into(),
+                    kid: kid.into(),
+                    metadata_sha256: digest
+                }]
+            })
+            .is_err());
+        assert!(identity.resume_document_change().unwrap().is_none());
+    }
+}
+
+#[test]
+fn candidate_freezes_its_verified_base_evidence_across_resume_and_commit() {
+    let (_root, mut identity) = identity();
+    let old = identity.public_identity().unwrap();
+    let expected = VerifiedPublicationEvidence {
+        document_version: 1,
+        registry_version: 1,
+        document_digest: crate::canonical_document_digest(old.document.as_value()).unwrap(),
+    };
+    let mut session = identity
+        .prepare_document_change(rotation("request-next"))
+        .unwrap();
+    assert_eq!(session.candidate().base_evidence, expected);
+    let resumed = identity.resume_document_change().unwrap().unwrap();
+    assert_eq!(resumed.candidate().base_evidence, expected);
+    let candidate = session.candidate().clone();
+    let attempt = session.begin_publication().unwrap();
+    session
+        .complete(
+            attempt,
+            PublicationResult::Confirmed {
+                evidence: evidence(&candidate),
+            },
+        )
+        .unwrap();
+    assert_eq!(identity.public_identity().unwrap().revision, 2);
+    assert_eq!(session.candidate().base_evidence, expected);
+    assert_eq!(resumed.candidate().base_evidence, expected);
+    let next = identity
+        .prepare_document_change(rotation_from("#request-next", "request-third"))
+        .unwrap();
+    assert_eq!(next.candidate().base_evidence.document_version, 2);
+    assert_ne!(
+        next.candidate().base_evidence.document_digest,
+        expected.document_digest
+    );
+}

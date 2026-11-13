@@ -1,3 +1,7 @@
+import { registrationInputSchema } from './registration-onboarding-types.js';
+import { updateProtocolPolicySchema } from './protocol-policy-types.js';
+import { updateDefaultIdentitySchema } from './default-identity-types.js';
+import { PublicationConfigSchema } from './publication-types.js';
 /** Explicit browser-safe Typert method contract for the optional manager. */
 import { z } from "zod";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
@@ -28,12 +32,25 @@ const decision = version
         ),
         signingPurposes: z.array(z.string()),
         httpOrigins: z.array(z.string()),
+        oauthAudiences: z.array(z.string()).optional(),
       })
       .strict()
       .optional(),
   })
   .strict();
 const methods = [
+  ["protocolManagement", undefined],
+  ["configureProtocolPolicy", updateProtocolPolicySchema],
+  ["defaultIdentity", undefined],
+  ["configureDefaultIdentity", updateDefaultIdentitySchema],
+  ["registrationBootstrapStatus", undefined],
+  ["registrationOnboardingStatus", undefined],
+  ["dismissRegistrationRequest", undefined],
+  ["startIdentityRegistration", registrationInputSchema],
+  ["registrationServiceSettings", undefined],
+  ["configureRegistrationService", z.object({ origin: z.string().min(1).max(2048), expectedVersion: z.number().int().nonnegative() }).strict()],
+  ["retryRegistrationSms", undefined],
+  ["submitRegistrationOtp", z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict()],
   ["listIdentities", undefined],
   ["listRequests", z.boolean().optional()],
   ["getRequest", z.string().min(1)],
@@ -49,6 +66,9 @@ const methods = [
       .strict(),
   ],
   ["publicDocument", reference],
+  ["publicationStatus", reference],
+  ["retryPublication", reference],
+  ["publishIdentity", z.object({ reference, config: PublicationConfigSchema }).strict()],
   [
     "deleteIdentity",
     z.object({ reference, confirmationName: z.string().min(1) }).strict(),
@@ -77,14 +97,14 @@ const contribution: TypertRemoteContribution = {
               codec: {
                 mode: "strict",
                 typeSymbol: `anp-identity/manager#${method}Input`,
-                schema,
+                create: () => schema,
               },
             },
           ],
     result: {
       mode: "strict",
       typeSymbol: `anp-identity/manager#${method}Result`,
-      schema: z.json().nullable(),
+      create: () => z.json().nullable(),
     },
   })),
 };

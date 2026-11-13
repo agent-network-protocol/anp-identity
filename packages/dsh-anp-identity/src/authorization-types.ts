@@ -7,7 +7,9 @@ export interface CapabilitySnapshot {
   readonly version: string
   readonly capabilities: readonly OrdinaryCapability[]
   readonly signingPurposes: readonly string[]
+  /** HTTPS origins, or '*' only when the Host and user explicitly approve all HTTPS origins. */
   readonly httpOrigins: readonly string[]
+  readonly oauthAudiences?: readonly string[]
 }
 export type AuthorizationMode = 'once' | 'permanent'
 export type RequestStatus = 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired'
@@ -18,8 +20,9 @@ export interface ControlledOperation {
   readonly summary: string
   readonly signingPurpose?: string
   readonly httpOrigin?: string
+  readonly oauthAudience?: string
 }
-export interface CreateParameters { readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
+export interface CreateParameters { readonly profile?: 'e1' | 'web'; readonly usage?: 'ordinary' | 'protocol'; readonly identityOnly?: boolean; readonly label: string; readonly domain: string; readonly path: string; readonly handle?: string }
 export interface CreateResult { readonly reference: IdentityReference; readonly label: string }
 interface RequestBase {
   readonly id: string
@@ -42,6 +45,7 @@ export interface CreateAuthorizationRequest extends RequestBase {
   readonly result?: CreateResult
 }
 export interface AccessAuthorizationRequest extends RequestBase {
+  readonly approvalProfile?: 'exact-operation/1'
   readonly kind: 'access'
   readonly identity?: IdentityReference
   readonly operation?: ControlledOperation
@@ -90,10 +94,10 @@ export interface AuthorizationState {
   executions: AuthorizationExecution[]
   deletedIdentities: IdentityReference[]
   deletingIdentities: IdentityReference[]
-  suppressions: { consumer: string; kind: 'create' | 'access'; identity?: IdentityReference; requestId: string }[]
+  suppressions: { consumer: string; kind: 'create' | 'access'; identity?: IdentityReference; requestId: string; operationFingerprint?: string }[]
 }
 export interface RequestCreateInput { readonly requestId: string; readonly purpose: string; readonly parameters: CreateParameters }
-export interface RequestAccessInput { readonly requestId: string; readonly purpose: string; readonly identity?: IdentityReference; readonly operation?: ControlledOperation }
+export interface RequestAccessInput { readonly requestId: string; readonly purpose: string; readonly identity?: IdentityReference; readonly operation?: ControlledOperation; readonly approvalProfile?: 'exact-operation/1' }
 export interface AuthorizationDecision {
   readonly requestId: string
   readonly expectedVersion: number

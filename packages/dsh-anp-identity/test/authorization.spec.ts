@@ -391,3 +391,102 @@ function worker(root: string, grantId: string, executionId: string): Promise<str
     child.once('exit', code => code === 0 ? resolve(stdout) : reject(new Error(`Authorization worker exited ${code}: ${stderr}`)))
   })
 }
+
+it('requires explicit wildcard review, permits new HTTPS domains, and still enforces revocation and Host narrowing', async () => {
+  const wildcard = { ...policy, httpOrigins: ['*'] };
+  await using f = await fixture({ resolveSnapshot: async () => wildcard });
+  const http = (origin: string) => freezeOperation({ capability: 'identity:http-auth', summary: 'GET ' + origin, httpOrigin: origin }, { method: 'GET', url: origin + '/' });
+  const first = http('https://one.example');
+  const request = await f.engine.requestAccess(caller, { requestId: 'wildcard', purpose: 'Any HTTPS domain', identity, operation: first });
+  expect(await f.engine.listGrants()).toEqual([]);
+  await expect(f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: policy })).rejects.toMatchObject({ code: 'review_snapshot_changed' });
+  const approved = await f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'permanent', reviewedSnapshot: wildcard });
+  if (approved.kind !== 'access' || !approved.grantId) throw new Error('Expected access grant');
+  const lease = await f.engine.open(caller, approved.grantId);
+  await f.engine.admit(caller, lease, first, 'domain-one');
+  await f.engine.recordExecution(caller, 'domain-one', 'succeeded');
+  await f.engine.admit(caller, lease, http('https://two.example'), 'domain-two');
+  await f.engine.recordExecution(caller, 'domain-two', 'succeeded');
+  const narrowed = f.reopen({ resolveSnapshot: async () => ({ ...policy, httpOrigins: ['https://one.example'] }) });
+  await expect(narrowed.admit(caller, lease, http('https://two.example'), 'narrowed')).rejects.toMatchObject({ code: 'operation_not_permitted' });
+  await expect((async () => f.engine.admit(caller, lease, http('http://insecure.example'), 'insecure'))()).rejects.toMatchObject({ code: 'invalid_http_origin' });
+  const grant = (await f.engine.listGrants())[0]!;
+  await f.engine.revoke(grant.id, grant.version);
+  await expect(f.engine.admit(caller, lease, first, 'revoked-wildcard')).rejects.toThrow();
+});
+
+it('does not silently broaden an existing exact-origin grant when the Host switches to wildcard', async () => {
+  await using f = await fixture();
+  const grant = await approve(f.engine, 'permanent');
+  const lease = await f.engine.open(caller, grant.id);
+  const widened = f.reopen({ resolveSnapshot: async () => ({ ...policy, httpOrigins: ['*'] }) });
+  const operation = freezeOperation({ capability: 'identity:http-auth', summary: 'New domain', httpOrigin: 'https://new.example' }, { url: 'https://new.example/' });
+  await expect(widened.admit(caller, lease, operation, 'not-implicitly-approved')).rejects.toMatchObject({ code: 'operation_not_permitted' });
+});
+
+it('keeps one-time wildcard approval bound to the reviewed exact HTTP operation', async () => {
+  const wildcard = { ...policy, httpOrigins: ['*'] };
+  await using f = await fixture({ resolveSnapshot: async () => wildcard });
+  const make = (url: string) => freezeOperation({ capability: 'identity:http-auth', summary: 'GET ' + url, httpOrigin: new URL(url).origin }, { method: 'GET', url });
+  const operation = make('https://one.example/approved');
+  const request = await f.engine.requestAccess(caller, { requestId: 'once-any-domain', purpose: 'One exact HTTP operation', identity, operation });
+  const approved = await f.engine.decide({ requestId: request.id, expectedVersion: request.version, decision: 'approve', mode: 'once', reviewedSnapshot: wildcard });
+  if (approved.kind !== 'access' || !approved.grantId) throw new Error('Expected access grant');
+  const lease = await f.engine.open(caller, approved.grantId);
+  await expect(f.engine.admit(caller, lease, make('https://two.example/other'), 'wrong-wildcard-target')).rejects.toMatchObject({ code: 'operation_mismatch' });
+  await f.engine.admit(caller, lease, operation, 'exact-wildcard-target');
+  await f.engine.recordExecution(caller, 'exact-wildcard-target', 'succeeded');
+  await expect(f.engine.admit(caller, lease, operation, 'reused-wildcard-once')).rejects.toThrow();
+});
+
+it('rediscovers only active permanent grants after restart without granting new origins or reusing once approvals', async () => {
+  await using f = await fixture();
+  expect(await f.engine.findPermanentGrant(caller, identity, readOperation)).toBeUndefined();
+  const once = await approve(f.engine, 'once', 'domain-once');
+  expect(await f.reopen().findPermanentGrant(caller, identity, readOperation)).toBeUndefined();
+  const permanent = await approve(f.engine, 'permanent', 'domain-permanent');
+  expect(await f.reopen().findPermanentGrant(caller, identity, readOperation)).toBe(permanent.id);
+  const outside = freezeOperation({ capability: 'identity:http-auth', summary: 'Other domain', httpOrigin: 'https://other.example' }, { method: 'GET' });
+  expect(await f.reopen({ resolveSnapshot: async () => ({ ...policy, httpOrigins: ['*'] }) }).findPermanentGrant(caller, identity, outside)).toBeUndefined();
+  await f.engine.revoke(permanent.id, permanent.version);
+  expect(await f.reopen().findPermanentGrant(caller, identity, readOperation)).toBeUndefined();
+  expect((await f.engine.listGrants()).find(grant => grant.id === once.id)?.status).toBe('active');
+});
+
+it('ANP domain operations require an exact once decision and never admit a different request or replay', async () => {
+  const exact: CapabilitySnapshot={version:'anp-domain/1',capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']}
+  await using f=await fixture({resolveSnapshot:async()=>exact})
+  const operation=freezeOperation({capability:'identity:http-auth',summary:'POST https://site.example/messages',httpOrigin:'https://site.example'},{method:'POST',url:'https://site.example/messages',body:'approved'})
+  const request=await f.engine.requestAccess(caller,{requestId:'exact-write',purpose:'One ANP write',identity,operation})
+  await expect(f.engine.decide({requestId:request.id,expectedVersion:request.version,decision:'approve',mode:'permanent',reviewedSnapshot:exact})).rejects.toMatchObject({code:'once_authorization_required'})
+  expect(await f.engine.listGrants()).toEqual([])
+  const approved=await f.engine.decide({requestId:request.id,expectedVersion:request.version,decision:'approve',mode:'once',reviewedSnapshot:exact})
+  if(approved.kind!=='access'||!approved.grantId)throw new Error('Missing grant')
+  const lease=await f.engine.open(caller,approved.grantId)
+  const changed=freezeOperation({capability:'identity:http-auth',summary:'POST changed body',httpOrigin:'https://site.example'},{method:'POST',url:'https://site.example/messages',body:'changed'})
+  await expect(f.engine.admit(caller,lease,changed,'wrong-body')).rejects.toMatchObject({code:'operation_mismatch'})
+  await f.engine.admit(caller,lease,operation,'one-write')
+  await expect(f.engine.admit(caller,lease,operation,'replayed-write')).rejects.toThrow()
+})
+
+it('denying an exact operation blocks only its matching body/URL, while legacy denial remains consumer-wide',async()=>{
+  const exact:CapabilitySnapshot={version:'domain-operation/1',capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']}
+  await using f=await fixture({resolveSnapshot:async()=>exact})
+  const op=(body:string)=>freezeOperation({capability:'identity:http-auth',summary:'POST https://site.example/post',httpOrigin:'https://site.example'},{method:'POST',url:'https://site.example/post',body})
+  const request=await f.engine.requestAccess(caller,{requestId:'one-denied',purpose:'One write',identity,operation:op('first'),approvalProfile:'exact-operation/1'})
+  await f.engine.decide({requestId:request.id,expectedVersion:request.version,decision:'deny'})
+  await expect(f.engine.requestAccess(caller,{requestId:'same-retry',purpose:'Different wording',identity,operation:op('first'),approvalProfile:'exact-operation/1'})).rejects.toMatchObject({code:'request_previously_denied'})
+  expect((await f.engine.requestAccess(caller,{requestId:'different-explicit',purpose:'Another user write',identity,operation:op('second'),approvalProfile:'exact-operation/1'})).status).toBe('pending')
+})
+
+it('reauthorizing one exact operation preserves its once-only marker and other operation denials',async()=>{
+  const exact:CapabilitySnapshot={version:'domain-operation/1',capabilities:['identity:read','identity:http-auth'],signingPurposes:[],httpOrigins:['*']}
+  await using f=await fixture({resolveSnapshot:async()=>exact})
+  const op=(body:string)=>freezeOperation({capability:'identity:http-auth',summary:'POST https://site.example/post',httpOrigin:'https://site.example'},{body})
+  const a=await f.engine.requestAccess(caller,{requestId:'denied-a',purpose:'A',identity,operation:op('A'),approvalProfile:'exact-operation/1'})
+  const b=await f.engine.requestAccess(caller,{requestId:'denied-b',purpose:'B',identity,operation:op('B'),approvalProfile:'exact-operation/1'})
+  await f.engine.decide({requestId:a.id,expectedVersion:a.version,decision:'deny'});await f.engine.decide({requestId:b.id,expectedVersion:b.version,decision:'deny'})
+  const again=await f.engine.reauthorize(a.id,a.version+1)
+  expect(again).toMatchObject({kind:'access',approvalProfile:'exact-operation/1'})
+  await expect(f.engine.requestAccess(caller,{requestId:'b-still-blocked',purpose:'New wording B',identity,operation:op('B'),approvalProfile:'exact-operation/1'})).rejects.toMatchObject({code:'request_previously_denied'})
+})

@@ -151,6 +151,10 @@ impl EnrollmentWorkflow for IdentityManager {
 }
 
 impl EnrollmentSession {
+    pub(crate) fn assert_backend_available(&self) -> IdentityResult<()> {
+        self.identity.assert_backend_available()
+    }
+
     pub fn proposal(&self) -> &EnrollmentProposal {
         &self.proposal
     }

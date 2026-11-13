@@ -6,6 +6,7 @@ import type {} from "@deepseek-ai/dsh-client-ui-settings/client";
 import managementRemote from "../remote.js";
 import { IdentityController, type ManagementRemote } from "./controller.js";
 import { IdentityOverlay, IdentitySettings } from "./views.js";
+import { ProtocolSettings } from './protocol-settings.js';
 import { mountStyles } from "./styles.js";
 import { IdentityIcon } from "./identity-icon.js";
 import type {} from "./settings-icon-slot.js";
@@ -22,6 +23,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     if (!remote) throw new Error("ANP Identity manager Remote is unavailable");
     controller = new IdentityController(remote);
     const active = controller;
+    let unregisterProtocols: (() => void) | undefined;
+    const syncProtocols = () => {
+      const snapshot = active.getSnapshot();
+      const visible = snapshot.protocolManagement?.protocols.some(protocol => protocol.installed) || snapshot.protocolError !== null;
+      if (visible && !unregisterProtocols) unregisterProtocols = ctx.slots.inject('settings.section', () =>
+        ctx.slots.register({ name: 'settings.section', id: 'protocol-management', label: '协议管理', order: 45, inject: () => ({ controller: active }) }, ProtocolSettings));
+      else if (!visible && unregisterProtocols) { unregisterProtocols(); unregisterProtocols = undefined; }
+    };
+    const unsubscribeProtocols = active.subscribe(syncProtocols);
+    disposers.push(() => { unsubscribeProtocols(); unregisterProtocols?.(); });
     disposers.push(
       ctx.slots.inject("settings.nav.icon", () =>
         ctx.slots.register({ name: "settings.nav.icon", id: "anp-identity" }, IdentityIcon),
@@ -33,7 +44,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           {
             name: "settings.section",
             id: "anp-identity",
-            label: "身份",
+            label: "身份管理",
             order: 40,
             inject: () => ({ controller: active }),
           },

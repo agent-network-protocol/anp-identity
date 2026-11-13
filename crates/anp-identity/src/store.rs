@@ -7,7 +7,7 @@ use rand::RngCore;
 
 use crate::fs_util::write_atomic_private;
 use crate::keystore::FileKeyStore;
-use crate::platform::{root_key_fingerprint, RootKey, RootKeyProvider};
+use crate::platform::{root_key_fingerprint, KeyringRootKeyProvider, RootKey, RootKeyProvider};
 use crate::store_lock::{StoreLock, StoreWriteGuard};
 use crate::{DidError, DidResult, StoreManifest, STORE_MANIFEST_SCHEMA_VERSION};
 
@@ -26,6 +26,8 @@ pub(crate) struct StoreRuntime {
     root_key: RootKey,
     manifest: StoreManifest,
     key_store: FileKeyStore,
+    #[cfg(test)]
+    backend_probe: Option<std::sync::Arc<dyn Fn() -> DidResult<RootKey> + Send + Sync>>,
 }
 
 impl StoreRuntime {
@@ -71,6 +73,8 @@ impl StoreRuntime {
             root_key,
             manifest,
             key_store: FileKeyStore::new(root),
+            #[cfg(test)]
+            backend_probe: None,
         })
     }
 
@@ -94,11 +98,16 @@ impl StoreRuntime {
             root_key,
             manifest,
             key_store: FileKeyStore::new(root),
+            #[cfg(test)]
+            backend_probe: None,
         })
     }
 
     pub(crate) fn acquire_write(&self) -> DidResult<StoreWriteGuard> {
-        self.lock.acquire_exclusive()
+        self.assert_backend_available()?;
+        let guard = self.lock.acquire_exclusive()?;
+        self.assert_backend_available()?;
+        Ok(guard)
     }
 
     pub(crate) fn manifest(&self) -> &StoreManifest {
@@ -111,6 +120,41 @@ impl StoreRuntime {
 
     pub(crate) fn root_key(&self) -> &RootKey {
         &self.root_key
+    }
+
+    pub(crate) fn assert_backend_available(&self) -> DidResult<()> {
+        if self.manifest.provider.kind != crate::RootKeyProviderKind::OsKeyring {
+            return Ok(());
+        }
+        let current = self.load_bound_backend_key()?;
+        if root_key_fingerprint(&current) != self.manifest.root_key_fingerprint {
+            return Err(DidError::RootKeyMismatch);
+        }
+        Ok(())
+    }
+
+    fn load_bound_backend_key(&self) -> DidResult<RootKey> {
+        #[cfg(test)]
+        if let Some(probe) = &self.backend_probe {
+            return probe();
+        }
+        let account = self
+            .manifest
+            .provider
+            .account
+            .as_ref()
+            .ok_or(DidError::ProviderUnavailable)?;
+        KeyringRootKeyProvider::new(&self.manifest.provider.key_id, account).load_existing()
+    }
+
+    pub(crate) fn with_private_access<T>(
+        &self,
+        operation: impl FnOnce() -> DidResult<T>,
+    ) -> DidResult<T> {
+        self.assert_backend_available()?;
+        let result = operation()?;
+        self.assert_backend_available()?;
+        Ok(result)
     }
 
     pub(crate) fn key_store(&self) -> &FileKeyStore {
@@ -152,6 +196,10 @@ fn random_store_id() -> String {
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
+
+#[cfg(test)]
+#[path = "store/backend_availability_tests.rs"]
+mod backend_availability_tests;
 
 #[cfg(test)]
 mod tests {

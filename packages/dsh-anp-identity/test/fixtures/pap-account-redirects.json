@@ -1,0 +1,227 @@
+{
+  "format": "awiki-pap-account-redirects-v1",
+  "vectors": [
+    {
+      "uri": "https://adapter.example/callback",
+      "valid_v2_account": true,
+      "valid_v1": true,
+      "lane": "https"
+    },
+    {
+      "uri": "http://127.0.0.1:51004/oauth2redirect/example-provider",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://[::1]:61023/oauth2redirect/example-provider",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://127.0.0.1:1/callback",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://[::1]:65535/callback",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://127.0.0.1:80/callback",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://127.0.0.1:8123/",
+      "valid_v2_account": true,
+      "valid_v1": false,
+      "lane": "loopback"
+    },
+    {
+      "uri": "http://localhost:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.2:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.1:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://2130706433:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://0x7f000001:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1.example:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1.:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[0:0:0:0:0:0:0:1]:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::ffff:127.0.0.1]:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::1%25lo]:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://192.168.1.1:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://resource.example:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://user@127.0.0.1:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://user:pass@[::1]:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/callback?x=1",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/callback?",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::1]:8123/callback#done",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::1]:8123/callback#",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::1]/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:0/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:65536/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:080/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:+80/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:-1/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "HTTP://127.0.0.1:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/../callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://[::1]:8123/%2e%2E/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/%zz",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/call\\back",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/call back",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://127.0.0.1:8123/call\nback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "http://%31%32%37.0.0.1:8123/callback",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "https://adapter.example/callback?x=1",
+      "valid_v2_account": false,
+      "valid_v1": false
+    },
+    {
+      "uri": "https://adapter.example/callback#fragment",
+      "valid_v2_account": false,
+      "valid_v1": false
+    }
+  ]
+}

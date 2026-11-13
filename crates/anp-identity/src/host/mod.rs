@@ -3,11 +3,13 @@ mod document_change;
 mod enrollment;
 mod http_signing;
 mod key_agreement;
+mod management_proof;
 #[cfg(feature = "key-import")]
 mod migration;
 #[cfg(feature = "pin-recovery")]
 mod pin_recovery;
 mod proofs;
+pub use management_proof::{ManagementProofRequest, WebRegistrationProofRequest};
 #[cfg(feature = "pin-recovery")]
 pub use pin_recovery::*;
 mod provider_authorization;

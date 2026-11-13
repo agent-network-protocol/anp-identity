@@ -1,0 +1,38 @@
+# Apply after the identity bundle. Replace domains, email and private absolute
+# paths with actual deployment values; retain existing approved allowlists.
+- id: anp-identity
+  config:
+    stateRoot: /home/dsh/.dsh/anp-identity
+    allowConsumers:
+      - '@awiki/dsh-plugin'
+      - '@agent-network-protocol/dsh-anp-identity/protocol-bootstrap'
+    userConsumers: ['@agent-network-protocol/dsh-anp-identity/protocol-bootstrap']
+    allowProviderConsumers: ['@awiki/dsh-plugin']
+    protocolPolicies: []
+    recoveryOnOpen: true
+- id: anp-identity-provider
+  config:
+    stateRoot: /home/dsh/.dsh/anp-identity
+    rootKeyProvider: keyring
+    rootKeyProviderId: anp-identity/dsh
+    keyringFallbackToLocalFile: false
+- id: anp-identity-protocol-bootstrap
+  disabled: false
+  config:
+    requestId: work-agent-create
+    profile: e1
+    label: Work protocol identity
+    domain: identity.example
+    path: /awiki/user/work-agent
+    handle: work-agent.identity.example
+- id: anp-identity-manager
+  config:
+    registrationBootstrap:
+      id: work-agent
+      requestId: work-agent-create
+      stateRoot: /home/dsh/.dsh/identity-bootstrap
+      origin: https://identity.example
+      email: agent@example.com
+      clientName: Work protocol identity
+      capabilities: { mcpMachine: true, papSession: false, papAccount: false }
+      redirectUris: []

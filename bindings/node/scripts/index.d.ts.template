@@ -1,7 +1,20 @@
+/** Host-approved client identity and audience; arbitrary JWT claims are rejected. */
+export interface OAuthClientAssertionRequest {
+  client_id: string
+  audience: string
+  key: 'default' | { kid: string }
+}
+export type OAuthPublicJwk =
+  | { kty: 'OKP'; crv: 'Ed25519'; x: string; kid: string; alg: 'EdDSA'; use: 'sig' }
+  | { kty: 'EC'; crv: 'P-256'; x: string; y: string; kid: string; alg: 'ES256'; use: 'sig' }
+
+
+export interface OAuthKeyChangeRequest { fragment: string; operation_id: string; expected_revision: number }
+
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
 export type IdentityState = 'enrolling' | 'active' | 'revoked'
-export type KeyAlgorithm = 'ed25519' | 'x25519'
+export type KeyAlgorithm = 'ed25519' | 'x25519' | 'p256'
 export type KeyPurpose =
   | 'root_control'
   | 'authentication'
@@ -12,6 +25,7 @@ export type KeyRole =
   | 'root_control'
   | 'device_signing'
   | 'request_signing'
+  | 'oauth_authentication'
   | 'e2ee_signing'
   | 'e2ee_agreement'
 
@@ -26,6 +40,8 @@ export interface StoreInfo {
   schemaCompatible: boolean
   identityCount: number
   health: 'ready'
+  /** Current read-only availability of the Store's pinned key backend. */
+  backendAvailable: boolean
 }
 
 export interface RecoveryReport {
@@ -82,7 +98,7 @@ export type ExternalPublicKeyMaterial =
 
 export interface ExternalPublicKeySpec {
   kid: string
-  role: Exclude<KeyRole, 'root_control'>
+  role: Exclude<KeyRole, 'root_control' | 'oauth_authentication'>
   material: ExternalPublicKeyMaterial
 }
 
@@ -160,6 +176,7 @@ export interface PublicKeyInput {
 }
 
 export type DocumentChange =
+  | { change: 'bind_oauth_client'; clientId: string; kid: string; metadataSha256: string }
   | { change: 'rotate_signing_key'; oldKid: string; newFragment: string }
   | { change: 'add_authentication_key'; key: PublicKeyInput }
   | { change: 'remove_authentication_key'; kid: string }
@@ -180,6 +197,7 @@ export interface DocumentChangeRequest {
 }
 
 export interface PreparedDocumentChange {
+  baseEvidence: VerifiedPublicationEvidence
   operationId: string
   candidateDocument: JsonValue
   candidateDigest: string
@@ -313,6 +331,10 @@ export class ManagedIdentity {
   private constructor()
   reference(): Promise<IdentityReference>
   publicIdentity(): Promise<PublicIdentity>
+  prepareOAuthKeyChange(request: OAuthKeyChangeRequest): Promise<DocumentChangeSession>
+  exportCandidateOAuthPublicJwk(kid: string): Promise<OAuthPublicJwk>
+  oauthPublicJwk(kid?: string): Promise<OAuthPublicJwk>
+  signOAuthClientAssertion(request: OAuthClientAssertionRequest): Promise<string>
   sign(request: SignRequest): Promise<Signature>
   verify(request: VerifyRequest): Promise<'valid' | 'invalid'>
   signOriginProof(request: OriginProofRequest): Promise<SignedOriginProof>

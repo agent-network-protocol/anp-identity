@@ -241,7 +241,7 @@ fn relationship_authorizes(
     role: KeyRole,
 ) -> bool {
     match role {
-        KeyRole::RequestSigning => {
+        KeyRole::RequestSigning | KeyRole::OAuthAuthentication => {
             anp::authentication::is_authentication_authorized(identity.document(), &metadata.kid)
         }
         KeyRole::DeviceSigning | KeyRole::E2eeSigning => {

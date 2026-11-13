@@ -1,3 +1,4 @@
+import { exactHttps } from './publication-http.js'
 import { syncDirectory } from './sync-directory.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
@@ -15,6 +16,7 @@ import type {
 export * from './authorization-types.js'
 const SCHEMA = 'anp-identity-authorization/1' as const
 const ORDINARY = ['identity:read', 'identity:sign', 'identity:http-auth'] as const
+const HTTP_ONLY = ['identity:read', 'identity:http-auth'] as const
 const FIVE_MINUTES = 300_000
 const SEVEN_DAYS = 7 * 24 * 60 * 60_000
 
@@ -53,9 +55,11 @@ function operation(value: ControlledOperation): ControlledOperation {
     capability: value.capability, fingerprint: value.fingerprint, summary: text(value.summary, 1024),
     ...(value.signingPurpose === undefined ? {} : { signingPurpose: text(value.signingPurpose, 256) }),
     ...(value.httpOrigin === undefined ? {} : { httpOrigin: origin(value.httpOrigin) }),
+    ...(value.oauthAudience === undefined ? {} : { oauthAudience: exactHttps(value.oauthAudience) }),
   }
   if ((result.capability === 'identity:sign') !== (result.signingPurpose !== undefined)
-    || (result.capability === 'identity:http-auth') !== (result.httpOrigin !== undefined)) fail('invalid_operation')
+    || (result.capability === 'identity:http-auth') !== (result.httpOrigin !== undefined)
+    || (result.signingPurpose === 'oauth_client_assertion') !== (result.oauthAudience !== undefined)) fail('invalid_operation')
   return result
 }
 function origin(value: string): string {
@@ -65,17 +69,22 @@ function origin(value: string): string {
   return parsed.origin
 }
 function snapshot(value: CapabilitySnapshot): CapabilitySnapshot {
-  if (value.capabilities.length !== ORDINARY.length || ORDINARY.some(cap => !value.capabilities.includes(cap))) fail('incompatible_identity_capabilities')
+  const httpOnly = ['ordinary-http/1','anp-domain/1','domain-operation/1'].includes(value.version)
+  const capabilities = httpOnly ? HTTP_ONLY : ORDINARY
+  if (value.capabilities.length !== capabilities.length || capabilities.some(cap => !value.capabilities.includes(cap))
+    || httpOnly && (value.signingPurposes.length > 0 || (value.oauthAudiences?.length ?? 0) > 0)) fail('incompatible_identity_capabilities')
   return {
-    version: text(value.version, 256), capabilities: [...ORDINARY],
+    version: text(value.version, 256), capabilities: [...capabilities],
     signingPurposes: [...new Set(value.signingPurposes.map(v => text(v, 256)))].sort(),
-    httpOrigins: [...new Set(value.httpOrigins.map(origin))].sort(),
+    httpOrigins: [...new Set(value.httpOrigins.map(value => value === '*' ? value : origin(value)))].sort(),
+    ...(value.oauthAudiences === undefined ? {} : { oauthAudiences: [...new Set(value.oauthAudiences.map(value => exactHttps(value)))].sort() }),
   }
 }
 function permits(policy: CapabilitySnapshot, value: ControlledOperation): boolean {
   return policy.capabilities.includes(value.capability)
     && (value.signingPurpose === undefined || policy.signingPurposes.includes(value.signingPurpose))
-    && (value.httpOrigin === undefined || policy.httpOrigins.includes(value.httpOrigin))
+    && (value.httpOrigin === undefined || policy.httpOrigins.includes('*') || policy.httpOrigins.includes(value.httpOrigin))
+    && (value.oauthAudience === undefined || (policy.oauthAudiences ?? []).includes(value.oauthAudience))
 }
 
 /** Compute at the Host boundary from the actual immutable operation, not a plugin-provided digest. */
@@ -118,7 +127,12 @@ export class AuthorizationEngine {
 
   async requestCreate(verifiedCaller: VerifiedCaller, input: RequestCreateInput): Promise<CreateAuthorizationRequest> {
     const source = caller(verifiedCaller)
-    const parameters: CreateParameters = { label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+    if (input.parameters.usage !== undefined && !['ordinary', 'protocol'].includes(input.parameters.usage)) fail('invalid_create_parameters')
+    if (input.parameters.profile === 'web' && input.parameters.usage !== 'protocol') fail('invalid_create_parameters')
+    if (input.parameters.identityOnly !== undefined && (typeof input.parameters.identityOnly !== 'boolean' || input.parameters.usage !== 'protocol')) fail('invalid_create_parameters')
+    if (input.parameters.profile !== undefined && !['e1', 'web'].includes(input.parameters.profile)) fail('invalid_create_parameters')
+    const parameters: CreateParameters = { ...(input.parameters.profile === undefined ? {} : { profile: input.parameters.profile }), ...(input.parameters.usage === undefined ? {} : { usage: input.parameters.usage }), label: text(input.parameters.label, 256), domain: text(input.parameters.domain, 253), path: text(input.parameters.path, 2048),
+      ...(input.parameters.identityOnly === undefined ? {} : { identityOnly: input.parameters.identityOnly }),
       ...(input.parameters.handle === undefined ? {} : { handle: normalizeHandle(text(input.parameters.handle, 128)) }) }
     const domain = new URL(`https://${parameters.domain}`)
     if (domain.host !== parameters.domain || domain.username || domain.password || domain.pathname !== '/' || !parameters.path.startsWith('/') || /[?#]/u.test(parameters.path)) fail('invalid_create_parameters')
@@ -132,9 +146,11 @@ export class AuthorizationEngine {
     const source = caller(verifiedCaller)
     const details = {
       kind: 'access' as const,
+      ...(input.approvalProfile === undefined ? {} : {approvalProfile: input.approvalProfile}),
       ...(input.identity === undefined ? {} : { identity: reference(input.identity) }),
       ...(input.operation === undefined ? {} : { operation: operation(input.operation) }),
     }
+    if (input.approvalProfile !== undefined && (input.approvalProfile !== 'exact-operation/1' || details.operation?.capability !== 'identity:http-auth')) fail('invalid_authorization_input')
     return this.#snapshotTransaction(async state => {
       await this.options.validateCaller(source)
       if (details.identity !== undefined) {
@@ -146,8 +162,38 @@ export class AuthorizationEngine {
     })
   }
 
+  /** Preserve existing owner refusals even when a separate persistent protocol rule allows the operation. */
+  async assertNotDenied(verifiedCaller: VerifiedCaller, identity: IdentityReference, requestedOperation: ControlledOperation): Promise<void> {
+    const source = caller(verifiedCaller), target = reference(identity), actual = operation(requestedOperation)
+    await this.#snapshotTransaction(async state => {
+      await this.options.validateCaller(source)
+      this.#identityAvailable(state, target)
+      const current = snapshot(await this.options.resolveSnapshot(source, target))
+      if (!permits(current, actual)) fail('operation_not_permitted')
+      if (state.suppressions.some(block => block.consumer === source.consumer && block.kind === 'access'
+        && (block.identity === undefined || equalIdentity(block.identity, target))
+        && (block.operationFingerprint === undefined || block.operationFingerprint === actual.fingerprint))) fail('request_previously_denied')
+    })
+  }
+
+  /** Find an existing permanent grant without creating, widening or consuming authorization. */
+  async findPermanentGrant(verifiedCaller: VerifiedCaller, identity: IdentityReference, requestedOperation: ControlledOperation): Promise<string | undefined> {
+    const source = caller(verifiedCaller), target = reference(identity), actual = operation(requestedOperation)
+    return this.#snapshotTransaction(async state => {
+      await this.options.validateCaller(source)
+      this.#identityAvailable(state, target)
+      const current = snapshot(await this.options.resolveSnapshot(source, target))
+      if (!permits(current, actual) || state.suppressions.some(block => block.consumer === source.consumer && block.kind === 'access'
+        && (block.identity === undefined || equalIdentity(block.identity, target))
+        && (block.operationFingerprint === undefined || block.operationFingerprint === actual.fingerprint))) return undefined
+      return state.grants.find(grant => grant.caller.consumer === source.consumer && equalIdentity(grant.identity, target)
+        && grant.mode === 'permanent' && grant.status === 'active' && (grant.expiresAt === undefined || grant.expiresAt > this.#now())
+        && grant.snapshot.version === current.version && permits(grant.snapshot, actual))?.id
+    })
+  }
+
   #request(state: AuthorizationState, source: VerifiedCaller, id: string, purpose: string,
-    details: { kind: 'create'; parameters: CreateParameters } | { kind: 'access'; identity?: IdentityReference; operation?: ControlledOperation }): AuthorizationRequest {
+    details: { kind: 'create'; parameters: CreateParameters } | { kind: 'access'; identity?: IdentityReference; operation?: ControlledOperation; approvalProfile?: 'exact-operation/1' }): AuthorizationRequest {
     text(id, 256); text(purpose, 1000)
     const fingerprint = digest({ consumer: source.consumer, purpose, ...details })
     const existingId = state.requests.find(req => req.id === id)
@@ -159,7 +205,8 @@ export class AuthorizationEngine {
     if (duplicate !== undefined) return duplicate
     // Changing IDs, wording, or create parameters cannot bypass a user refusal.
     if (state.suppressions.some(block => block.consumer === source.consumer && block.kind === details.kind
-      && (block.identity === undefined || details.kind === 'create' || details.identity === undefined || equalIdentity(block.identity, details.identity)))) fail('request_previously_denied')
+      && (block.identity === undefined || details.kind === 'create' || details.identity === undefined || equalIdentity(block.identity, details.identity))
+      && (block.operationFingerprint === undefined || details.kind === 'access' && details.operation?.fingerprint === block.operationFingerprint))) fail('request_previously_denied')
     const request: AuthorizationRequest = {
       id, caller: source, purpose, fingerprint, version: 1, status: 'pending', prompted: false,
       createdAt: this.#now(), expiresAt: this.#now() + (this.options.requestTtlMs ?? SEVEN_DAYS), ...details,
@@ -207,7 +254,8 @@ export class AuthorizationEngine {
         const next = { ...req, version: req.version + 1, status: 'denied' as const, decidedAt: this.#now() }
         this.#replaceRequest(state, next)
         state.suppressions.push({ consumer: req.caller.consumer, kind: req.kind, requestId: req.id,
-          ...(req.kind === 'access' && req.identity !== undefined ? { identity: req.identity } : {}) })
+          ...(req.kind === 'access' && req.identity !== undefined ? { identity: req.identity } : {}),
+          ...(req.kind === 'access' && req.approvalProfile === 'exact-operation/1' && req.operation ? {operationFingerprint:req.operation.fingerprint} : {}) })
         return next
       }
       if (input.decision !== 'approve') fail('invalid_decision')
@@ -225,6 +273,7 @@ export class AuthorizationEngine {
       const approvedSnapshot = snapshot(await this.options.resolveSnapshot(req.caller, identity))
       const mode = input.mode ?? 'once'
       if (mode !== 'once' && mode !== 'permanent') fail('invalid_authorization_mode')
+      if ((req.approvalProfile === 'exact-operation/1' || ['anp-domain/1','domain-operation/1'].includes(approvedSnapshot.version)) && mode !== 'once') fail('once_authorization_required')
       if (mode === 'once' && req.operation === undefined) fail('once_operation_required')
       if (req.operation !== undefined && !permits(approvedSnapshot, req.operation)) fail('operation_not_permitted')
       if (input.reviewedSnapshot === undefined) fail('review_snapshot_required')
@@ -303,9 +352,10 @@ export class AuthorizationEngine {
       if (req.status === 'pending' || (req.kind === 'create' && req.status === 'approved')) fail('request_not_retryable')
       await this.options.validateCaller(req.caller)
       const details = req.kind === 'create' ? { kind: 'create' as const, parameters: req.parameters }
-        : { kind: 'access' as const, ...(req.identity === undefined ? {} : { identity: req.identity }), ...(req.operation === undefined ? {} : { operation: req.operation }) }
+        : { kind: 'access' as const, ...(req.approvalProfile === undefined ? {} : {approvalProfile:req.approvalProfile}), ...(req.identity === undefined ? {} : { identity: req.identity }), ...(req.operation === undefined ? {} : { operation: req.operation }) }
       state.suppressions = state.suppressions.filter(block => !(block.consumer === req.caller.consumer && block.kind === req.kind
-        && (block.identity === undefined || req.kind === 'create' || req.identity === undefined || equalIdentity(block.identity, req.identity))))
+        && (block.identity === undefined || req.kind === 'create' || req.identity === undefined || equalIdentity(block.identity, req.identity))
+        && (req.kind !== 'access' || req.approvalProfile !== 'exact-operation/1' || block.operationFingerprint === req.operation?.fingerprint)))
       const fresh = this.#request(state, req.caller, randomUUID(), req.purpose, details)
       const next = { ...fresh, retryOf: req.id }
       this.#replaceRequest(state, next)
@@ -566,11 +616,12 @@ export class AuthorizationEngine {
         text(req.id, 256); caller(req.caller); text(req.purpose); text(req.fingerprint)
         if (!['create', 'access'].includes(req.kind) || !['pending', 'approved', 'denied', 'cancelled', 'expired'].includes(req.status)
           || !Number.isSafeInteger(req.version) || req.version < 1 || !Number.isFinite(req.expiresAt)) fail('authorization_store_corrupt')
-        if (req.kind === 'access') { if (req.identity) reference(req.identity); if (req.operation) operation(req.operation) }
+        if (req.kind === 'access') { if (req.approvalProfile !== undefined && req.approvalProfile !== 'exact-operation/1') fail('authorization_store_corrupt'); if (req.identity) reference(req.identity); if (req.operation) operation(req.operation) }
         if (req.kind === 'create') { text(req.parameters.label); text(req.parameters.domain); text(req.parameters.path, 2048); if (req.result) reference(req.result.reference) }
       }
       for (const grant of value.grants) {
         text(grant.id); caller(grant.caller); reference(grant.identity); snapshot(grant.snapshot)
+        if (['anp-domain/1','domain-operation/1'].includes(grant.snapshot.version) && grant.mode !== 'once') fail('authorization_store_corrupt')
         if (!['active', 'consumed', 'revoked', 'expired'].includes(grant.status) || !['once', 'permanent'].includes(grant.mode)
           || !Number.isSafeInteger(grant.version) || grant.version < 1) fail('authorization_store_corrupt')
         if (grant.mode === 'once') { if (!Number.isFinite(grant.expiresAt) || grant.operation === undefined) fail('authorization_store_corrupt'); operation(grant.operation) }
@@ -584,6 +635,7 @@ export class AuthorizationEngine {
         text(block.consumer, 256); text(block.requestId, 256)
         if (block.kind !== 'create' && block.kind !== 'access') fail('authorization_store_corrupt')
         if (block.identity !== undefined) reference(block.identity)
+        if (block.operationFingerprint !== undefined && !/^[a-f0-9]{64}$/u.test(block.operationFingerprint)) fail('authorization_store_corrupt')
       }
       return value
     } catch { return fail('authorization_store_corrupt') }
