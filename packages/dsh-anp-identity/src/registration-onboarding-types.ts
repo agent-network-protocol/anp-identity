@@ -8,6 +8,10 @@ export function normalizeRegistrationPhone(value: string): string | undefined {
 }
 /** The UI keeps the selected dialing code separate; never infer another country. */
 export function composeRegistrationPhone(code: string, number: string): string | undefined {
+  if (code === 'international') {
+    if (!/^(?:\+|00)/u.test(number.trim())) return undefined;
+    return normalizeRegistrationPhone(number);
+  }
   const dialing = code.trim();
   const national = number.trim().replace(/[\s()-]/gu, '');
   if (!/^\+[1-9][0-9]{0,3}$/u.test(dialing) || !/^[0-9]+$/u.test(national)) return undefined;

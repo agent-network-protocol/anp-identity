@@ -1,0 +1,20 @@
+{
+  "name": "@anp-acceptance/identity-consumer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": { ".": "./index.mjs", "./anp-consumer": "./anp-consumer.mjs", "./pap-consumer": "./pap-consumer.mjs" },
+  "files": [
+    "index.mjs", "anp-consumer.mjs", "pap-consumer.mjs"
+  ],
+  "peerDependencies": {
+    "@agent-network-protocol/dsh-anp-identity": ">=0.1.0",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    }
+  }
+}
