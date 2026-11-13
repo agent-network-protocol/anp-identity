@@ -60,7 +60,7 @@ export class RegistrationOnboardingStore {
           ...(value.phone ? { phone: value.phone } : { email: value.email }),
           capabilities: { mcpMachine: true, papSession: true, papAccount: false }, redirectUris: [] },
         parameters: { profile: value.profile, usage: 'protocol', identityOnly: true, label: value.label,
-          domain: host.hostname, path: (value.profile === 'e1' ? '/user/' : '/awiki/user/') + value.handle, handle: value.handle + '.' + host.hostname },
+          domain: host.hostname, path: value.profile === 'web' ? '/awiki/web/' + randomUUID().replaceAll('-', '') : '/user/' + value.handle, handle: value.handle + '.' + host.hostname },
       });
       const temp = join(this.root, '.' + randomUUID() + '.tmp');
       try {

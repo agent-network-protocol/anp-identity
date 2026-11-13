@@ -1009,3 +1009,16 @@ it('starts a foreground-triggered prompt queue once and removes its event handle
     await new Promise(resolve=>setTimeout(resolve,0));expect(f.remote.listRequests).toHaveBeenCalledTimes(calls);
   } finally { f.controller.dispose(); }
 });
+
+it('keeps Web disabled and submits an international phone only as E1', async () => {
+  const f=fixture();f.render();await act(()=>f.controller.refresh());
+  fireEvent.click(screen.getByRole('button',{name:'创建公共身份'}));
+  expect((screen.getByLabelText('身份类型') as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole('option',{name:'Web（暂未开放）',hidden:true}) as HTMLOptionElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Handle'),{target:{value:'overseas-user'}});
+  fireEvent.change(screen.getByLabelText('国家/地区码'),{target:{value:'international'}});
+  fireEvent.change(screen.getByLabelText('注册手机号'),{target:{value:'+44 7700 900123'}});
+  fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
+  await waitFor(()=>expect(f.remote.startIdentityRegistration).toHaveBeenCalledWith(expect.objectContaining({phone:'+447700900123',profile:'e1'})));
+  expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});

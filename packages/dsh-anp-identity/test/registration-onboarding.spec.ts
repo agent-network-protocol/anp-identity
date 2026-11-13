@@ -22,6 +22,14 @@ it('saves an owner-only stable registration intent for safe restart, without OTP
   expect(bytes).not.toContain('otp');expect(bytes).not.toContain('verificationCode');
   if(process.platform!=='win32')expect((await stat(join(root,'owner-registration.json'))).mode&0o777).toBe(0o600);
 });
+it('persists the canonical hosted Web UUID location across restart', async () => {
+  const root = await mkdtemp(join(tmpdir(),'onboarding-web-'));roots.push(root);
+  const store = new RegistrationOnboardingStore(root);
+  const result = await store.create({...input,profile:'web'},'https://awiki.me',active);
+  expect(result.parameters.path).toMatch(/^\/awiki\/web\/[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/u);
+  expect(result.parameters.handle).toBe('test-user.awiki.me');
+  expect((await new RegistrationOnboardingStore(root).read(active))?.parameters).toEqual(result.parameters);
+});
 it('rejects changed origins, unexpected capabilities and contact ambiguity before any saved intent', async () => {
   const root = await mkdtemp(join(tmpdir(),'onboarding-'));roots.push(root);
   const store = new RegistrationOnboardingStore(root);

@@ -107,21 +107,21 @@ function RegistrationForm({ controller }: { controller: IdentityController }): R
   const [dialingCode, setDialingCode] = useState("+86");
   const [customCode, setCustomCode] = useState("+");
   const [contactError, setContactError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<"e1" | "web">("e1");
   const [origin] = useState(view.registrationService?.origin ?? "https://awiki.me");
   return <form onSubmit={event => {
     event.preventDefault();
     const code = dialingCode === "other" ? customCode : dialingCode;
     const phone = method === "phone" ? composeRegistrationPhone(code, contact) : undefined;
     if (method === "phone" && !phone) {
-      setContactError(!/^\+[1-9][0-9]{0,3}$/u.test(code) ? "国家码格式不正确，请填写 +国家码，例如 +86。"
+      setContactError(code === 'international' ? "请填写完整国际号码，以 + 或 00 和国家码开头。"
+        : !/^\+[1-9][0-9]{0,3}$/u.test(code) ? "国家码格式不正确，请填写 +国家码，例如 +86。"
         : code === "+86" ? "中国大陆手机号应为有效的11位数字。国家码已在左侧选择，手机号框不要重复填写 +86。"
         : "手机号格式不正确，请只填写号码，不含国家码；国家码请在左侧选择。");
       return;
     }
     if (!/^[a-z][a-z0-9-]{2,39}$/u.test(handle)) { setContactError("Handle 请使用3–40位小写字母、数字或连字符，并以字母开头。"); return; }
     setContactError(null);
-    void controller.startIdentityRegistration({ label, handle, profile, expectedOrigin: origin,
+    void controller.startIdentityRegistration({ label, handle, profile: 'e1', expectedOrigin: origin,
       expectedVersion: view.onboarding?.version ?? 0, ...(method === "phone" ? { phone: phone! } : { email: contact.trim() }) });
   }}>
     <p>注册服务：{origin}</p>
@@ -139,14 +139,15 @@ function RegistrationForm({ controller }: { controller: IdentityController }): R
         <option value="+49">德国 +49</option><option value="+33">法国 +33</option>
         <option value="+61">澳大利亚 +61</option><option value="+91">印度 +91</option>
         <option value="other">其他国家/地区</option>
+        <option value="international">完整国际号码</option>
       </select>{dialingCode==="other"&&<input aria-label="自定义国家码" value={customCode} onChange={event=>{setCustomCode(event.target.value);setContactError(null);}} placeholder="+国家码" />}</label>
-      <label>手机号<input aria-label="注册手机号" type="tel" inputMode="numeric" autoComplete="off" required value={contact}
-        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder={dialingCode==="+86"?"11位手机号，不含国家码":"号码，不含国家码"} /></label>
+      <label>手机号<input aria-label="注册手机号" type="tel" inputMode="tel" autoComplete="off" required value={contact}
+        onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder={dialingCode==="international"?"+国家码及手机号":dialingCode==="+86"?"11位手机号，不含国家码":"号码，不含国家码"} /></label>
     </div> : <label>邮箱<input aria-label="注册邮箱" type="email" autoComplete="off" required value={contact}
         onChange={event=>{setContact(event.target.value);setContactError(null);}} placeholder="you@example.com" /></label>}
-    {method==="phone"&&<p className="anpi-small">默认中国大陆 +86。国家码与手机号分开填写，提交时会合并为国际格式。</p>}
+    {method==="phone"&&<p className="anpi-small">支持海外手机号。选择国家/地区码并填写号码，或选择“完整国际号码”填写 +国家码及手机号。</p>}
     {contactError && <p role="alert">{contactError}</p>}
-    <details><summary>高级：身份类型</summary><select aria-label="身份类型" value={profile} onChange={event => setProfile(event.target.value as "e1" | "web")}><option value="e1">E1（默认）</option><option value="web">Web（无根控制）</option></select></details>
+    <details><summary>高级：身份类型</summary><select aria-label="身份类型" value="e1" disabled><option value="e1">E1（默认）</option><option value="web" disabled>Web（暂未开放）</option></select><p className="anpi-small">当前仅支持创建 E1 身份，Web 身份暂未开放。</p></details>
     <p className="anpi-small">本次用途为 MCP / ANP / PAP 登录，不包含消息能力或账户回调授权。提交只申请创建；你还需在下一步批准，随后才发送验证码并验证、发布。不会自动授权第三方访问。</p>
     <p className="anpi-small">手机号、邮箱和验证码不提供给 Agent；不要把验证码发到聊天中。</p>
     <div className="anpi-footer"><Button type="button" disabled={view.pending} onClick={() => controller.closeModal()}>稍后</Button>
