@@ -18,7 +18,7 @@ it.skipIf(!papSource)('PAP retains real Host consent across retries and applies 
   const transport={async request(url:string,options:{method?:string;headers?:Record<string,string>}={}){
     const pathname=new URL(url).pathname
     const response=(body:unknown,status=200)=>({url,status,headers:{'content-type':'application/json'},body:Buffer.from(JSON.stringify(body))})
-    if(pathname==='/.well-known/poppy.json')return response({protocol_version:'0.3',organization:{domain:'shop.example',name:'Isolated PAP service'},apis:[{type:'openapi',url:'https://shop.example/openapi.json'}]})
+    if(pathname==='/.well-known/poppy.json')return response({protocol_version:'1.0',organization:{domain:'shop.example',name:'Isolated PAP service'},apis:[{type:'openapi',url:'https://shop.example/openapi.json'}]})
     if(pathname==='/.well-known/oauth-protected-resource')return response({},404)
     if(pathname==='/openapi.json')return response({openapi:'3.1.0',servers:[{url:'https://shop.example'}],paths:{'/posts':{post:{operationId:'post_create'}}}})
     if(pathname==='/posts'){
