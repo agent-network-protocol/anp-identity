@@ -136,3 +136,23 @@ it('removing a Host temporary policy invalidates a retained native lease, not on
   await expect(lease.signOAuthClientAssertion(lease.targetRef)).rejects.toThrow()
   expect(f.sign).not.toHaveBeenCalled()
 })
+
+
+it('limits PAR DPoP proofs to the validated endpoint, POST and no access token', async () => {
+  const f = fixture('pap_account')
+  const native = f.native as unknown as Record<string, unknown>
+  native.createDpopKey = async () => ({ handle:'temporary-key', purpose:'pap_dpop', generation:1, public_jwk:publicJwk, thumbprint:'public-thumbprint' })
+  const proof = vi.fn(async () => 'signed-proof')
+  native.signDpopProof = proof
+  const endpoint = 'https://issuer.example/par'
+  const lease = await f.client.registerValidatedTarget({ identityRef:identity, policyRef:f.policy.id,
+    discovery:{...evidence, profile:'pap_account', companyId:'https://company.example', pushedAuthorizationRequestEndpoint:endpoint}, requestedScopes:['agent.self.read'] })
+  const scope = lease.bindPapScope({userId:'one-user',accountSlot:'one-account'})
+  const key = await lease.createDpopKey(scope,'par-key')
+  await expect(lease.signDpopProof(scope,{keyRef:key.keyRef,httpMethod:'POST',httpUri:endpoint,nonce:'nonce'})).resolves.toBe('signed-proof')
+  for(const input of [{httpMethod:'GET',httpUri:endpoint},{httpMethod:'GET',httpUri:endpoint+'?query=one'},
+    {httpMethod:'POST',httpUri:endpoint,accessToken:'must-not-sign'}, {httpMethod:'POST',httpUri:'https://issuer.example/other'}]) {
+    await expect(lease.signDpopProof(scope,{keyRef:key.keyRef,...input})).rejects.toThrow()
+  }
+  expect(proof).toHaveBeenCalledTimes(1)
+})

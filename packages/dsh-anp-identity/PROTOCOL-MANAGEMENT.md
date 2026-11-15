@@ -56,3 +56,12 @@ The page and Agent use the same owner backend. UI drafts survive external versio
 ## Reloading after a local reset
 
 The explicit reload button fetches authoritative settings from the Host; it does not reuse the page cache. It may adopt a lower version after an owner resets local data. Failed reloads preserve drafts and keep saving blocked. Background reads cannot roll back a successful save, and late reads cannot replace a newer explicit reload. Reloading alone never writes or replaces a permission file.
+
+### PAP 1.0 PAR evidence
+
+`ValidatedTargetEvidence.pushedAuthorizationRequestEndpoint` optionally pins the
+validated authorization server PAR endpoint. A PAP account lease may sign a DPoP
+proof for that exact endpoint only with POST and without an access token. It uses
+the existing opaque temporary-key handle, scope, generation and custody checks;
+there is no new private-key export or general signing API. Client assertions
+continue to target the authorization-server issuer with the existing short TTL.

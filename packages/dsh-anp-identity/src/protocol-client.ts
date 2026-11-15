@@ -18,6 +18,7 @@ export interface ValidatedTargetEvidence {
   profile: 'mcp_machine' | 'pap_session' | 'pap_account'
   issuer: string
   resource: string
+  pushedAuthorizationRequestEndpoint?: string
   tokenEndpoint?: string
   companyId?: string
   allowedEndpoints?: string[]

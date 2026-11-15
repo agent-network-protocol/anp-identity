@@ -192,6 +192,7 @@ export class ProtocolIdentityAuthority {
           const selected = key(ref, request.keyRef, 'pap_dpop')
           if (evidence.profile !== 'pap_account') throw pluginError('capability_forbidden')
           this.validateRequest(evidence, request.httpUri)
+          if (`${new URL(request.httpUri).origin}${new URL(request.httpUri).pathname}` === evidence.pushedAuthorizationRequestEndpoint && (request.httpMethod !== 'POST' || request.accessToken !== undefined)) throw pluginError('capability_forbidden')
           return await run('signDpopProof', { handle: selected.handle, generation: selected.generation, scope: scope(ref),
             http_method: request.httpMethod, http_uri: request.httpUri,
             ...(request.accessToken === undefined ? {} : { access_token: request.accessToken }), ...(request.nonce === undefined ? {} : { nonce: request.nonce }) }) as string
@@ -306,13 +307,13 @@ export class ProtocolIdentityAuthority {
   }
   private validateEvidence(evidence: ValidatedTargetEvidence): void {
     for (const value of [evidence.issuer, evidence.resource, evidence.sources.resource, evidence.sources.authorizationServer,
-      ...(evidence.tokenEndpoint ? [evidence.tokenEndpoint] : []), ...(evidence.allowedEndpoints ?? [])]) exactHttps(value)
+      ...(evidence.tokenEndpoint ? [evidence.tokenEndpoint] : []), ...(evidence.pushedAuthorizationRequestEndpoint ? [evidence.pushedAuthorizationRequestEndpoint] : []), ...(evidence.allowedEndpoints ?? [])]) exactHttps(value)
     if (!/^[a-f0-9]{64}$/u.test(evidence.metadataDigest) || !Number.isSafeInteger(evidence.expiresAt)
       || evidence.expiresAt <= Date.now() || evidence.expiresAt > Date.now() + 3600000) throw pluginError('invalid_request')
   }
   private validateRequest(evidence: ValidatedTargetEvidence, uri: string): void {
     const request = new URL(uri)
     if (request.username || request.password || request.hash || request.protocol !== 'https:'
-      || ![evidence.resource, evidence.tokenEndpoint, ...(evidence.allowedEndpoints ?? [])].includes(`${request.origin}${request.pathname}`)) throw pluginError('capability_forbidden')
+      || ![evidence.resource, evidence.tokenEndpoint, evidence.pushedAuthorizationRequestEndpoint, ...(evidence.allowedEndpoints ?? [])].includes(`${request.origin}${request.pathname}`)) throw pluginError('capability_forbidden')
   }
 }
