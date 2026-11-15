@@ -1,5 +1,7 @@
 # ANP Identity for DeepSeek Harness
 
+Version `0.1.17` retains the `0.1.16` authoritative protocol-settings reload fix and adds Windows registration/credential repairs, deleted-flow recovery, accurate approval/readiness diagnostics, and configurable ANP dispatch timeouts. Private keys stay in native custody; uncertain registration is inspected read-only and is never replayed or treated as published.
+
 This candidate targets Harness `0.2.2-rc.1`, Cordis `4.1.0`, and Loader `1.1.0`, not Harness `0.1.5`. Remote descriptors use lazy `create()` codecs. In-process Gateway callers must supply an explicit Peer and install the Remote Access service.
 
 Shared protocol identities without a dedicated request-signing key can request `ordinary-http/1` approval for public reads and native exact-request HTTP authentication with their unique device authentication key. This profile cannot perform raw signatures or OAuth assertions. A dedicated request-signing identity keeps its original ordinary-use profile; existing grants are never expanded. Older versions do not understand the new HTTP-only snapshot, so revoke/archive those grants before a downgrade.

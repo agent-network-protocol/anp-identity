@@ -13,7 +13,7 @@ function fixture() {
   const binding = {identityRef:identity,policyRef:'global-read',stateRoot:'/state',secretsRoot:'/keys',secretStore:'local-file' as const,scopes:[]}
   const signing = vi.fn(async () => ({headerPatch:[{name:'signature-input',value:'fixture-input'},{name:'signature',value:'fixture-signature'}]}))
   const native = {publicIdentity:async()=>({activeKeys:[{kid:identity.did+'#device',algorithm:'ed25519',purposes:['authentication','device_assertion']}]}),prepareHttpSignature:signing} as unknown as ProviderLease
-  const dispatch = vi.fn(async (request: Request) => {expect(request.headers.get('signature')).toBe('fixture-signature');return Response.json({read:true})})
+  const dispatch = vi.fn(async (request: Request, _check: () => Promise<void>, onSend: () => void) => {expect(request.headers.get('signature')).toBe('fixture-signature');onSend();return Response.json({read:true})})
   const policy:ProtocolPolicyClient={classifyHttp:classifyHttpEffect,classifyMcp:classifyMcpEffect,classifyScopes:classifyMcpScopes,async assertNoDenial(){if(!active)throw new Error('revoked')},
     register(){return {protocolTarget:true}},forget(){},async evaluate(_target,input){const version=policyVersion,decision=input.effect==='read'?(readAllowed?'allow':'deny'):input.effect==='write'&&!input.extraPermissions&&writeAllowed?'allow':'ask';
       return {version,decision,async assertActive(){if(version!==policyVersion||decision==='deny')throw Object.assign(new Error('Changed'),{code:'protocol_policy_changed'})}};}}
@@ -72,5 +72,23 @@ it('rechecks global policy and provider generation after asynchronous signing', 
     f.signing.mockImplementationOnce(async()=>{if(change==='revoke')f.deactivate();else f.reload();return {headerPatch:[{name:'signature',value:'must-not-escape'}]}})
     await expect(f.client.dispatchRead(new Request(f.evidence.url),f.evidence)).rejects.toThrow()
     expect(f.dispatch).not.toHaveBeenCalled()
+  }
+})
+
+it('distinguishes failure before physical sending from a lost write response and never retries either', async () => {
+  for (const sent of [false, true]) {
+    const f = fixture(); f.allowWrites()
+    const request = new Request(f.evidence.url, { method: 'POST', body: '{"text":"draft"}' })
+    const evidence: AnpReadEvidence = { ...f.evidence, kind: 'operation', requiresApproval: true,
+      policyEvidence: { hasRequestBody: true, declaredEffect: 'write' } }
+    f.dispatch.mockImplementationOnce(async (_request, _check, onSend) => {
+      if (sent) onSend()
+      throw Object.assign(new Error('http_request_timeout'), { code: 'http_request_timeout' })
+    })
+    const admission = await f.client.prepareOperation(request.clone(), evidence)
+    await expect(f.client.dispatchOperation(request, evidence, { policyVersion: admission.version })).rejects.toMatchObject({
+      code: sent ? 'operation_result_unknown' : 'http_request_timeout',
+    })
+    expect(f.dispatch).toHaveBeenCalledOnce()
   }
 })

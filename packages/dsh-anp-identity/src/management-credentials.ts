@@ -1,6 +1,6 @@
 /** Encrypted Host-only management credentials, partitioned by service origin and identity. */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, lstat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import lockfile from 'proper-lockfile'
 import type { IdentityReference } from '@agent-network-protocol/anp-identity'
@@ -8,6 +8,7 @@ import type { ManagementCredentialBroker, DeviceManagementCredential } from './m
 import { exactHttps } from './publication-http.js'
 import { pluginError } from './errors.js'
 import { syncDirectory } from './sync-directory.js'
+import { hasPublicPosixPermissions } from './private-file-mode.js'
 
 /** Each key resolver invocation must return a fresh, owner-controlled 32-byte encryption key. */
 export class EncryptedManagementCredentialBroker implements ManagementCredentialBroker {
@@ -21,8 +22,8 @@ export class EncryptedManagementCredentialBroker implements ManagementCredential
     const partition = this.partition(reference, origin)
     let bytes: string
     try {
-      const path = join(this.root, partition + '.json'); const info = await stat(path)
-      if ((info.mode & 0o077) !== 0 || info.size > 4 * 1024 * 1024) throw pluginError('provider_unavailable')
+      const path = join(this.root, partition + '.json'); const info = await lstat(path)
+      if (!info.isFile() || info.isSymbolicLink() || hasPublicPosixPermissions(info.mode) || info.size > 4 * 1024 * 1024) throw pluginError('provider_unavailable')
       bytes = await readFile(path, 'utf8')
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw pluginError('provider_unavailable') }
     const key = await this.encryptionKey()

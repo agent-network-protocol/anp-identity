@@ -109,7 +109,7 @@ function fixture(
   let grants = initialGrants;
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const remote = {
-    registrationOnboardingStatus: vi.fn(async () => ok<{available:boolean;version:number;inProgress:boolean;intentId?:string}>({available:true,version:0,inProgress:false})),
+    registrationOnboardingStatus: vi.fn(async () => ok<{available:boolean;version:number;inProgress:boolean;intentId?:string;archived?:boolean}>({available:true,version:0,inProgress:false})),
     startIdentityRegistration: vi.fn(async (_input: unknown) => {
       requests.push(request("create","test-request"));
       return ok<{status?:string;code?:string;phase?:string;requestId?:string}>({phase:'awaiting_approval',requestId:'test-request'});
@@ -817,6 +817,27 @@ it('offers an explicit SMS retry for a blocked challenge, never for an uncertain
   f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'request',phase:'registration_uncertain'}]});
   await act(()=>f.controller.refresh());
   expect(screen.queryByRole('button',{name:'重试发送验证码'})).toBeNull();
+  f.controller.dispose();
+});
+
+it('shows the stable failure reason instead of leaving the owner with a generic blocked message', async () => {
+  const f=fixture();
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[{id:'flow',requestId:'request',phase:'blocked',reason:'storage_unavailable'}]});
+  f.render(); await act(()=>f.controller.refresh());
+  expect(screen.getByText('storage_unavailable')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toContain('注册状态目录不可用');
+  expect(screen.queryByRole('button',{name:'重试发送验证码'})).toBeNull();
+  f.controller.dispose();
+});
+
+it('reopens creation after safely archiving an unstarted deleted identity flow', async () => {
+  const f=fixture();
+  f.remote.registrationOnboardingStatus.mockResolvedValue({ok:true,value:{available:true,version:2,inProgress:false,archived:true}});
+  f.render(); await act(()=>f.controller.refresh());
+  expect(screen.getByText(/已归档尚未执行注册的旧流程/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'创建公共身份'}));
+  expect(screen.getByLabelText('Handle')).toBeTruthy();
+  expect(f.remote.startIdentityRegistration).not.toHaveBeenCalled();
   f.controller.dispose();
 });
 

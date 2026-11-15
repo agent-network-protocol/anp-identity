@@ -17,7 +17,7 @@ it('only the owner edits protocol settings; installed adapters receive revocable
     expect(() => f.service.bindProtocolPolicy(f.context, 'anp')).toThrow(expect.objectContaining({ code: 'consumer_forbidden' }))
     const before = await manager.protocolManagement(f.managerContext)
     expect(before.policy.version).toBe(0)
-    expect(before.protocols.find(item => item.protocol === 'pap')).toMatchObject({ installed: true, enabled: true, managedAdapters: 0, unmanagedAdapters: 1 })
+    expect(before.protocols.find(item => item.protocol === 'pap')).toMatchObject({ installed: true, enabled: true, ready: false, managedAdapters: 0, unmanagedAdapters: 1 })
     const client = f.service.bindProtocolPolicy(f.context, 'pap')
     expect(f.service.bindProtocolPolicy(f.context, 'pap')).toBe(client)
     expect(Object.keys(client).sort()).toEqual(['assertNoDenial', 'classifyHttp', 'classifyMcp', 'classifyScopes', 'evaluate', 'forget', 'register'])
@@ -28,8 +28,8 @@ it('only the owner edits protocol settings; installed adapters receive revocable
     await expect(pending.assertActive()).rejects.toMatchObject({ code: 'protocol_policy_changed' })
     expect((await client.evaluate(target, { url: 'https://agent.shop.example/posts', effect: 'write' })).decision).toBe('allow')
     const after = await manager.protocolManagement(f.managerContext)
-    expect(after.protocols.find(item => item.protocol === 'pap')).toMatchObject({ managedAdapters: 1, unmanagedAdapters: 0 })
-    expect(after.protocols.find(item => item.protocol === 'mcp')).toMatchObject({ installed: true, managedAdapters: 0, unmanagedAdapters: 1 })
+    expect(after.protocols.find(item => item.protocol === 'pap')).toMatchObject({ ready: true, managedAdapters: 1, unmanagedAdapters: 0 })
+    expect(after.protocols.find(item => item.protocol === 'mcp')).toMatchObject({ installed: true, ready: false, managedAdapters: 0, unmanagedAdapters: 1 })
     expect(after.protocols.find(item => item.protocol === 'anp')).toMatchObject({ installed: false, enabled: false })
     const request = new Request('https://agent.shop.example/posts', {method:'POST',body:'denied exact content'})
     await client.assertNoDenial(request.clone())
@@ -41,4 +41,14 @@ it('only the owner edits protocol settings; installed adapters receive revocable
     await expect(manager.configureProtocolPolicy(f.managerContext, { expectedVersion: 0, policy })).rejects.toMatchObject({ code: 'protocol_policy_conflict' })
   } finally { await f.dispose() }
 // Native publication and the durable ledger are integration setup, not a short latency assertion.
+}, 30000)
+
+it('does not report an expired global domain permission as ready even with a managed adapter', async () => {
+  const f = await createNativeProtocolFixture({ consumer: '@awiki/dsh-pap/plugin',
+    domainAccess: { enabled: true, scopes: [], expiresAt: Date.now() - 1000 } })
+  try {
+    f.service.bindProtocolPolicy(f.context, 'pap')
+    const state = await (f.managerContext.anpIdentity as AnpIdentityService).protocolManagement(f.managerContext)
+    expect(state.protocols.find(item => item.protocol === 'pap')).toMatchObject({ managedAdapters: 1, ready: false })
+  } finally { await f.dispose() }
 }, 30000)

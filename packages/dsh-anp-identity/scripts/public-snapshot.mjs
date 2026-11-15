@@ -9,6 +9,7 @@ entries.push('protocol-policy-types.d.ts', 'protocol-policy.d.ts', 'default-iden
 const sections = []
 for (const entry of entries) {
   const value = (await readFile(join(root, 'lib', entry), 'utf8'))
+    .replace(/\r\n/gu, '\n')
     .replace(/^\/\/# sourceMappingURL=.*$/gmu, '')
     .trimEnd()
   sections.push(`// ===== ${entry} =====\n${value}`)
@@ -23,7 +24,7 @@ if (process.argv.includes('--update')) {
 
 let expected
 try {
-  expected = await readFile(fixture, 'utf8')
+  expected = (await readFile(fixture, 'utf8')).replace(/\r\n/gu, '\n')
 } catch {
   throw new Error('public API fixture is missing; run npm run update:public')
 }

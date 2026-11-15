@@ -9,6 +9,11 @@ import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } f
 
 interface AgentCaller { id: string; session: { header: { origin?: string; delegationDepth?: number } } }
 interface Execution { agent?: AgentCaller; signal?: AbortSignal; callId?: string }
+interface Approval {
+  request(input: object): Promise<string>
+  overrideOf?(session: AgentCaller['session']): 'ask' | 'never' | undefined
+  config?: { policy?: 'ask' | 'never' }
+}
 export interface ConfigurationHandlers {
   assertOwner(): void
   protocols(): Promise<ProtocolManagementState>
@@ -35,7 +40,7 @@ const rule = { type: 'object', additionalProperties: false, required: ['mode', '
   mode: { type: 'string', enum: ['allow_all', 'whitelist', 'ask', 'deny'] }, outside: { type: 'string', enum: ['ask', 'deny'] },
   domains: { type: 'array', maxItems: 256, items: domainEntry },
 } }
-const knownErrors = new Set(['consumer_forbidden', 'configuration_caller_forbidden', 'configuration_approval_required', 'configuration_rejected',
+const knownErrors = new Set(['consumer_forbidden', 'configuration_caller_forbidden', 'configuration_approval_required', 'configuration_approval_disabled', 'configuration_rejected',
   'configuration_cancelled', 'protocol_policy_conflict', 'protocol_policy_unavailable', 'default_identity_conflict', 'default_identity_settings_unavailable',
   'published_identity_required', 'not_published', 'identity_not_found', 'identity_deleting', 'provider_unavailable', 'provider_disposed',
   'registration_service_conflict', 'registration_service_invalid_origin', 'registration_service_settings_unavailable'])
@@ -46,6 +51,10 @@ export function registerConfigurationTools(ctx: Context, handlers: Configuration
   ctx.inject(['tools', 'agents'], inner => {
     const tools = inner.get('tools') as { register(value: object): unknown }
     const agents = inner.get('agents') as { get(id: string): unknown }
+    const approvalPolicy = (exec: Execution) => {
+      const approval = inner.get('approval') as Approval | undefined
+      return approval?.overrideOf?.(exec.agent!.session) ?? approval?.config?.policy ?? null
+    }
     let active = true
     inner.effect(() => () => { active = false })
     const check = (exec: Execution, mutation: boolean) => {
@@ -56,13 +65,15 @@ export function registerConfigurationTools(ctx: Context, handlers: Configuration
     }
     const approve = async (exec: Execution, name: string, before: unknown, after: unknown) => {
       check(exec, true)
-      const approval = inner.get('approval') as { request(input: object): Promise<string> } | undefined
+      const approval = inner.get('approval') as Approval | undefined
       if (!approval) throw new Error('configuration_approval_required')
+      if (approvalPolicy(exec) === 'never') throw new Error('configuration_approval_disabled')
       const outcome = await approval.request({ agent: exec.agent, toolName: name, callId: exec.callId, signal: exec.signal,
         reason: `Persistent profile settings change, affecting all sessions. Before: ${JSON.stringify(before)}. After: ${JSON.stringify(after)}. This changes protocol/identity preferences only; it does not grant signing, payment or key export permissions.`,
         displayReason: { en: `Apply this persistent settings change to all sessions?\nBefore: ${JSON.stringify(before)}\nAfter: ${JSON.stringify(after)}`,
           zh: `是否保存本次配置修改？对所有会话持续生效，不包含通用签名、支付或密钥导出权限。\n修改前：${JSON.stringify(before)}\n修改后：${JSON.stringify(after)}` } })
       check(exec, true)
+      if (outcome === 'rejected' && approvalPolicy(exec) === 'never') throw new Error('configuration_approval_disabled')
       if (outcome !== 'allowed-once') throw new Error(outcome === 'cancelled' ? 'configuration_cancelled' : outcome === 'rejected' ? 'configuration_rejected' : 'configuration_approval_required')
     }
     const register = (name: string, description: string, parameters: object, run: (raw: unknown, exec: Execution) => Promise<unknown>) => {
@@ -74,8 +85,10 @@ export function registerConfigurationTools(ctx: Context, handlers: Configuration
           catch (error) {
             const code = error instanceof z.ZodError ? 'invalid_parameters' : error instanceof Error && knownErrors.has((error as Error & { code?: string }).code ?? error.message)
               ? (error as Error & { code?: string }).code ?? error.message : 'configuration_unavailable'
-            return { ok: false, error: { code }, next: code === 'configuration_rejected'
-              ? 'The owner rejected this configuration change. Stop; do not retry or substitute another identity or policy.'
+            return { ok: false, error: { code }, next: code === 'configuration_approval_disabled'
+              ? 'This session uses the never approval policy, which automatically rejects required confirmations. Ask the owner to change the session approval policy to ask, or save the preference directly in Identity Management. No settings changed. Do not change write permissions or retry until the owner changes the approval policy.'
+              : code === 'configuration_rejected'
+              ? 'The approval service rejected this configuration change. Stop; do not retry or substitute another identity or policy. This result alone does not prove that the owner clicked Reject.'
               : 'Query current settings before retrying. Never edit profile files, approve for the owner, or retry an unconfirmed change blindly.' }
           }
         } })
@@ -88,7 +101,7 @@ export function registerConfigurationTools(ctx: Context, handlers: Configuration
     }, async (raw, exec) => {
       const args = protocolArguments.parse(raw)
       const before = await handlers.protocols(); check(exec, args.action === 'set')
-      if (args.action === 'get') return before
+      if (args.action === 'get') return { ...before, approvalPolicy: approvalPolicy(exec) }
       const { action: _action, ...input } = args
       if (before.policy.version !== input.expectedVersion) throw new Error('protocol_policy_conflict')
       await approve(exec, 'protocol_permissions', before.policy, input.policy)
@@ -103,7 +116,7 @@ export function registerConfigurationTools(ctx: Context, handlers: Configuration
     }, async (raw, exec) => {
       const args = identityArguments.parse(raw)
       const before = await handlers.identity(); check(exec, args.action !== 'get')
-      if (args.action === 'get') return { ...before, capabilities: ['default_identity', 'registration_service', 'protocol_permissions'],
+      if (args.action === 'get') return { ...before, approvalPolicy: approvalPolicy(exec), capabilities: ['default_identity', 'registration_service', 'protocol_permissions'],
         unavailable: ['private_keys', 'tokens', 'otp', 'general_signing', 'lifecycle_approval'], notes: 'Display-row selection is not the default. Existing identities and in-progress registrations keep their pinned service origin.' }
       if (args.action === 'set_default') {
         let identity: IdentityReference | null = null

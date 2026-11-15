@@ -4,7 +4,7 @@ import { type ProtocolPolicyClient } from './protocol-policy.js';
 import { type ManagedProtocol, type UpdateProtocolPolicy, type ProtocolManagementState } from './protocol-policy-types.js';
 import type { RegistrationServiceSettings, UpdateRegistrationServiceSettings } from './registration-service-types.js';
 import type { PapCallbackManagementOperations } from './pap-callback.js';
-import { type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
+import { type RegistrationInspection, type ManagementCredentialBroker, type LocalRegistrationInput } from './management-driver.js';
 import { type DomainAccessConfig, type DomainProfile, type DomainBinding } from './domain-access.js';
 import { type AnpDomainReadClient } from './anp-domain.js';
 import { type DomainOperationClient } from './domain-consent.js';
@@ -70,6 +70,7 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
     private readonly domains;
     private readonly anpReads;
     private readonly anpDomainMode;
+    private readonly domainExpiresAt;
     private readonly domainOperations;
     private readonly users;
     private readonly hostContext;
@@ -155,6 +156,13 @@ export declare class AnpIdentityService extends Service implements AnpIdentitySe
         deviceId: string;
         state: 'registered';
     }>;
+    /** Read-only diagnosis for the pinned owner registration; this cannot finalize or replay it. */
+    inspectLocalRegistration(context: Context, input: {
+        reference: IdentityReference;
+        origin: string;
+        fetch?: typeof fetch;
+        assertActive?: () => void;
+    }): Promise<RegistrationInspection>;
     /** Private owner storage path, never exposed through a Remote or model tool. */
     registrationBootstrapRoot(context: Context): string;
     /** Manager-only registration preferences; ordinary consumer capabilities never expose these methods. */
@@ -217,6 +225,8 @@ export interface DomainAccessConfig {
     scopes: string[];
     secretStore?: 'keyring' | 'local-file';
     expiresAt?: number;
+    /** Signed ANP transport deadline, separate from the owner's confirmation wait. */
+    requestTimeoutMs?: number;
 }
 export interface DomainBinding {
     identityRef: IdentityReference;
@@ -278,7 +288,7 @@ export interface AnpDomainReadHost {
     generation(): unknown;
     resolve(context: Context): Promise<DomainBinding>;
     withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
-    dispatch(request: Request, assertBeforeSend: () => Promise<void>): Promise<Response>;
+    dispatch(request: Request, assertBeforeSend: () => Promise<void>, onSend: () => void): Promise<Response>;
     policy(context: Context): ProtocolPolicyClient;
     runApproved<T>(context: Context, grantId: string, request: Request, identity: DomainBinding['identityRef'], effect: (check: () => Promise<void>) => Promise<T>): Promise<T>;
 }
@@ -760,6 +770,7 @@ import type { IdentityReference } from '@agent-network-protocol/anp-identity';
 import type AnpIdentityService from './index.js';
 import type { IdentityManagement } from './management-types.js';
 import { z } from 'zod';
+import type { RegistrationInspection } from './management-driver.js';
 export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
     id: z.ZodString;
     requestId: z.ZodString;
@@ -781,7 +792,7 @@ export declare const RegistrationBootstrapConfigSchema: z.ZodObject<{
 export type RegistrationBootstrapConfig = z.infer<typeof RegistrationBootstrapConfigSchema>;
 export type RegistrationBootstrapInput = z.input<typeof RegistrationBootstrapConfigSchema>;
 export type RegistrationBootstrapPhase = 'awaiting_approval' | 'awaiting_email_verification' | 'awaiting_phone_verification' | 'registering' | 'publishing' | 'published' | 'registration_uncertain' | 'blocked' | 'disposed';
-export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required';
+export type RegistrationBootstrapReason = 'approval_unavailable' | 'approval_denied' | 'invalid_configuration' | 'credential_unavailable' | 'email_unavailable' | 'phone_unavailable' | 'provider_unavailable' | 'publication_failed' | 'client_upgrade_required' | 'storage_unavailable' | 'identity_deleted';
 /** Safe manager/UI projection; no factor, credential, key or remote response is returned. */
 export interface RegistrationBootstrapStatus {
     id: string;
@@ -792,6 +803,7 @@ export interface RegistrationBootstrapStatus {
     reason?: RegistrationBootstrapReason;
     reference?: IdentityReference;
     clientId?: string;
+    registrationCheck?: RegistrationInspection;
 }
 export interface RegistrationBootstrapController {
     submitOtp(code: string): void;
@@ -868,12 +880,27 @@ export interface DeviceManagementCredential {
     audience?: string;
     operationBindings?: Record<string, Record<string, unknown>>;
 }
+/** Closed read-only evidence; never a registration receipt or a recovery authorization. */
+export interface RegistrationInspection {
+    outcome: 'verified' | 'rejected' | 'incompatible' | 'unavailable';
+    httpStatus?: number;
+    rpcCode?: number;
+    nativeCode?: 'capability_denied' | 'provider_unavailable' | 'provider_disposed' | 'catalog_conflict';
+}
 /** The implementation must encrypt secrets at rest and partition by exact identity and service origin. */
 export interface ManagementCredentialBroker {
     get(reference: IdentityReference, origin: string): Promise<DeviceManagementCredential | undefined>;
     set(reference: IdentityReference, origin: string, credential: DeviceManagementCredential): Promise<void>;
     reserveOperation(reference: IdentityReference, origin: string, operationId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
+/** Inspect only the current registered device. Never register, adopt a document or save credentials. */
+export declare function inspectRegisteredDevice(input: {
+    reference: IdentityReference;
+    origin: string;
+    withNative<T>(operation: (native: ProviderLease) => Promise<T>): Promise<T>;
+    fetch?: typeof fetch;
+    assertActive: () => void;
+}): Promise<RegistrationInspection>;
 export interface ManagedPublicationDriver extends PapCallbackManagementOperations {
     readonly documentId: string;
     readonly backend: PublicationBackend;
@@ -1503,6 +1530,7 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     private readonly onboardingStore;
     private readonly configuredBootstrap;
     private onboardingVersion;
+    private onboardingArchived;
     private onboardingIntent;
     private startingRegistration;
     constructor(ctx: Context, config?: Config);
@@ -1511,6 +1539,7 @@ export declare class IdentityManagerRemote extends TypertRemoteService {
     registrationOnboardingStatus(): Promise<{
         available: boolean;
         version: number;
+        archived: boolean;
         inProgress: boolean;
         intentId?: string;
     }>;

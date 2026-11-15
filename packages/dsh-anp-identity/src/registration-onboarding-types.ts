@@ -35,4 +35,5 @@ export interface RegistrationOnboardingStatus {
   readonly available: boolean;
   readonly version: number;
   readonly inProgress: boolean;
+  readonly archived?: boolean;
 }

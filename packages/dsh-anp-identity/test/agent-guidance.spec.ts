@@ -36,4 +36,8 @@ it('guides MCP through actual resource discovery and separates no_as PAP from ac
   expect(JSON.stringify(guide)).toContain('no_as');
   expect(JSON.stringify(guide)).toContain('anp_describe');
   expect(JSON.stringify(guide)).toContain('uncertain POST');
+  expect(JSON.stringify(guide)).toContain('no domain-access toggle');
+  expect(JSON.stringify(guide)).toContain('@deepseek-ai/dsh-mcp-client/domain');
+  expect(AGENT_WORKFLOW_GUIDANCE).toContain('null default means automatic selection');
+  expect(AGENT_WORKFLOW_GUIDANCE).toContain('not a ban on the chat');
 });

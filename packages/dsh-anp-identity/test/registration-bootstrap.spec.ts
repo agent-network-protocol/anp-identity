@@ -82,6 +82,7 @@ async function fixture(options: { missingCredentials?: boolean; uncertainRegistr
       check(); return check
     },
     registerLocalIdentity: register,
+    inspectLocalRegistration: vi.fn(async () => ({ outcome: 'verified', httpStatus: 200 })),
     configureManagedPublicationBackend: vi.fn(async () => ({ backend: 'bootstrap-stable', documentId: 'document', dispose: backendDispose,
       callbackManagement: { execute: async () => { throw new Error('callback is outside this unit') } } })),
   } as unknown as AnpIdentityService
@@ -117,9 +118,14 @@ it('retains an uncertain registration outcome without retrying it after restart'
   const first = f.start()
   await vi.waitFor(() => expect(first.status().phase).toBe('registration_uncertain'))
   await first.dispose()
+  const previousInspections = vi.mocked(f.service.inspectLocalRegistration).mock.calls.length
   const second = f.start()
   await vi.waitFor(() => expect(second.status().phase).toBe('registration_uncertain'))
   expect(f.register).toHaveBeenCalledOnce()
+  await vi.waitFor(() => expect(second.status().registrationCheck).toEqual({ outcome: 'verified', httpStatus: 200 }))
+  await new Promise(resolve => setTimeout(resolve, 250))
+  expect(f.service.inspectLocalRegistration).toHaveBeenCalledTimes(previousInspections + 1)
+  expect(f.manager.publishIdentity).not.toHaveBeenCalled()
 })
 
 it('closes the initial journal permission when its single registration attempt finishes', async () => {
@@ -169,6 +175,15 @@ it('does not accept another consumer or an ordinary creation approval as the con
     await vi.waitFor(() => expect(controller.status()).toMatchObject({ phase: 'blocked', reason: 'invalid_configuration' }))
     expect(f.requests).toHaveLength(0); expect(f.register).not.toHaveBeenCalled()
   }
+})
+
+it('never reuses a deleted creation result or sends a verification challenge for it', async () => {
+  const f = await fixture({ phone: true }); f.approve()
+  Object.assign(f.request, { executionStatus: 'deleted' })
+  const controller = f.start()
+  await vi.waitFor(() => expect(controller.status()).toMatchObject({ phase: 'blocked', reason: 'identity_deleted' }))
+  expect(f.requests).toHaveLength(0); expect(f.register).not.toHaveBeenCalled()
+  expect(await readdir(f.root)).not.toContain('registration-bootstrap')
 })
 
 it('does not recreate a missing established key after its marker was also deleted from a used scope', async () => {

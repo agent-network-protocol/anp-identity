@@ -9,7 +9,8 @@ async function fixture() {
   const ctx = new Context(); roots.push(ctx)
   const tools = new Map<string, any>()
   const agent = { id: 'owner-agent', session: { header: {} } }
-  let owner = true, outcome = 'allowed-once'
+  let owner = true, outcome = 'allowed-once', policyOverride: 'ask' | 'never' | undefined
+  const approvalConfig = { policy: 'ask' as 'ask' | 'never' }
   let policy = initialProtocolPolicy()
   let defaultIdentity = { schema: 1 as const, version: 0, identity: null }
   let registrationService = { origin: 'https://awiki.me', version: 0 }
@@ -25,7 +26,7 @@ async function fixture() {
   const approval = vi.fn<(input: object) => Promise<string>>(async () => outcome)
   ctx.provide('tools', { register(definition: any) { tools.set(definition.name, definition) } })
   ctx.provide('agents', { get(id: string) { return id === agent.id ? agent : undefined } })
-  ctx.provide('approval', { request: approval })
+  ctx.provide('approval', { request: approval, overrideOf: () => policyOverride, config: approvalConfig })
   registerConfigurationTools(ctx, handlers)
   await new Promise(resolve => setTimeout(resolve, 0))
   const signal = new AbortController()
@@ -34,6 +35,7 @@ async function fixture() {
   const input = () => { const { schema: _schema, version: _version, ...rules } = structuredClone(policy); rules.write.mode = 'allow_all'; return { action: 'set', expectedVersion: policy.version, policy: rules } }
   return { ctx, tools, agent, handlers, call, input, approval, execution, signal,
     reject: (value: string) => { outcome = value }, revoke: () => { owner = false },
+    approvalConfig, setApprovalPolicy: (value: 'ask' | 'never' | undefined) => { policyOverride = value },
     externalChange: () => { policy.version++ } }
 }
 it('queries both shared settings without a side effect or confirmation and rejects forged caller arguments', async () => {
@@ -60,6 +62,31 @@ it('confirms the exact persistent diff once, then writes through the shared back
 it.each(['unavailable', 'rejected', 'cancelled'])('fails closed when owner approval is %s', async outcome => {
   const f = await fixture(); f.reject(outcome)
   expect(await f.call('protocol_permissions', f.input())).toMatchObject({ ok: false })
+  expect(f.handlers.setProtocols).not.toHaveBeenCalled()
+})
+it('reports disabled session confirmations without claiming the owner rejected or changing settings', async () => {
+  const f = await fixture(); f.setApprovalPolicy('never')
+  expect(await f.call('identity_settings', { action: 'get' })).toMatchObject({ value: { approvalPolicy: 'never' } })
+  expect(await f.call('protocol_permissions', { action: 'get' })).toMatchObject({ value: { approvalPolicy: 'never' } })
+  for (const [name, input] of [
+    ['protocol_permissions', f.input()],
+    ['identity_settings', { action: 'set_default', expectedVersion: 0, identityId: 'short-identity' }],
+    ['identity_settings', { action: 'set_registration_service', expectedVersion: 0, origin: 'https://service.example' }],
+  ] as const) expect(await f.call(name, input)).toMatchObject({ ok: false, error: { code: 'configuration_approval_disabled' } })
+  expect(f.approval).not.toHaveBeenCalled()
+  expect(f.handlers.setProtocols).not.toHaveBeenCalled()
+  expect(f.handlers.setDefault).not.toHaveBeenCalled()
+  expect(f.handlers.setRegistration).not.toHaveBeenCalled()
+  f.setApprovalPolicy('ask')
+  expect(await f.call('identity_settings', { action: 'set_default', expectedVersion: 0, identityId: 'short-identity' })).toMatchObject({ ok: true })
+  expect(f.approval).toHaveBeenCalledOnce()
+})
+it('honors the session override above the configured policy and detects auto-rejection during a pending ask', async () => {
+  const f = await fixture(); f.approvalConfig.policy = 'never'
+  expect(await f.call('protocol_permissions', f.input())).toMatchObject({ error: { code: 'configuration_approval_disabled' } })
+  f.setApprovalPolicy('ask')
+  f.approval.mockImplementationOnce(async () => { f.setApprovalPolicy('never'); return 'rejected' })
+  expect(await f.call('protocol_permissions', f.input())).toMatchObject({ error: { code: 'configuration_approval_disabled' } })
   expect(f.handlers.setProtocols).not.toHaveBeenCalled()
 })
 it('rejects fake agents, delegated writes, absent signals, cancelled calls and disposed owner registration', async () => {

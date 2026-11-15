@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { registerIdentityGuidance } from './agent-guidance.js';
 import { registerConfigurationTools } from './configuration-tools.js';
 import { RegistrationOnboardingStore, type SavedRegistrationOnboarding } from './registration-onboarding.js';
+import { PROTOCOL_BOOTSTRAP_CONSUMER } from './protocol-bootstrap.js';
 import { registrationInputSchema, type RegistrationOnboardingInput } from './registration-onboarding-types.js';
 import { createHash } from 'node:crypto';
 import type { UpdateRegistrationServiceSettings } from './registration-service-types.js';
@@ -40,6 +41,7 @@ export class IdentityManagerRemote extends TypertRemoteService {
   private readonly onboardingStore: RegistrationOnboardingStore | undefined;
   private readonly configuredBootstrap: boolean;
   private onboardingVersion = 0;
+  private onboardingArchived = false;
   private onboardingIntent: string | undefined;
   private startingRegistration = false;
   constructor(ctx: Context, config: Config = {}) {
@@ -70,7 +72,7 @@ export class IdentityManagerRemote extends TypertRemoteService {
       ? new RegistrationOnboardingStore(identityService.registrationBootstrapRoot(ctx)) : undefined;
     registerIdentityGuidance(ctx, { status: () => this.publicIdentityStatus(), request: async () => {
       await this.bootstrapReady;
-      if (this.onboardingVersion > 0 && !this.bootstrap) return { status: 'recovery_required', action: '打开身份管理完成或恢复当前注册；不要重复创建。' };
+      if (this.onboardingVersion > 0 && !this.bootstrap && !this.onboardingArchived) return { status: 'recovery_required', action: '打开身份管理完成或恢复当前注册；不要重复创建。' };
       const phase = this.bootstrap?.status().phase;
       if (phase && !['published','disposed'].includes(phase)) {
         const requestId = this.bootstrap!.status().requestId;
@@ -91,7 +93,29 @@ export class IdentityManagerRemote extends TypertRemoteService {
         const saved = await this.onboardingStore?.read(() => { (this.managerContext.anpIdentity as AnpIdentityService).acquireManagement(this.managerContext); });
         if (saved) {
           this.onboardingVersion = saved.version;
+          this.onboardingArchived = saved.archived === true;
+          if (this.onboardingArchived) return;
           await this.ensureCreationRequest(saved);
+          let review;
+          try { review = await manager.getRequest(saved.config.requestId); }
+          catch (error) {
+            if (!['provider_unavailable', 'invalid_request'].includes(String((error as { code?: unknown }).code))) throw error;
+          }
+          if (review?.request.kind === 'create' && review.request.executionStatus === 'deleted') {
+            try {
+              const archived = await this.onboardingStore!.archiveUnstarted({ requestId: saved.config.requestId, expectedVersion: saved.version }, async current => {
+                const { request } = await manager.getRequest(current.config.requestId);
+                if (request.kind !== 'create' || request.status !== 'approved' || request.executionStatus !== 'deleted'
+                  || !request.result || request.caller.consumer !== PROTOCOL_BOOTSTRAP_CONSUMER
+                  || request.parameters.usage !== 'protocol') throw new Error('registration_onboarding_recovery_required');
+              }, () => { if (disposed) throw new Error('registration_onboarding_unavailable'); identityService.acquireManagement(ctx); });
+              this.onboardingVersion = archived.version;
+              this.onboardingArchived = true;
+              return;
+            } catch (error) {
+              if ((error as Error).message !== 'registration_onboarding_recovery_required') throw error;
+            }
+          }
           if (!disposed) this.bootstrap = startRegistrationBootstrap({ context: ctx, service: identityService, manager, config: saved.config });
         }
         return;
@@ -146,6 +170,8 @@ export class IdentityManagerRemote extends TypertRemoteService {
     }));
     return { registrationService: settings.origin, identities: publicIdentities,
       registrationPhase: this.bootstrap?.status().phase ?? 'not_started',
+      ...(this.bootstrap?.status().reason ? { registrationReason: this.bootstrap.status().reason } : {}),
+      ...(this.onboardingArchived ? { registrationArchived: true } : {}),
       ...(this.bootstrap ? { registrationRequestId: this.bootstrap.status().requestId } : {}),
       action: '创建公共身份请用 identity_request_creation；协议访问请用 identity_connection_guide。不要搜索源码、凭据或其他 CLI。' };
   }
@@ -153,7 +179,8 @@ export class IdentityManagerRemote extends TypertRemoteService {
     await this.bootstrapReady;
     return { ...(this.onboardingIntent ? { intentId: this.onboardingIntent } : {}),
       available: Boolean(this.onboardingStore) && !this.configuredBootstrap && Boolean(this.managerContext.get('anpIdentityRequester')?.available(this.managerContext)),
-      version: this.onboardingVersion, inProgress: Boolean(this.onboardingVersion > 0 && !this.bootstrap || this.bootstrap && !['published','disposed'].includes(this.bootstrap.status().phase)) };
+      version: this.onboardingVersion, archived: this.onboardingArchived,
+      inProgress: Boolean(this.onboardingVersion > 0 && !this.bootstrap && !this.onboardingArchived || this.bootstrap && !['published','disposed'].includes(this.bootstrap.status().phase)) };
   }
   @Remote dismissRegistrationRequest() { this.onboardingIntent = undefined; return null; }
   @Remote protocolManagement() {
@@ -175,7 +202,7 @@ export class IdentityManagerRemote extends TypertRemoteService {
     let savedForThisRequest = false;
     try {
       await this.bootstrapReady;
-      if (this.onboardingVersion > 0 && !this.bootstrap || this.bootstrap && !['published','disposed'].includes(this.bootstrap.status().phase)) return { status:'rejected', code:'registration_in_progress' };
+      if (this.onboardingVersion > 0 && !this.bootstrap && !this.onboardingArchived || this.bootstrap && !['published','disposed'].includes(this.bootstrap.status().phase)) return { status:'rejected', code:'registration_in_progress' };
       const parsed = registrationInputSchema.safeParse(raw);
       if (!parsed.success) return { status:'rejected', code:'invalid_parameters' };
       const input = parsed.data;
@@ -184,6 +211,7 @@ export class IdentityManagerRemote extends TypertRemoteService {
       const settings = await service.registrationServiceSettings(this.managerContext);
       const saved = await this.onboardingStore.create(input, settings.origin, () => { service.acquireManagement(this.managerContext); });
       this.onboardingVersion = saved.version;
+      this.onboardingArchived = false;
       savedForThisRequest = true;
       await this.ensureCreationRequest(saved);
       await this.bootstrap?.dispose();

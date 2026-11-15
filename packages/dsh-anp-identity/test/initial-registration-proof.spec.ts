@@ -145,6 +145,15 @@ it('adds SIGN only to the private initial-register callsite and keeps default pu
   expect(requested.some(caps => caps.includes('IDENTITY_SIGN'))).toBe(true)
   expect(requested.filter(caps => caps.includes('IDENTITY_SIGN')).every(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE,IDENTITY_HTTP_SIGNATURE,IDENTITY_SIGN')).toBe(true)
   expect(requested.some(caps => caps.join(',') === 'IDENTITY_READ,IDENTITY_DOCUMENT_UPDATE,IDENTITY_HTTP_SIGNATURE')).toBe(true)
+  requested.length = 0
+  await expect((managerContext.anpIdentity as AnpIdentityService).inspectLocalRegistration(managerContext, { reference: f.reference, origin, fetch: f.transport }))
+    .resolves.toEqual({ outcome: 'verified', httpStatus: 200 })
+  expect(requested.length).toBeGreaterThan(0)
+  expect(requested.every(caps => !caps.includes('IDENTITY_SIGN'))).toBe(true)
+  const before = f.sends()
+  await expect(service.inspectLocalRegistration(ctx, { reference: f.reference, origin, fetch: f.transport }))
+    .rejects.toMatchObject({ code: 'consumer_forbidden' })
+  expect(f.sends()).toBe(before)
 })
 
 const source = process.env.DSH_IDENTITY_USER_SERVICE_SOURCE, python = process.env.DSH_IDENTITY_PYTHON

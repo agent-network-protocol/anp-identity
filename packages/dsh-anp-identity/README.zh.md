@@ -1,5 +1,7 @@
 # 面向 DeepSeek Harness 的 ANP Identity
 
+`0.1.17` 保留 `0.1.16` 的协议配置权威重载修复，并包含 Windows 注册与凭据读取、已删除旧流程恢复、审批和就绪状态诊断、ANP 网络预算配置等修复。私钥仍由 Native 保管；注册结果不确定时只做只读检查，不重放注册，也不宣称已发布。
+
 当前候选面向 Harness `0.2.2-rc.1`、Cordis `4.1.0` 与 Loader `1.1.0`，不再声明兼容 Harness `0.1.5`。Remote 描述符使用延迟 `create()` codec；同进程 Gateway 调用必须显式提供 Peer 并安装 Remote Access 服务。
 
 没有专用请求签名密钥的公共协议身份，可通过 `ordinary-http/1` 审批，仅使用唯一设备认证密钥执行本机精确 HTTP 请求签名和公开身份读取；不能做通用原始签名或 OAuth 断言。有专用请求签名密钥的身份保持原有能力，已有授权不会扩大。旧版本不识别该 HTTP-only 快照，降级前需撤销或归档这些授权。
@@ -232,6 +234,17 @@ or blindly retried. The Agent-facing status and intent outputs expose only publi
 references/status, not phone/email, credentials, storage paths or signing objects.
 ANP/MCP/PAP guides give discovery order, actual available registry names, exact
 parameter conventions, approval handling and no-replay rules for uncertain writes.
+
+Windows registration and encrypted management credentials do not interpret
+Node's synthesized POSIX mode bits as ACLs; POSIX private-mode checks remain
+enforced on Unix. Registration failures expose stable reason codes in both the
+owner page and `identity_status`, without provider error details or secrets.
+At startup, a flow whose creation ledger explicitly records a deleted identity
+can be archived only when its execution directory has never been initialized.
+The owner input is retained in a private archive, the version advances, and a
+new flow still requires its own form and creation approval. Any existing execution
+directory, including an incomplete one, prevents this recovery; uncertain or
+published work is never reset or replayed.
 
 ## 域名自动接入与统一协议管理
 
