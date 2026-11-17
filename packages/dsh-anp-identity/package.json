@@ -43,6 +43,10 @@
     "./protocol-bootstrap": {
       "types": "./lib/protocol-bootstrap.d.ts",
       "default": "./lib/protocol-bootstrap.js"
+    },
+    "./mcp-signing-provider": {
+      "types": "./lib/mcp-signing-provider.d.ts",
+      "default": "./lib/mcp-signing-provider.js"
     }
   },
   "files": [
@@ -114,13 +118,17 @@
     "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-settings": "0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-credentials": "0.2.2-rc.1 || 0.2.2-rc.3",
+    "@deepseek-ai/dsh-mcp-client": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1 || 0.2.2-rc.3",
     "react": "^18.3.1",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1"
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1 || 0.2.2-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.1 || 0.2.2-rc.3"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-mcp-client": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-typert-protocol": {
       "optional": true
     },

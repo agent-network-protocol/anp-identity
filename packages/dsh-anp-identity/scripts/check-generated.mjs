@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const exported = Object.keys(packageJson.exports).sort()
-const expected = ['.', './cordis.patch.yml', './package.json', './provider', './provider-api', './user-client', './protocol-client', './protocol-bootstrap', './client', './remote', './management-remote'].sort()
+const expected = ['.', './cordis.patch.yml', './package.json', './provider', './provider-api', './user-client',
+  './protocol-client', './protocol-bootstrap', './client', './remote', './management-remote', './mcp-signing-provider'].sort()
 if (JSON.stringify(exported) !== JSON.stringify(expected)) {
   throw new Error(`unexpected package exports: ${exported.join(', ')}`)
 }
@@ -43,6 +44,7 @@ const source = await Promise.all([
   'src/index.ts',
   'src/types.ts',
   'src/http-auth.ts',
+  'src/mcp-signing-provider.ts',
 ].map(path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')))
 for (const forbidden of ['TypertRemoteService', 'Remote(', 'registerTool', 'modelTool']) {
   if (source.some(value => value.includes(forbidden))) {

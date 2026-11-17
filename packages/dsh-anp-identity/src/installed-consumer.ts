@@ -1,4 +1,10 @@
-import type { Context, Fiber } from '@deepseek-ai/cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
+
+/** Get the owning Host across the supported Cordis context APIs. */
+export function contextRoot(context: Context): Context {
+  const root = (Context as typeof Context & { readonly root?: symbol }).root
+  return root === undefined ? context.root : Reflect.get(context, root) as Context
+}
 
 /** Installed metadata supplied by the Host Loader, never by a consumer request. */
 export interface InstalledConsumerEntry {
@@ -48,7 +54,8 @@ function liveWithin(fiber: Fiber, root: Fiber): boolean {
  * do not establish an installed identity.
  */
 export function installedConsumerEntries(host: Context): InstalledConsumerEntry[] {
-  if (!liveWithin(host.fiber, host.root.fiber)) return []
+  const root = contextRoot(host)
+  if (!liveWithin(host.fiber, root.fiber)) return []
   const loader = host.get('loader') as HostLoader | undefined
   if (typeof loader?.entries !== 'function') return []
   // The existing root tree remains an explicitly Host-owned admission source.
@@ -61,11 +68,11 @@ export function installedConsumerEntries(host: Context): InstalledConsumerEntry[
   for (const runtime of host.registry.values()) {
     for (const fiber of runtime.fibers) {
       const entry = (fiber as Fiber & { entry?: ScopedEntry }).entry
-      if (!entry || !liveWithin(fiber, host.root.fiber)) continue
+      if (!entry || !liveWithin(fiber, root.fiber)) continue
       if (!prototypes.has(Object.getPrototypeOf(entry))) continue
       if (canonical(entry.fiber) !== fiber || entry.loader?.store !== loader.store) continue
       const tree = entry.parent?.tree
-      if (tree?.ctx.root !== host.root || !liveWithin(tree.ctx.fiber, host.root.fiber)) continue
+      if (!tree || contextRoot(tree.ctx) !== root || !liveWithin(tree.ctx.fiber, root.fiber)) continue
       if (typeof entry.options?.id !== 'string' || tree.store[entry.options.id] !== entry) continue
       entries.add(entry)
     }
@@ -75,7 +82,8 @@ export function installedConsumerEntries(host: Context): InstalledConsumerEntry[
 
 /** Resolve only the exact active installed fiber in this Host's runtime. */
 export function resolveInstalledConsumer(host: Context, caller: Context): InstalledConsumerEntry | undefined {
-  if (caller.root !== host.root || !liveWithin(caller.fiber, host.root.fiber)) return undefined
+  const root = contextRoot(host)
+  if (contextRoot(caller) !== root || !liveWithin(caller.fiber, root.fiber)) return undefined
   const matches = installedConsumerEntries(host).filter(entry => !entry.disabled
     && canonical(entry.fiber) === caller.fiber && entry.fiber && [1, 2].includes(entry.fiber.state))
   return matches.length === 1 ? matches[0] : undefined

@@ -1908,3 +1908,21 @@ export interface ConfigurationHandlers {
 }
 /** Only the actual installed owner manager registers these definitions. Mutations always ask the owner in-session. */
 export declare function registerConfigurationTools(ctx: Context, handlers: ConfigurationHandlers): void;
+
+// ===== mcp-signing-provider.d.ts =====
+/** Optional Host adapter for DSH MCP CIMD signing. */
+import type { Context } from '@deepseek-ai/cordis';
+import z from '@deepseek-ai/schemastery';
+import type { IdentityReference } from '@agent-network-protocol/anp-identity';
+export declare const name = "anp-identity-mcp-signing-provider";
+export declare const inject: string[];
+export interface Config {
+    name: string;
+    bindings: Record<string, {
+        identityRef: IdentityReference;
+        policyRef: string;
+    }>;
+}
+export declare const Config: z<Config>;
+/** Register only when the Host explicitly loads the adapter and has a compatible MCP client. */
+export declare function apply(context: Context, config: Config): Promise<void>;

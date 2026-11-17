@@ -1,4 +1,4 @@
-import { resolveInstalledConsumer } from './installed-consumer.js'
+import { contextRoot, resolveInstalledConsumer } from './installed-consumer.js'
 import type AnpIdentityService from './index.js'
 /** Optional installed consumer that requests user approval before creating a protocol identity. */
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -36,7 +36,8 @@ export class RegistrationRequester extends Service {
   private readonly owner: Context;
   constructor(ctx: Context) { super(ctx, 'anpIdentityRequester'); this.owner = ctx; }
   available(manager: Context): boolean {
-    if (manager.root !== this.owner.root || resolveInstalledConsumer(this.owner.root, this.owner)?.options.name !== PROTOCOL_BOOTSTRAP_CONSUMER) return false;
+    const root = contextRoot(this.owner);
+    if (contextRoot(manager) !== root || resolveInstalledConsumer(root, this.owner)?.options.name !== PROTOCOL_BOOTSTRAP_CONSUMER) return false;
     try {
       (manager.anpIdentity as AnpIdentityService).acquireManagement(manager);
       bindIdentityClient(this.owner);
@@ -44,7 +45,8 @@ export class RegistrationRequester extends Service {
     } catch { return false; }
   }
   async request(manager: Context, input: RequestCreateInput) {
-    if (manager.root !== this.owner.root || resolveInstalledConsumer(this.owner.root, this.owner)?.options.name !== PROTOCOL_BOOTSTRAP_CONSUMER) throw new Error('consumer_forbidden');
+    const root = contextRoot(this.owner);
+    if (contextRoot(manager) !== root || resolveInstalledConsumer(root, this.owner)?.options.name !== PROTOCOL_BOOTSTRAP_CONSUMER) throw new Error('consumer_forbidden');
     (manager.anpIdentity as AnpIdentityService).acquireManagement(manager);
     const result = await bindIdentityClient(this.owner).requestCreateIdentity(input);
     (manager.anpIdentity as AnpIdentityService).acquireManagement(manager);

@@ -345,6 +345,10 @@ The plugin provides one **Protocol Management** page, with independent read/writ
 
 See [Shared protocol management](PROTOCOL-MANAGEMENT.md) for schema/CAS persistence, classification, adapter boundaries, compatibility and current acceptance status, and [Domain consent](DOMAIN-CONSENT.md) for once-only grants. The matching Harness update is required for MCP; its source is not contained in the three npm plugins. MCP domain integration and the real two-site/three-protocol read/write matrix are verified in the local candidate. Use Identity 0.1.15 with PAP/ANP 0.1.4; MCP additionally requires Harness commit 194aaf492e or a compatible successor.
 
+## Optional signer for configured MCP connections
+
+Load `@agent-network-protocol/dsh-anp-identity/mcp-signing-provider` after the Identity service in `cordis.yml`. It requires a DSH MCP client that exports `McpSigningProviderRegistry`. Set `bindings` to a map from connection credential references to existing `identityRef` and `policyRef` pairs. In the actual `@deepseek-ai/dsh-mcp-client` row, set `authentication.provider` to `anp-identity` (or the adapter's configured `name`) and `authentication.credentialRef` to one of those map keys. The policy must name the installed MCP client as its consumer and authorize the exact target and scopes. Identity uses the real Loader caller for this check and keeps signing in the local identity store.
+
 ## Agent settings access
 
 The owner manager exposes `protocol_permissions` and `identity_settings` through the owner manager. Query current settings and their versions first; persistent mutations show an exact in-session confirmation, use the same CAS backend as the pages, and retain DSH approval/change audit. No Settings navigation is needed. The default published identity is a persistent shared preference, distinct from the UI display selection. Lifecycle actions, OTPs, tokens, keys and generic signing are not accepted. See [Shared protocol management](PROTOCOL-MANAGEMENT.md#agent-configuration-tools-third-batch-candidate) for the tool contract and live/package acceptance requirements.
