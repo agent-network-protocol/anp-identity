@@ -57,6 +57,8 @@ See [BOUNDARY.md](./BOUNDARY.md) for the complete trust model.
 
 ## Installation
 
+The DSH plugin supports the `0.2.2-rc.1` and `0.2.2-rc.3` hosts. Its development and test dependencies use `0.2.2-rc.3`.
+
 Install the DSH plugin:
 
 ```bash
