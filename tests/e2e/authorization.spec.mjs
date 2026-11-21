@@ -22,8 +22,17 @@ test('ID-E04 real UI once approval, a new operation and revocation fence a real 
         model.catch(() => {});
         const reached = await Promise.race([approval.waitFor({ timeout: 120000 }).then(() => true), model.then(() => false)]);
         assert.equal(reached, true);
-        assert.ok((await approval.innerText()).includes(consumer));
-        assert.ok((await approval.innerText()).includes('agent.agent-network-protocol.com'));
+        const approvalText = await approval.innerText();
+        assert.ok(approvalText.includes(consumer));
+        const approvalUrls = approvalText.match(/https?:\/\/[^\s)]+/gu) ?? [];
+        const hasExpectedHost = approvalUrls.some(value => {
+          try {
+            return new URL(value).hostname === 'agent.agent-network-protocol.com';
+          } catch {
+            return false;
+          }
+        });
+        assert.equal(hasExpectedHost, true);
         assert.equal((await runtime.rpc('network/status')).businessRequests, sent);
         const pending = (await runtime.rpc('manager/listRequests')).filter(value => value.kind === 'access' && value.status === 'pending');
         assert.equal(pending.length, 1);
