@@ -806,6 +806,27 @@ for (const phase of ['awaiting_phone_verification', 'blocked'] as const) {
   });
 }
 
+for (const dismissed of [false, true]) {
+  it(`associates late registration with the approved request (dismissed=${dismissed})`, async () => {
+    const pending = request('create', 'late-registration');
+    const f = fixture([pending]);
+    f.remote.grants.mockImplementation(() => new Promise(() => {}));
+    f.render();
+    await act(() => f.controller.refresh());
+    fireEvent.click(await screen.findByRole('button', {name:'允许创建'}));
+    await waitFor(() => expect(f.controller.getSnapshot().modal).toBeNull());
+    if (dismissed) act(() => f.controller.closeModal());
+    f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[
+      {id:'different',requestId:'other',phase:'blocked'},
+      {id:'original',requestId:pending.id,phase:'awaiting_phone_verification'},
+    ]});
+    await act(() => f.controller.refresh());
+    expect(f.controller.getSnapshot().modal).toEqual(dismissed ? null : {kind:'registration-progress',requestId:pending.id});
+    expect(f.remote.decide).toHaveBeenCalledTimes(1);
+    f.controller.dispose();
+  });
+}
+
 it('offers an explicit SMS retry for a blocked challenge, never for an uncertain registration', async () => {
   const f=fixture(); const retry=vi.fn(async()=>({ok:true as const,value:null}));
   Object.assign(f.remote,{retryRegistrationSms:retry});

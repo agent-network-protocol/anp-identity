@@ -14,6 +14,7 @@ export interface UserAccessRequest {
   readonly requestId: string
   readonly purpose: string
   readonly identity?: IdentityReference
+  readonly details?: import("./authorization-types.js").ApprovalDetails
   readonly operation?: UserOperation
 }
 

@@ -316,10 +316,12 @@ export interface DomainConsentCapabilities {
     machineIdentity?: DomainMachineIdentity;
 }
 export interface DomainOperationClient {
+    readonly approvalDetailsVersion?: 1;
     request(input: {
         requestId: string;
         purpose: string;
         request: Request;
+        details?: import("./authorization-types.js").ApprovalDetails;
     }): Promise<AccessAuthorizationRequest>;
     status(id: string): Promise<AccessAuthorizationRequest>;
     cancel(id: string, version: number): Promise<AccessAuthorizationRequest>;
@@ -546,6 +548,7 @@ export interface UserAccessRequest {
     readonly requestId: string;
     readonly purpose: string;
     readonly identity?: IdentityReference;
+    readonly details?: import("./authorization-types.js").ApprovalDetails;
     readonly operation?: UserOperation;
 }
 /** A caller- and identity-bound object with no management or Provider methods. */
@@ -1128,7 +1131,15 @@ export interface CreateAuthorizationRequest extends RequestBase {
     readonly executionStatus?: 'running' | 'succeeded' | 'unknown' | 'deleted';
     readonly result?: CreateResult;
 }
+export interface ApprovalDetails {
+    readonly revision: string;
+    readonly rows: readonly {
+        readonly label: string;
+        readonly value: string;
+    }[];
+}
 export interface AccessAuthorizationRequest extends RequestBase {
+    readonly details?: ApprovalDetails;
     readonly approvalProfile?: 'exact-operation/1';
     readonly kind: 'access';
     readonly identity?: IdentityReference;
@@ -1192,6 +1203,7 @@ export interface RequestCreateInput {
     readonly parameters: CreateParameters;
 }
 export interface RequestAccessInput {
+    readonly details?: ApprovalDetails;
     readonly requestId: string;
     readonly purpose: string;
     readonly identity?: IdentityReference;

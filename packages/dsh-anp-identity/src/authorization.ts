@@ -62,6 +62,13 @@ function operation(value: ControlledOperation): ControlledOperation {
     || (result.signingPurpose === 'oauth_client_assertion') !== (result.oauthAudience !== undefined)) fail('invalid_operation')
   return result
 }
+function checkedDetails(value: NonNullable<RequestAccessInput['details']>) {
+  if (!value || !Array.isArray(value.rows) || !value.rows.length || value.rows.length > 1001 ||
+      Buffer.byteLength(JSON.stringify(value)) > 1048576) fail('invalid_authorization_input')
+  return { revision: text(value.revision, 200), rows: value.rows.map(row => ({
+    label: text(row.label, 2048), value: text(row.value, 2048),
+  })) }
+}
 function origin(value: string): string {
   let parsed: URL
   try { parsed = new URL(value) } catch { return fail('invalid_http_origin') }
@@ -146,10 +153,12 @@ export class AuthorizationEngine {
     const source = caller(verifiedCaller)
     const details = {
       kind: 'access' as const,
+      ...(input.details === undefined ? {} : { details: checkedDetails(input.details) }),
       ...(input.approvalProfile === undefined ? {} : {approvalProfile: input.approvalProfile}),
       ...(input.identity === undefined ? {} : { identity: reference(input.identity) }),
       ...(input.operation === undefined ? {} : { operation: operation(input.operation) }),
     }
+    if (input.details && input.approvalProfile !== "exact-operation/1") fail("invalid_authorization_input")
     if (input.approvalProfile !== undefined && (input.approvalProfile !== 'exact-operation/1' || details.operation?.capability !== 'identity:http-auth')) fail('invalid_authorization_input')
     return this.#snapshotTransaction(async state => {
       await this.options.validateCaller(source)
@@ -193,7 +202,7 @@ export class AuthorizationEngine {
   }
 
   #request(state: AuthorizationState, source: VerifiedCaller, id: string, purpose: string,
-    details: { kind: 'create'; parameters: CreateParameters } | { kind: 'access'; identity?: IdentityReference; operation?: ControlledOperation; approvalProfile?: 'exact-operation/1' }): AuthorizationRequest {
+    details: { kind: 'create'; parameters: CreateParameters } | { kind: 'access'; identity?: IdentityReference; operation?: ControlledOperation; approvalProfile?: 'exact-operation/1'; details?: NonNullable<RequestAccessInput['details']> }): AuthorizationRequest {
     text(id, 256); text(purpose, 1000)
     const fingerprint = digest({ consumer: source.consumer, purpose, ...details })
     const existingId = state.requests.find(req => req.id === id)
@@ -352,7 +361,7 @@ export class AuthorizationEngine {
       if (req.status === 'pending' || (req.kind === 'create' && req.status === 'approved')) fail('request_not_retryable')
       await this.options.validateCaller(req.caller)
       const details = req.kind === 'create' ? { kind: 'create' as const, parameters: req.parameters }
-        : { kind: 'access' as const, ...(req.approvalProfile === undefined ? {} : {approvalProfile:req.approvalProfile}), ...(req.identity === undefined ? {} : { identity: req.identity }), ...(req.operation === undefined ? {} : { operation: req.operation }) }
+        : { kind: 'access' as const, ...(req.details ? {details:req.details} : {}), ...(req.approvalProfile === undefined ? {} : {approvalProfile:req.approvalProfile}), ...(req.identity === undefined ? {} : { identity: req.identity }), ...(req.operation === undefined ? {} : { operation: req.operation }) }
       state.suppressions = state.suppressions.filter(block => !(block.consumer === req.caller.consumer && block.kind === req.kind
         && (block.identity === undefined || req.kind === 'create' || req.identity === undefined || equalIdentity(block.identity, req.identity))
         && (req.kind !== 'access' || req.approvalProfile !== 'exact-operation/1' || block.operationFingerprint === req.operation?.fingerprint)))
@@ -616,7 +625,7 @@ export class AuthorizationEngine {
         text(req.id, 256); caller(req.caller); text(req.purpose); text(req.fingerprint)
         if (!['create', 'access'].includes(req.kind) || !['pending', 'approved', 'denied', 'cancelled', 'expired'].includes(req.status)
           || !Number.isSafeInteger(req.version) || req.version < 1 || !Number.isFinite(req.expiresAt)) fail('authorization_store_corrupt')
-        if (req.kind === 'access') { if (req.approvalProfile !== undefined && req.approvalProfile !== 'exact-operation/1') fail('authorization_store_corrupt'); if (req.identity) reference(req.identity); if (req.operation) operation(req.operation) }
+        if (req.kind === 'access') { if (req.details) checkedDetails(req.details); if (req.approvalProfile !== undefined && req.approvalProfile !== 'exact-operation/1') fail('authorization_store_corrupt'); if (req.identity) reference(req.identity); if (req.operation) operation(req.operation) }
         if (req.kind === 'create') { text(req.parameters.label); text(req.parameters.domain); text(req.parameters.path, 2048); if (req.result) reference(req.result.reference) }
       }
       for (const grant of value.grants) {

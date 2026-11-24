@@ -106,7 +106,7 @@ export class UserIdentityService {
         let request
         try {
           request = await this.engine.requestAccess(source, {
-            requestId: input.requestId, purpose: input.purpose,
+            requestId: input.requestId, purpose: input.purpose, ...(input.details ? { details: input.details } : {}),
             ...(this.host.exactOperationCaller?.(source) ? {approvalProfile:'exact-operation/1' as const} : {}),
             ...(input.identity === undefined ? {} : { identity: structuredClone(input.identity) }),
             ...(normalized === undefined ? {} : { operation: normalized.frozen }),

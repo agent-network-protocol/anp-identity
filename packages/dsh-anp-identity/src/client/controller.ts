@@ -125,6 +125,8 @@ export class IdentityController {
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
   private refreshingDetails = false;
+  private refreshingGrants = false;
+  private approvedCreate: string | undefined;
   private protocolRefreshing = false;
   private protocolRequestVersion = 0;
   private defaultIdentityRefreshing = false;
@@ -149,6 +151,7 @@ export class IdentityController {
   constructor(private readonly remote: ManagementRemote) {}
   private patch(value: Partial<ManagerView>): void {
     if (this.disposed) return;
+    if (value.modal || (value.selectedKey !== undefined && value.selectedKey !== this.view.selectedKey)) this.approvedCreate = undefined;
     this.view = { ...this.view, ...value };
     for (const listener of this.listeners) listener();
   }
@@ -247,31 +250,40 @@ export class IdentityController {
       this.refreshing = false;
     }
     // Keep optional management reads outside the approval poll and its in-flight guard.
+    if (!this.refreshingGrants && !this.disposed) {
+      this.refreshingGrants = true;
+      void this.loadGrants().catch(error => this.fail(error)).finally(() => { this.refreshingGrants = false; });
+    }
     if (this.refreshingDetails || this.disposed) return;
     this.refreshingDetails = true;
     try {
-      const [bootstrap, settings, onboarding] = await Promise.all([
-        this.remote.registrationBootstrapStatus?.(), this.remote.registrationServiceSettings?.(),
-        this.remote.registrationOnboardingStatus?.(), this.loadGrants(),
-      ]);
-      if (this.disposed) return;
-      if (bootstrap && !bootstrap.ok || settings && !settings.ok || onboarding && !onboarding.ok)
-        throw new Error("Unable to load registration settings");
-      this.patch({
-        bootstraps: bootstrap?.ok ? bootstrap.value ?? [] : [],
-        registrationService: settings?.ok ? settings.value : null,
-        onboarding: onboarding?.ok ? onboarding.value : null,
-      });
-      const intent = this.view.onboarding?.intentId;
-      if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending) {
-        this.openedOnboardingIntent = intent;
-        this.openRegistration();
-      }
-    } catch (error) {
-      this.patch({error: error instanceof Error ? error.message : "Unable to load identity management details"});
+      await Promise.all([
+        this.remote.registrationBootstrapStatus?.().then(result => {
+          if (!result.ok || this.disposed) return;
+          this.patch({ bootstraps: result.value ?? [] });
+          this.showApprovedRegistration();
+        }),
+        this.remote.registrationServiceSettings?.().then(result => {
+          if (result.ok) this.patch({ registrationService: result.value });
+        }),
+        this.remote.registrationOnboardingStatus?.().then(result => {
+          if (!result.ok || this.disposed) return;
+          this.patch({ onboarding: result.value });
+          const intent = result.value?.intentId;
+          if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending && !this.approvedCreate) {
+            this.openedOnboardingIntent = intent;
+            this.openRegistration();
+          }
+        }),
+      ].map(task => task?.catch(error => this.fail(error))));
     } finally {
       this.refreshingDetails = false;
     }
+  }
+  private showApprovedRegistration(): void {
+    const id = this.approvedCreate;
+    if (id && !this.view.modal && !this.view.pending && this.isForeground() &&
+        this.view.bootstraps.some(flow => flow.requestId === id)) this.openRegistrationProgress(id);
   }
   private async refreshProtocols(replace = false): Promise<ProtocolPolicy | null> {
     if (this.disposed || !this.remote.protocolManagement || this.protocolRefreshing && !replace) return null;
@@ -376,6 +388,7 @@ export class IdentityController {
   }
   async selectIdentity(key: string): Promise<void> {
     this.selectionVersion++;
+    this.approvedCreate = undefined;
     this.patch({
       selectedKey: key,
       publication: null,
@@ -499,6 +512,7 @@ export class IdentityController {
   }
   closeModal(later = true): void {
     if (this.view.pending) return;
+    if (later) this.approvedCreate = undefined;
     if (later && this.view.modal?.kind === "registration") {
       void this.remote.dismissRegistrationRequest?.().catch(() => {});
     }
@@ -519,6 +533,7 @@ export class IdentityController {
     decision: Omit<AuthorizationDecision, "requestId" | "expectedVersion">,
   ): Promise<void> {
     const modal = this.view.modal;
+    const selection = this.selectionVersion;
     if (modal?.kind !== "request" || this.view.pending) return;
     this.patch({ pending: true, error: null });
     try {
@@ -527,6 +542,7 @@ export class IdentityController {
         requestId: modal.review.request.id,
         expectedVersion: modal.review.request.version,
       });
+      if (this.disposed || this.view.modal !== modal || selection !== this.selectionVersion) return;
       this.patch({
         pending: false,
         notice:
@@ -536,13 +552,10 @@ export class IdentityController {
               ? "创建结果待核对，请查看已处理请求；不要重复创建。"
               : null,
       });
-      if (result.kind === "create" && result.status === "approved" &&
-        this.view.bootstraps.some(flow => flow.requestId === result.id)) {
-        // Keep the owner in the registration flow while the private bootstrap advances.
-        this.requestReviewEpoch++;
-        this.patch({ modal: { kind: "registration-progress", requestId: result.id } });
-      } else {
-        this.closeModal(false);
+      this.closeModal(false);
+      if (result.kind === "create" && result.status === "approved" && result.id === modal.review.request.id) {
+        this.approvedCreate = result.id;
+        this.showApprovedRegistration();
       }
       await this.refresh();
     } catch (error) {
