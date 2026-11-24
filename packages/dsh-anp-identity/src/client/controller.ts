@@ -124,6 +124,7 @@ export class IdentityController {
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private refreshing = false;
+  private refreshingDetails = false;
   private protocolRefreshing = false;
   private protocolRequestVersion = 0;
   private defaultIdentityRefreshing = false;
@@ -187,17 +188,10 @@ export class IdentityController {
     if (this.remote.protocolManagement && !this.view.protocolSaving) void this.refreshProtocols();
     if (this.remote.defaultIdentity) void this.refreshDefaultIdentity();
     try {
-      const [identities, requests, bootstrapResult, settingsResult, onboardingResult] = await Promise.all([
-        this.call("listIdentities"),
-        this.call("listRequests", false),
-        this.remote.registrationBootstrapStatus?.(),
-        this.remote.registrationServiceSettings?.(),
-        this.remote.registrationOnboardingStatus?.(),
+      const [identities, requests] = await Promise.all([
+        this.call("listIdentities"), this.call("listRequests", false),
       ]);
       if (reviewEpoch !== this.requestReviewEpoch) return;
-      if (onboardingResult && !onboardingResult.ok) throw new Error('Unable to read identity onboarding status');
-      if (settingsResult && !settingsResult.ok) throw new Error('Unable to read registration service settings');
-      if (bootstrapResult && !bootstrapResult.ok) throw new Error('Unable to read protocol registration status');
       const pendingRequests = requests.filter(request => request.status === 'pending');
       const pendingKeys = new Set(pendingRequests.map(request => `${request.id}:${request.version}`));
       const pendingIds = new Set(pendingRequests.map(request => request.id));
@@ -219,9 +213,6 @@ export class IdentityController {
       const changed = selectedKey !== this.view.selectedKey;
       this.patch({
         loading: false,
-        registrationService: settingsResult?.ok ? settingsResult.value : null,
-        onboarding: onboardingResult?.ok ? onboardingResult.value : null,
-        bootstraps: bootstrapResult?.ok ? bootstrapResult.value ?? [] : [],
         identities,
         requests: pendingRequests.sort((a, b) => b.createdAt - a.createdAt),
         selectedKey,
@@ -234,13 +225,6 @@ export class IdentityController {
         !requests.some(r => r.id === modal.review.request.id &&
           r.status === "pending" && r.version === modal.review.request.version)) {
         this.closeStaleRequest();
-      }
-      await this.loadGrants();
-      if (reviewEpoch !== this.requestReviewEpoch) return;
-      const intent = this.view.onboarding?.intentId;
-      if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending) {
-        this.openedOnboardingIntent = intent;
-        this.openRegistration();
       }
       if (this.view.modal === null && this.isForeground()) {
         const next = this.view.requests.find((r) => {
@@ -261,6 +245,32 @@ export class IdentityController {
       });
     } finally {
       this.refreshing = false;
+    }
+    // Keep optional management reads outside the approval poll and its in-flight guard.
+    if (this.refreshingDetails || this.disposed) return;
+    this.refreshingDetails = true;
+    try {
+      const [bootstrap, settings, onboarding] = await Promise.all([
+        this.remote.registrationBootstrapStatus?.(), this.remote.registrationServiceSettings?.(),
+        this.remote.registrationOnboardingStatus?.(), this.loadGrants(),
+      ]);
+      if (this.disposed) return;
+      if (bootstrap && !bootstrap.ok || settings && !settings.ok || onboarding && !onboarding.ok)
+        throw new Error("Unable to load registration settings");
+      this.patch({
+        bootstraps: bootstrap?.ok ? bootstrap.value ?? [] : [],
+        registrationService: settings?.ok ? settings.value : null,
+        onboarding: onboarding?.ok ? onboarding.value : null,
+      });
+      const intent = this.view.onboarding?.intentId;
+      if (intent && this.openedOnboardingIntent !== intent && !this.view.modal && !this.view.pending) {
+        this.openedOnboardingIntent = intent;
+        this.openRegistration();
+      }
+    } catch (error) {
+      this.patch({error: error instanceof Error ? error.message : "Unable to load identity management details"});
+    } finally {
+      this.refreshingDetails = false;
     }
   }
   private async refreshProtocols(replace = false): Promise<ProtocolPolicy | null> {

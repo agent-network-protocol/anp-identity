@@ -1022,3 +1022,35 @@ it('keeps Web disabled and submits an international phone only as E1', async () 
   await waitFor(()=>expect(f.remote.startIdentityRegistration).toHaveBeenCalledWith(expect.objectContaining({phone:'+447700900123',profile:'e1'})));
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
 });
+
+it('presents a foreground approval while registration settings are unavailable', async () => {
+  const f = fixture([request('access','pending-while-settings-offline')]);
+  f.remote.registrationServiceSettings.mockRejectedValue(new Error('registration offline'));
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it('continues polling for foreground requests while the previous settings read is pending', async () => {
+  const requests: AuthorizationRequest[] = [];
+  const f = fixture(requests);
+  let finish!: () => void;
+  f.remote.registrationServiceSettings.mockImplementationOnce(() => new Promise(resolve => {
+    finish = () => resolve({ ok: true, value: {origin: 'https://example.test', version: 1} });
+  }));
+  f.render();
+  let first!: Promise<void>;
+  await act(async () => { first = f.controller.refresh(); });
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  requests.push(request('access', 'arrived-during-settings'));
+  try {
+    await act(() => f.controller.refresh());
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(f.remote.decide).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => { finish(); await first; });
+    f.controller.dispose();
+  }
+});
