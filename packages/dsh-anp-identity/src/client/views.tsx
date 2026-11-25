@@ -1081,6 +1081,10 @@ function AccessForm({
           </p>
         )
       )}
+      {exact && request.details && <details>
+        <summary>核对完整明细（{request.details.rows.length} 项）</summary>
+        <dl>{request.details.rows.map((row, index) => <div key={index}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
+      </details>}
       {!exact && mode === "once" &&
         review.permanentIdentities?.some(
           (reference) => identityKey(reference) === key,

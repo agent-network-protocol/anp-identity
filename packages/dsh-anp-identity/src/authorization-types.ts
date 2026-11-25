@@ -44,7 +44,9 @@ export interface CreateAuthorizationRequest extends RequestBase {
   readonly executionStatus?: 'running' | 'succeeded' | 'unknown' | 'deleted'
   readonly result?: CreateResult
 }
+export interface ApprovalDetails { readonly revision: string; readonly rows: readonly { readonly label: string; readonly value: string }[] }
 export interface AccessAuthorizationRequest extends RequestBase {
+  readonly details?: ApprovalDetails
   readonly approvalProfile?: 'exact-operation/1'
   readonly kind: 'access'
   readonly identity?: IdentityReference
@@ -97,7 +99,7 @@ export interface AuthorizationState {
   suppressions: { consumer: string; kind: 'create' | 'access'; identity?: IdentityReference; requestId: string; operationFingerprint?: string }[]
 }
 export interface RequestCreateInput { readonly requestId: string; readonly purpose: string; readonly parameters: CreateParameters }
-export interface RequestAccessInput { readonly requestId: string; readonly purpose: string; readonly identity?: IdentityReference; readonly operation?: ControlledOperation; readonly approvalProfile?: 'exact-operation/1' }
+export interface RequestAccessInput { readonly details?: ApprovalDetails; readonly requestId: string; readonly purpose: string; readonly identity?: IdentityReference; readonly operation?: ControlledOperation; readonly approvalProfile?: 'exact-operation/1' }
 export interface AuthorizationDecision {
   readonly requestId: string
   readonly expectedVersion: number

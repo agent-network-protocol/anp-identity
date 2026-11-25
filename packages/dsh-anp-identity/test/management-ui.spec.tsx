@@ -806,6 +806,71 @@ for (const phase of ['awaiting_phone_verification', 'blocked'] as const) {
   });
 }
 
+for (const dismissed of [false, true]) {
+  it(`associates late registration with the approved request (dismissed=${dismissed})`, async () => {
+    const pending = request('create', 'late-registration');
+    const f = fixture([pending]);
+    f.remote.grants.mockImplementation(() => new Promise(() => {}));
+    f.render();
+    await act(() => f.controller.refresh());
+    fireEvent.click(await screen.findByRole('button', {name:'允许创建'}));
+    await waitFor(() => expect(f.controller.getSnapshot().modal).toBeNull());
+    if (dismissed) act(() => f.controller.closeModal());
+    f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[
+      {id:'different',requestId:'other',phase:'blocked'},
+      {id:'original',requestId:pending.id,phase:'awaiting_phone_verification'},
+    ]});
+    await act(() => f.controller.refresh());
+    expect(f.controller.getSnapshot().modal).toEqual(dismissed ? null : {kind:'registration-progress',requestId:pending.id});
+    expect(f.remote.decide).toHaveBeenCalledTimes(1);
+    f.controller.dispose();
+  });
+}
+
+it.each([
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:undefined},
+  {phase:'awaiting_email_verification', label:'等待邮箱激活确认', action:undefined},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'select'},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'close'},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'registration'},
+] as const)('handles $phase after the first automatic selection (action: $action)', async ({phase, label, action}) => {
+  const pending = request('create', 'first-identity');
+  const f = fixture([pending]);
+  f.remote.listIdentities.mockResolvedValue({ok:true,value:[]});
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().selectedKey).toBeNull();
+  fireEvent.click(await screen.findByRole('button', {name:'允许创建'}));
+  await waitFor(() => expect(f.controller.getSnapshot().modal).toBeNull());
+
+  f.remote.listIdentities.mockResolvedValue({ok:true,value:[identity, second]});
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().selectedKey).toBe(identityKey(identity.reference));
+  expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+  if (action === 'select') fireEvent.click(screen.getByRole('button', {name:/个人身份/}));
+  if (action === 'close') act(() => f.controller.closeModal());
+  if (action === 'registration') fireEvent.click(screen.getByRole('button', {name:'创建公共身份'}));
+
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[
+    {id:'unrelated',requestId:'other',phase:'blocked'},
+    {id:'original',requestId:pending.id,phase},
+  ]});
+  await act(() => f.controller.refresh());
+  if (action) {
+    expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+    if (action === 'registration') expect(f.controller.getSnapshot().modal?.kind).toBe('registration');
+  } else {
+    const dialog = await screen.findByRole('dialog', {name:'完成身份注册'});
+    expect(within(dialog).getByText(label, {exact:false})).toBeTruthy();
+    expect(f.controller.getSnapshot().modal).toEqual({kind:'registration-progress',requestId:pending.id});
+    fireEvent.click(within(dialog).getByRole('button', {name:'稍后继续'}));
+    await act(() => f.controller.refresh());
+    expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+  }
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  f.controller.dispose();
+});
+
 it('offers an explicit SMS retry for a blocked challenge, never for an uncertain registration', async () => {
   const f=fixture(); const retry=vi.fn(async()=>({ok:true as const,value:null}));
   Object.assign(f.remote,{retryRegistrationSms:retry});
@@ -1021,4 +1086,36 @@ it('keeps Web disabled and submits an international phone only as E1', async () 
   fireEvent.click(screen.getByRole('button',{name:'申请创建并注册'}));
   await waitFor(()=>expect(f.remote.startIdentityRegistration).toHaveBeenCalledWith(expect.objectContaining({phone:'+447700900123',profile:'e1'})));
   expect(f.remote.decide).not.toHaveBeenCalled();f.controller.dispose();
+});
+
+it('presents a foreground approval while registration settings are unavailable', async () => {
+  const f = fixture([request('access','pending-while-settings-offline')]);
+  f.remote.registrationServiceSettings.mockRejectedValue(new Error('registration offline'));
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(f.remote.decide).not.toHaveBeenCalled();
+  f.controller.dispose();
+});
+
+it('continues polling for foreground requests while the previous settings read is pending', async () => {
+  const requests: AuthorizationRequest[] = [];
+  const f = fixture(requests);
+  let finish!: () => void;
+  f.remote.registrationServiceSettings.mockImplementationOnce(() => new Promise(resolve => {
+    finish = () => resolve({ ok: true, value: {origin: 'https://example.test', version: 1} });
+  }));
+  f.render();
+  let first!: Promise<void>;
+  await act(async () => { first = f.controller.refresh(); });
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  requests.push(request('access', 'arrived-during-settings'));
+  try {
+    await act(() => f.controller.refresh());
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(f.remote.decide).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => { finish(); await first; });
+    f.controller.dispose();
+  }
 });

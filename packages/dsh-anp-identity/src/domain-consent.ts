@@ -26,7 +26,8 @@ export interface DomainMachineIdentity {
 }
 export interface DomainConsentCapabilities { machineIdentity?: DomainMachineIdentity }
 export interface DomainOperationClient {
-  request(input: { requestId: string; purpose: string; request: Request }): Promise<AccessAuthorizationRequest>
+  readonly approvalDetailsVersion?: 1
+  request(input: { requestId: string; purpose: string; request: Request; details?: import("./authorization-types.js").ApprovalDetails }): Promise<AccessAuthorizationRequest>
   status(id: string): Promise<AccessAuthorizationRequest>
   cancel(id: string, version: number): Promise<AccessAuthorizationRequest>
   execute<T>(grantId: string, request: Request, effect: (assertActive: () => Promise<void>, capabilities: DomainConsentCapabilities) => Promise<T>): Promise<T>
@@ -99,12 +100,13 @@ export class DomainOperationAuthority {
           }
     }
     return Object.freeze<DomainOperationClient>({
+      approvalDetailsVersion: 1,
       request: async input => {
         check()
         const binding = await this.host.resolve(context)
         check()
         if (['authorization','cookie','proxy-authorization','poppy-session','dpop'].some(header=>input.request.headers.has(header))) throw new DomainConsentError('invalid_request')
-        const request = await user.requestAccess({requestId:input.requestId,purpose:input.purpose,identity:binding.identityRef,operation:{action:'http',request:input.request}})
+        const request = await user.requestAccess({requestId:input.requestId,purpose:input.purpose,...(input.details ? { details: input.details } : {}),identity:binding.identityRef,operation:{action:'http',request:input.request}})
         if (request.kind !== 'access') throw new DomainConsentError('invalid_request')
         owned.add(request.id)
         return request
