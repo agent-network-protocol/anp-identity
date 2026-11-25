@@ -151,7 +151,9 @@ export class IdentityController {
   constructor(private readonly remote: ManagementRemote) {}
   private patch(value: Partial<ManagerView>): void {
     if (this.disposed) return;
-    if (value.modal || (value.selectedKey !== undefined && value.selectedKey !== this.view.selectedKey)) this.approvedCreate = undefined;
+    // The first automatic selection can arrive before the approved registration status.
+    if (value.modal || (this.view.selectedKey !== null && value.selectedKey !== undefined && value.selectedKey !== this.view.selectedKey))
+      this.approvedCreate = undefined;
     this.view = { ...this.view, ...value };
     for (const listener of this.listeners) listener();
   }

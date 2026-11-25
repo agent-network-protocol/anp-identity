@@ -827,6 +827,50 @@ for (const dismissed of [false, true]) {
   });
 }
 
+it.each([
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:undefined},
+  {phase:'awaiting_email_verification', label:'等待邮箱激活确认', action:undefined},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'select'},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'close'},
+  {phase:'awaiting_phone_verification', label:'等待短信验证码', action:'registration'},
+] as const)('handles $phase after the first automatic selection (action: $action)', async ({phase, label, action}) => {
+  const pending = request('create', 'first-identity');
+  const f = fixture([pending]);
+  f.remote.listIdentities.mockResolvedValue({ok:true,value:[]});
+  f.render();
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().selectedKey).toBeNull();
+  fireEvent.click(await screen.findByRole('button', {name:'允许创建'}));
+  await waitFor(() => expect(f.controller.getSnapshot().modal).toBeNull());
+
+  f.remote.listIdentities.mockResolvedValue({ok:true,value:[identity, second]});
+  await act(() => f.controller.refresh());
+  expect(f.controller.getSnapshot().selectedKey).toBe(identityKey(identity.reference));
+  expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+  if (action === 'select') fireEvent.click(screen.getByRole('button', {name:/个人身份/}));
+  if (action === 'close') act(() => f.controller.closeModal());
+  if (action === 'registration') fireEvent.click(screen.getByRole('button', {name:'创建公共身份'}));
+
+  f.remote.registrationBootstrapStatus.mockResolvedValue({ok:true,value:[
+    {id:'unrelated',requestId:'other',phase:'blocked'},
+    {id:'original',requestId:pending.id,phase},
+  ]});
+  await act(() => f.controller.refresh());
+  if (action) {
+    expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+    if (action === 'registration') expect(f.controller.getSnapshot().modal?.kind).toBe('registration');
+  } else {
+    const dialog = await screen.findByRole('dialog', {name:'完成身份注册'});
+    expect(within(dialog).getByText(label, {exact:false})).toBeTruthy();
+    expect(f.controller.getSnapshot().modal).toEqual({kind:'registration-progress',requestId:pending.id});
+    fireEvent.click(within(dialog).getByRole('button', {name:'稍后继续'}));
+    await act(() => f.controller.refresh());
+    expect(screen.queryByRole('dialog', {name:'完成身份注册'})).toBeNull();
+  }
+  expect(f.remote.decide).toHaveBeenCalledTimes(1);
+  f.controller.dispose();
+});
+
 it('offers an explicit SMS retry for a blocked challenge, never for an uncertain registration', async () => {
   const f=fixture(); const retry=vi.fn(async()=>({ok:true as const,value:null}));
   Object.assign(f.remote,{retryRegistrationSms:retry});
